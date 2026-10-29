@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, cleanup } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import Home from "@/app/page";
 
@@ -18,5 +18,22 @@ describe("Feature 2: Sections + footer", () => {
     render(<Home />);
     expect(document.querySelectorAll("footer h4")).toHaveLength(4);
     expect(screen.getByTestId("copyright")).toHaveTextContent(`TARGET © ${new Date().getFullYear()}`);
+  });
+});
+
+import Privacy from "@/app/privacy/page";
+import Terms from "@/app/terms/page";
+import FooterL from "@/components/Footer";
+describe("Legal pages", () => {
+  it("footer links to /terms and /privacy, pages render", () => {
+    render(<FooterL />);
+    expect(screen.getByText("Terms of Service").closest("a")).toHaveAttribute("href", "/terms");
+    expect(screen.getByText("Privacy Policy").closest("a")).toHaveAttribute("href", "/privacy");
+    cleanup();
+    render(<Privacy />);
+    expect(screen.getByRole("heading", { name: "Privacy Policy" })).toBeInTheDocument();
+    cleanup();
+    render(<Terms />);
+    expect(screen.getByRole("heading", { name: "Terms of Service" })).toBeInTheDocument();
   });
 });

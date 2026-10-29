@@ -5,6 +5,8 @@ const COLS = [
   { title: "Social", links: ["Instagram", "X", "LinkedIn"] },
 ];
 
+const HREF: Record<string, string> = { "Terms of Service": "/terms", "Privacy Policy": "/privacy", Security: "/privacy", "Using TARGET": "/#features" };
+
 export default function Footer() {
   return (
     <footer className="border-t border-white/10">
@@ -14,7 +16,7 @@ export default function Footer() {
             <h4 className="text-sm font-semibold">{c.title}</h4>
             <ul className="mt-3 space-y-2">
               {c.links.map((l) => (
-                <li key={l}><a href="#" className="text-sm text-white/50 transition hover:text-white">{l}</a></li>
+                <li key={l}><a href={HREF[l] ?? "#"} className="text-sm text-white/50 transition hover:text-white">{l}</a></li>
               ))}
             </ul>
           </div>
