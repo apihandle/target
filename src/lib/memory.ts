@@ -39,13 +39,18 @@ export function isDuplicate(fact: string, existing: string[]): boolean {
 }
 
 /** Parse the extractor model's answer into a list of facts (tolerates code fences / prose). */
+/** Facts tied to a moment ("tomorrow at 9 AM") are plans, not lasting memories. */
+export function isTransient(fact: string): boolean {
+  return /\b(today|tomorrow|tonight|yesterday|this (week|weekend|evening|morning)|next (week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|aaj|kal|parso|\d{1,2}(:\d{2})?\s?(am|pm))\b/i.test(fact);
+}
+
 export function parseFacts(raw: string): string[] {
   const m = raw.match(/\[[\s\S]*\]/);
   if (!m) return [];
   try {
     const arr = JSON.parse(m[0]);
     if (!Array.isArray(arr)) return [];
-    return arr.filter((x) => typeof x === "string").map(cleanFact).filter((x) => x.length >= 3).slice(0, 3);
+    return arr.filter((x) => typeof x === "string").map(cleanFact).filter((x) => x.length >= 3 && !isTransient(x)).slice(0, 3);
   } catch {
     return [];
   }

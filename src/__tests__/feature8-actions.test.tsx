@@ -57,3 +57,18 @@ describe("Feature 8: action buttons", () => {
     expect(screen.getAllByTestId("action")[0]).toBeDisabled();
   });
 });
+
+import { heuristicActions, mergeActions } from "@/lib/actions";
+import { isTransient, parseFacts } from "@/lib/memory";
+describe("Feature 8: fallbacks", () => {
+  it("suggests a crypto panel when user wants to track a coin", () => {
+    expect(heuristicActions("Main Bitcoin ka price roz check karna chahta hoon")).toEqual([{ type: "panel", kind: "crypto", title: "BTC price", config: { symbol: "BTC", currency: "INR" } }]);
+    expect(heuristicActions("bitcoin kya hai")).toEqual([]);
+    expect(mergeActions([{ type: "map", query: "a" }], [{ type: "map", query: "a" }, { type: "map", query: "b" }])).toHaveLength(2);
+  });
+  it("drops time-bound plans from memory", () => {
+    expect(isTransient("Travels to Golghar Patna at 9 AM tomorrow")).toBe(true);
+    expect(isTransient("Lives in Patna")).toBe(false);
+    expect(parseFacts('["Meeting friend tomorrow", "Is vegetarian"]')).toEqual(["Is vegetarian"]);
+  });
+});

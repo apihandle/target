@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { MODELS, SYSTEM_PROMPT, parseSSE, titleFrom, type ChatMsg } from "@/lib/ai";
-import { ACTIONS_PROMPT, sanitizeAction } from "@/lib/actions";
+import { ACTIONS_PROMPT, heuristicActions, mergeActions, sanitizeAction, type Action } from "@/lib/actions";
 import { projectBlock } from "@/lib/projects";
 import { EXTRACT_PROMPT, MAX_MEMORIES, explicitRemember, isDuplicate, memoryBlock, parseFacts } from "@/lib/memory";
 
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
       } finally {
         if (full && text.length >= 12 && !/```actions?/i.test(full)) {
           try {
-            const acts = await suggestActions(key, text, full);
+            const acts = mergeActions(heuristicActions(text), await suggestActions(key, text, full));
             if (acts.length) {
               const blockText = "\n\n```actions\n" + JSON.stringify(acts) + "\n```";
               full += blockText;
@@ -165,7 +165,7 @@ function nowLine(): string {
   return ` Current date-time: ${now} IST (UTC+05:30).`;
 }
 
-async function suggestActions(key: string, userText: string, reply: string) {
+async function suggestActions(key: string, userText: string, reply: string): Promise<Action[]> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 20000);
   try {
@@ -188,7 +188,7 @@ async function suggestActions(key: string, userText: string, reply: string) {
     const m = raw.match(/\[[\s\S]*\]/);
     if (!m) return [];
     const arr = JSON.parse(m[0]);
-    return (Array.isArray(arr) ? arr : []).map(sanitizeAction).filter(Boolean).slice(0, 3);
+    return (Array.isArray(arr) ? arr : []).map(sanitizeAction).filter((x): x is Action => !!x).slice(0, 3);
   } catch {
     return [];
   } finally {

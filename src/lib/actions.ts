@@ -96,3 +96,21 @@ export function actionLabel(a: Action): string {
     case "copy": return `📋 ${a.label ?? "Copy"}`;
   }
 }
+
+const COINS: Record<string, string> = { bitcoin: "BTC", btc: "BTC", ethereum: "ETH", eth: "ETH", solana: "SOL", sol: "SOL", dogecoin: "DOGE", doge: "DOGE", xrp: "XRP", cardano: "ADA" };
+
+/** Deterministic buttons the model tends to miss: tracking a coin regularly -> crypto panel. */
+export function heuristicActions(userText: string): Action[] {
+  const t = userText.toLowerCase();
+  if (!/(roz|daily|har din|track|monitor|nazar|regular|every day|check kar)/.test(t)) return [];
+  for (const [word, symbol] of Object.entries(COINS)) {
+    if (new RegExp(`\\b${word}\\b`).test(t)) return [{ type: "panel", kind: "crypto", title: `${symbol} price`, config: { symbol, currency: "INR" } }];
+  }
+  return [];
+}
+
+export function mergeActions(a: Action[], b: Action[]): Action[] {
+  const out = [...a];
+  for (const x of b) if (!out.some((y) => y.type === x.type && JSON.stringify(y) === JSON.stringify(x)) && !(x.type === "panel" && out.some((y) => y.type === "panel"))) out.push(x);
+  return out.slice(0, 3);
+}
