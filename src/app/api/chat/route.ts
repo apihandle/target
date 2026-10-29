@@ -1,8 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { MODELS, SYSTEM_PROMPT, parseSSE, titleFrom, type ChatMsg } from "@/lib/ai";
+import { EXTRACT_PROMPT, MAX_MEMORIES, explicitRemember, isDuplicate, memoryBlock, parseFacts } from "@/lib/memory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const supabase = createClient();
@@ -33,7 +35,18 @@ export async function POST(req: Request) {
   const { error: insErr } = await supabase.from("messages").insert({ conversation_id: conversationId, user_id: user.id, role: "user", content: text });
   if (insErr) return Response.json({ error: insErr.message }, { status: 500 });
 
-  const messages: ChatMsg[] = [{ role: "system", content: SYSTEM_PROMPT }, ...((history ?? []) as ChatMsg[]), { role: "user", content: text }];
+  // Feature 5: long-term memory
+  const { data: memRows } = await supabase.from("memories").select("content").order("created_at", { ascending: true }).limit(MAX_MEMORIES);
+  const known = (memRows ?? []).map((m) => m.content as string);
+  const explicit = explicitRemember(text);
+  let savedExplicit = false;
+  if (explicit && !isDuplicate(explicit, known)) {
+    const { error } = await supabase.from("memories").insert({ user_id: user.id, content: explicit, source: "explicit" });
+    if (!error) { known.push(explicit); savedExplicit = true; }
+  }
+  const memNote = savedExplicit ? `\n(You just saved this to memory: "${explicit}". Confirm briefly.)` : "";
+
+  const messages: ChatMsg[] = [{ role: "system", content: SYSTEM_PROMPT + memoryBlock(known) + memNote }, ...((history ?? []) as ChatMsg[]), { role: "user", content: text }];
 
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return Response.json({ error: "AI is not configured" }, { status: 503 });
@@ -77,6 +90,15 @@ export async function POST(req: Request) {
           await supabase.from("messages").insert({ conversation_id: convId, user_id: user.id, role: "assistant", content: full });
           await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
         }
+        if (!explicit) {
+          try {
+            const facts = await extractFacts(key, text, known);
+            const fresh: string[] = [];
+            for (const f of facts) if (!isDuplicate(f, [...known, ...fresh])) fresh.push(f);
+            if (fresh.length && known.length < MAX_MEMORIES)
+              await supabase.from("memories").insert(fresh.map((content) => ({ user_id: user.id, content, source: "chat" })));
+          } catch { /* memory is best-effort */ }
+        }
         controller.close();
       }
     },
@@ -85,4 +107,29 @@ export async function POST(req: Request) {
   return new Response(stream, {
     headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Conversation-Id": convId },
   });
+}
+
+async function extractFacts(key: string, text: string, known: string[]): Promise<string[]> {
+  if (text.length < 8) return [];
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      signal: ctrl.signal,
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://gettarget.vercel.app", "X-Title": "TARGET" },
+      body: JSON.stringify({
+        model: MODELS[0], models: MODELS, reasoning: { enabled: false }, temperature: 0,
+        messages: [
+          { role: "system", content: EXTRACT_PROMPT },
+          { role: "user", content: `Already known:\n${known.slice(-50).map((k) => "- " + k).join("\n") || "(nothing)"}\n\nLatest user message:\n${text}` },
+        ],
+      }),
+    });
+    if (!r.ok) return [];
+    const j = await r.json();
+    return parseFacts(j.choices?.[0]?.message?.content ?? "");
+  } finally {
+    clearTimeout(timer);
+  }
 }

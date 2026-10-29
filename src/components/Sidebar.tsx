@@ -4,7 +4,7 @@ import { useState } from "react";
 
 export type ConvItem = { id: string; title: string };
 
-export default function Sidebar({ conversations, activeId, email }: { conversations: ConvItem[]; activeId?: string; email: string }) {
+export default function Sidebar({ conversations, activeId, email, section = "chat" }: { conversations: ConvItem[]; activeId?: string; email: string; section?: "chat" | "memory" }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -16,7 +16,9 @@ export default function Sidebar({ conversations, activeId, email }: { conversati
           <span className="font-extrabold tracking-widest">TARGET</span>
         </div>
         <Link href="/app" data-testid="new-chat" onClick={() => setOpen(false)} className="mt-6 rounded-full bg-white py-2 text-center text-sm font-semibold text-black">+ New chat</Link>
-        <nav className="mt-6 flex-1 space-y-1 overflow-y-auto" data-testid="conv-list">
+        <Link href="/app/memory" data-testid="nav-memory" onClick={() => setOpen(false)}
+          className={`mt-3 rounded-xl px-3 py-2 text-sm ${section === "memory" ? "bg-white/10 text-white" : "text-white/60 hover:bg-white/5"}`}>🧠 Memory</Link>
+        <nav className="mt-4 flex-1 space-y-1 overflow-y-auto" data-testid="conv-list">
           {conversations.length === 0 && <p className="px-2 text-xs text-white/40">No chats yet</p>}
           {conversations.map((c) => (
             <Link key={c.id} href={`/app?c=${c.id}`} onClick={() => setOpen(false)}
