@@ -81,6 +81,8 @@ export async function POST(req: Request) {
   if (!upstream.ok || !upstream.body) { await upstream.text().catch(() => ""); upstream = await callAI(); } // free models hiccup: retry once
   if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => "");
+    if (upstream.status === 429)
+      return Response.json({ error: "TARGET's free AI quota for today is used up. It resets at 5:30 AM IST." }, { status: 429 });
     return Response.json({ error: `AI error ${upstream.status}`, detail: detail.slice(0, 300) }, { status: 502 });
   }
 
