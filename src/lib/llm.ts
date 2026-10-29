@@ -1,6 +1,6 @@
 import type { ChatMsg } from "@/lib/ai";
 
-type Provider = { name: string; url: string; key: string; models: string[]; extra?: Record<string, unknown>; headers?: Record<string, string> };
+type Provider = { name: string; url: string; key: string; models: string[]; extra?: Record<string, unknown>; headers?: Record<string, string>; minTokens?: number };
 
 const list = (v: string | undefined, d: string) => (v || d).split(",").map((m) => m.trim()).filter(Boolean);
 
@@ -9,7 +9,9 @@ export function providers(env: Record<string, string | undefined> = process.env)
   const out: Provider[] = [];
   if (env.NVIDIA_API_KEY) out.push({
     name: "nvidia", url: "https://integrate.api.nvidia.com/v1/chat/completions", key: env.NVIDIA_API_KEY,
-    models: list(env.NVIDIA_MODELS, "mistralai/mistral-large-4-1t-a52b,nvidia/nemotron-3.5-lightning-30b-a3b,openai/gpt-oss-20b"),
+    models: list(env.NVIDIA_MODELS, "mistralai/mistral-large-4-1t-a52b,openai/gpt-oss-20b,nvidia/nemotron-3.5-lightning-30b-a3b"),
+    // These models think before answering; keep it short and leave room for the visible reply.
+    extra: { reasoning_effort: "low" }, minTokens: 2000,
   });
   if (env.OPENROUTER_API_KEY) out.push({
     name: "openrouter", url: "https://openrouter.ai/api/v1/chat/completions", key: env.OPENROUTER_API_KEY,
@@ -40,7 +42,7 @@ export async function llm(opts: LLMOpts): Promise<Response> {
           body: JSON.stringify({
             model, messages: opts.messages, stream: !!opts.stream,
             ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
-            max_tokens: opts.maxTokens ?? 2048, ...(p.extra ?? {}),
+            max_tokens: Math.max(opts.maxTokens ?? 2048, p.minTokens ?? 0), ...(p.extra ?? {}),
           }),
         });
         if (r.ok && r.body) { clearTimeout(timer); return r; }
