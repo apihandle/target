@@ -67,7 +67,7 @@ export async function POST(req: Request) {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return Response.json({ error: "AI is not configured" }, { status: 503 });
 
-  const upstream = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+  const callAI = () => fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${key}`,
@@ -77,6 +77,8 @@ export async function POST(req: Request) {
     },
     body: JSON.stringify({ model: MODELS[0], models: MODELS, messages, stream: true, reasoning: { enabled: false } }),
   });
+  let upstream = await callAI();
+  if (!upstream.ok || !upstream.body) { await upstream.text().catch(() => ""); upstream = await callAI(); } // free models hiccup: retry once
   if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => "");
     return Response.json({ error: `AI error ${upstream.status}`, detail: detail.slice(0, 300) }, { status: 502 });
@@ -161,8 +163,13 @@ async function extractFacts(key: string, text: string, known: string[]): Promise
 }
 
 function nowLine(): string {
-  const now = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" });
-  return ` Current date-time: ${now} IST (UTC+05:30).`;
+  const tz = { timeZone: "Asia/Kolkata" } as const;
+  const now = new Date().toLocaleString("en-IN", { ...tz, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" });
+  const day = (n: number) => {
+    const d = new Date(Date.now() + n * 86400000);
+    return `${d.toLocaleDateString("en-CA", tz)} (${d.toLocaleDateString("en-IN", { ...tz, weekday: "long" })})`;
+  };
+  return ` Current date-time: ${now} IST (UTC+05:30). Today = ${day(0)}; tomorrow ("kal") = ${day(1)}; day after ("parso") = ${day(2)}.`;
 }
 
 async function suggestActions(key: string, userText: string, reply: string): Promise<Action[]> {
