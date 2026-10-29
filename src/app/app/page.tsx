@@ -1,32 +1,30 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import Chat, { type UIMsg } from "@/components/Chat";
+import Sidebar from "@/components/Sidebar";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Home · TARGET" };
+export const metadata = { title: "TARGET" };
 
-export default async function AppHome() {
+export default async function AppHome({ searchParams }: { searchParams: { c?: string } }) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=/app");
 
+  const { data: convs } = await supabase.from("conversations").select("id, title").order("updated_at", { ascending: false }).limit(50);
+  const activeId = searchParams.c;
+  let initial: UIMsg[] = [];
+  if (activeId) {
+    const { data: msgs } = await supabase.from("messages").select("role, content").eq("conversation_id", activeId).order("created_at");
+    initial = (msgs ?? []).filter((m) => m.role !== "system") as UIMsg[];
+  }
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col px-5 py-8">
-      <header className="flex items-center justify-between">
-        <span className="flex items-center gap-2">
-          <span className="grid h-8 w-8 place-items-center rounded-full bg-gradient-to-br from-orange-400 to-rose-600 text-sm font-black">◎</span>
-          <span className="font-extrabold tracking-widest">TARGET</span>
-        </span>
-        <form action="/auth/signout" method="post">
-          <button data-testid="signout" className="rounded-full border border-white/20 px-4 py-2 text-sm hover:bg-white/10">Sign out</button>
-        </form>
-      </header>
-      <section className="mt-16">
-        <h1 className="text-3xl font-extrabold sm:text-4xl">Welcome 👋</h1>
-        <p className="mt-2 text-white/60">Signed in as <span data-testid="user-email" className="text-white">{user.email}</span></p>
-        <div className="mt-10 rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-white/60">
-          Your chat with TARGET is coming next.
-        </div>
-      </section>
-    </main>
+    <div className="flex h-[100dvh]">
+      <Sidebar conversations={convs ?? []} activeId={activeId} email={user.email ?? ""} />
+      <main className="flex-1 overflow-hidden">
+        <Chat key={activeId ?? "new"} conversationId={activeId} initialMessages={initial} />
+      </main>
+    </div>
   );
 }

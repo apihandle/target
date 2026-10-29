@@ -25,3 +25,15 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 .animate-fade-up { animation: fadeUp 0.6s ease-out both; }
+
+/* assistant markdown */
+.prose-target p { margin: 0.5em 0; }
+.prose-target ul { list-style: disc; padding-left: 1.25rem; margin: 0.5em 0; }
+.prose-target ol { list-style: decimal; padding-left: 1.25rem; margin: 0.5em 0; }
+.prose-target h1, .prose-target h2, .prose-target h3 { font-weight: 700; margin: 0.8em 0 0.3em; }
+.prose-target code { background: rgba(255,255,255,0.08); padding: 0.1em 0.35em; border-radius: 6px; font-size: 0.9em; }
+.prose-target pre { background: rgba(255,255,255,0.06); padding: 0.8em; border-radius: 12px; overflow-x: auto; }
+.prose-target pre code { background: none; padding: 0; }
+.prose-target a { color: #fb923c; text-decoration: underline; }
+.prose-target table { border-collapse: collapse; margin: 0.5em 0; }
+.prose-target th, .prose-target td { border: 1px solid rgba(255,255,255,0.15); padding: 0.3em 0.6em; }
