@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import ActionButtons from "@/components/ActionButtons";
+import { splitActions } from "@/lib/actions";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -93,9 +95,16 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
                   <div className="max-w-[85%] whitespace-pre-wrap rounded-3xl bg-gradient-to-r from-orange-500 to-rose-600 px-4 py-2.5 text-sm">{m.content}</div>
                 ) : (
                   <div className="prose-target text-sm leading-relaxed text-white/90">
-                    {m.content ? (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
-                    ) : (
+                    {m.content ? (() => {
+                      const { text, actions } = splitActions(m.content);
+                      const isLive = streaming && i === messages.length - 1;
+                      return (
+                        <>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+                          {!isLive && <ActionButtons actions={actions} />}
+                        </>
+                      );
+                    })() : (
                       <span data-testid="typing" className="inline-flex gap-1"><span className="animate-pulse">●</span><span className="animate-pulse [animation-delay:150ms]">●</span><span className="animate-pulse [animation-delay:300ms]">●</span></span>
                     )}
                   </div>

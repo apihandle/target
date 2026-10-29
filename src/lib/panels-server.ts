@@ -30,7 +30,8 @@ export async function computePanelData(p: Pick<Panel, "kind" | "config">): Promi
       };
     }
     case "crypto": {
-      const j = await getJSON(`https://api.coinbase.com/v2/prices/${p.config.symbol}-${p.config.currency}/spot`);
+      const j = await getJSON(`https://api.coinbase.com/v2/prices/${p.config.symbol}-${p.config.currency}/spot`)
+        .catch(() => { throw new Error(`No price for ${p.config.symbol} in ${p.config.currency}`); });
       const amount = Number(j.data?.amount);
       if (!isFinite(amount)) throw new Error(`No price for ${p.config.symbol}`);
       return { amount, currency: p.config.currency, symbol: p.config.symbol, source: "coinbase.com" };

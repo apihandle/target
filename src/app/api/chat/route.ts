@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { MODELS, SYSTEM_PROMPT, parseSSE, titleFrom, type ChatMsg } from "@/lib/ai";
+import { ACTIONS_PROMPT } from "@/lib/actions";
 import { projectBlock } from "@/lib/projects";
 import { EXTRACT_PROMPT, MAX_MEMORIES, explicitRemember, isDuplicate, memoryBlock, parseFacts } from "@/lib/memory";
 
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
     await supabase.from("projects").update({ updated_at: new Date().toISOString() }).eq("id", projectId);
   }
 
-  const messages: ChatMsg[] = [{ role: "system", content: SYSTEM_PROMPT + projectBlock(project) + memoryBlock(known) + memNote }, ...((history ?? []) as ChatMsg[]), { role: "user", content: text }];
+  const messages: ChatMsg[] = [{ role: "system", content: SYSTEM_PROMPT + nowLine() + ACTIONS_PROMPT + projectBlock(project) + memoryBlock(known) + memNote }, ...((history ?? []) as ChatMsg[]), { role: "user", content: text }];
 
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return Response.json({ error: "AI is not configured" }, { status: 503 });
@@ -147,4 +148,9 @@ async function extractFacts(key: string, text: string, known: string[]): Promise
   } finally {
     clearTimeout(timer);
   }
+}
+
+function nowLine(): string {
+  const now = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" });
+  return ` Current date-time: ${now} IST (UTC+05:30).`;
 }
