@@ -75,7 +75,7 @@ export async function POST(req: Request) {
       "HTTP-Referer": "https://gettarget.vercel.app",
       "X-Title": "TARGET",
     },
-    body: JSON.stringify({ model: MODELS[0], models: MODELS, messages, stream: true, reasoning: { enabled: false } }),
+    body: JSON.stringify({ model: MODELS[0], models: MODELS, messages, stream: true, reasoning: { effort: "low", exclude: true } }),
   });
   let upstream = await callAI();
   if (!upstream.ok || !upstream.body) { await upstream.text().catch(() => ""); upstream = await callAI(); } // free models hiccup: retry once
@@ -147,7 +147,7 @@ async function extractFacts(key: string, text: string, known: string[]): Promise
       signal: ctrl.signal,
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://gettarget.vercel.app", "X-Title": "TARGET" },
       body: JSON.stringify({
-        model: MODELS[0], models: MODELS, reasoning: { enabled: false }, temperature: 0,
+        model: MODELS[0], models: MODELS, reasoning: { effort: "low", exclude: true }, temperature: 0,
         messages: [
           { role: "system", content: EXTRACT_PROMPT },
           { role: "user", content: `Already known:\n${known.slice(-50).map((k) => "- " + k).join("\n") || "(nothing)"}\n\nLatest user message:\n${text}` },
@@ -181,7 +181,7 @@ async function suggestActions(key: string, userText: string, reply: string): Pro
       signal: ctrl.signal,
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://gettarget.vercel.app", "X-Title": "TARGET" },
       body: JSON.stringify({
-        model: MODELS[0], models: MODELS, reasoning: { enabled: false }, temperature: 0,
+        model: MODELS[0], models: MODELS, reasoning: { effort: "low", exclude: true }, temperature: 0,
         messages: [
           { role: "system", content: "You pick action buttons for a chat reply." + nowLine() + ACTIONS_PROMPT +
             "\nReply with ONLY the JSON array (no fence, no prose). Return [] for small talk or when no button clearly helps." },

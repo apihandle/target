@@ -44,7 +44,7 @@ export async function computePanelData(p: Pick<Panel, "kind" | "config">): Promi
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://gettarget.vercel.app", "X-Title": "TARGET" },
         body: JSON.stringify({
-          model: MODELS[0], models: MODELS, reasoning: { enabled: false },
+          model: MODELS[0], models: MODELS, reasoning: { effort: "low", exclude: true },
           messages: [
             { role: "system", content: `You write the content of a small glanceable dashboard panel. Today is ${today}. Be concrete and short: at most 4 short lines or bullets, no preamble, plain markdown.` },
             { role: "user", content: p.config.prompt },
