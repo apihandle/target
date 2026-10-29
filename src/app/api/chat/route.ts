@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { DEFAULT_MODEL, SYSTEM_PROMPT, parseSSE, titleFrom, type ChatMsg } from "@/lib/ai";
+import { MODELS, SYSTEM_PROMPT, parseSSE, titleFrom, type ChatMsg } from "@/lib/ai";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
       "HTTP-Referer": "https://gettarget.vercel.app",
       "X-Title": "TARGET",
     },
-    body: JSON.stringify({ model: DEFAULT_MODEL, messages, stream: true }),
+    body: JSON.stringify({ model: MODELS[0], models: MODELS, messages, stream: true, reasoning: { enabled: false } }),
   });
   if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => "");
