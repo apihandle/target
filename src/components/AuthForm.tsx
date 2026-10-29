@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { validateCredentials } from "@/lib/validate";
+import GoogleButton from "./GoogleButton";
 
 type Mode = "signin" | "signup";
 
@@ -62,6 +63,10 @@ export default function AuthForm({ initialEmail = "", next = "/app" }: { initial
             {m === "signin" ? "Sign in" : "Sign up"}
           </button>
         ))}
+      </div>
+      <GoogleButton next={next} />
+      <div className="my-4 flex items-center gap-3 text-xs text-white/40">
+        <span className="h-px flex-1 bg-white/10" /> or with email <span className="h-px flex-1 bg-white/10" />
       </div>
       <form onSubmit={onSubmit} noValidate className="space-y-3">
         <input

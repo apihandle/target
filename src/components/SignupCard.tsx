@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import GoogleButton from "./GoogleButton";
 
 export default function SignupCard() {
   const router = useRouter();
@@ -16,12 +17,7 @@ export default function SignupCard() {
 
   return (
     <div id="signup" className="w-full max-w-sm rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-2xl backdrop-blur-xl">
-      <button type="button" data-testid="google-btn" onClick={() => router.push("/login")} className="flex w-full items-center justify-center gap-2 rounded-full bg-white py-3 text-sm font-semibold text-black transition hover:bg-white/90">
-        <span className="font-black text-blue-600">G</span> Continue with Google
-      </button>
-      <button type="button" data-testid="apple-btn" onClick={() => router.push("/login")} className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-white/20 py-3 text-sm font-semibold transition hover:bg-white/10">
-         Continue with Apple
-      </button>
+      <GoogleButton />
       <div className="my-4 flex items-center gap-3 text-xs text-white/40">
         <span className="h-px flex-1 bg-white/10" /> or <span className="h-px flex-1 bg-white/10" />
       </div>
