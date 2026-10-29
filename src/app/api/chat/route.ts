@@ -16,7 +16,10 @@ export async function POST(req: Request) {
   if (text.length > 8000) return Response.json({ error: "Message too long" }, { status: 400 });
 
   let conversationId = body.conversationId;
-  if (!conversationId) {
+  if (conversationId) {
+    const { data: owned } = await supabase.from("conversations").select("id").eq("id", conversationId).maybeSingle();
+    if (!owned) return Response.json({ error: "Chat not found" }, { status: 404 });
+  } else {
     const { data, error } = await supabase.from("conversations").insert({ user_id: user.id, title: titleFrom(text) }).select("id").single();
     if (error || !data) return Response.json({ error: error?.message ?? "Could not create chat" }, { status: 500 });
     conversationId = data.id as string;
@@ -27,7 +30,8 @@ export async function POST(req: Request) {
     .order("created_at", { ascending: true }).limit(40);
   if (hErr) return Response.json({ error: hErr.message }, { status: 500 });
 
-  await supabase.from("messages").insert({ conversation_id: conversationId, user_id: user.id, role: "user", content: text });
+  const { error: insErr } = await supabase.from("messages").insert({ conversation_id: conversationId, user_id: user.id, role: "user", content: text });
+  if (insErr) return Response.json({ error: insErr.message }, { status: 500 });
 
   const messages: ChatMsg[] = [{ role: "system", content: SYSTEM_PROMPT }, ...((history ?? []) as ChatMsg[]), { role: "user", content: text }];
 
