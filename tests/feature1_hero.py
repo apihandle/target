@@ -1,11 +1,11 @@
 import sys, time
 from playwright.sync_api import sync_playwright
-URL = "http://localhost:3123"
+URL = "http://localhost:3124"
 results, errors = [], []
 def check(name, cond):
     results.append((name, bool(cond)))
 with sync_playwright() as p:
-    b = p.chromium.launch(executable_path="/usr/bin/chromium", args=["--no-sandbox"])
+    b = p.chromium.launch(args=["--no-sandbox"])
     for label, vp in [("desktop", {"width": 1440, "height": 900}), ("mobile", {"width": 390, "height": 844})]:
         pg = b.new_page(viewport=vp)
         pg.on("console", lambda m: errors.append(f"{label}: {m.text}") if m.type == "error" else None)
