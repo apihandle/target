@@ -13,7 +13,7 @@ const STARTERS = [
   "Give me a 20-minute home workout",
 ];
 
-export default function Chat({ conversationId: initialId, initialMessages = [] }: { conversationId?: string; initialMessages?: UIMsg[] }) {
+export default function Chat({ conversationId: initialId, initialMessages = [], projectId, projectName }: { conversationId?: string; initialMessages?: UIMsg[]; projectId?: string; projectName?: string }) {
   const router = useRouter();
   const [conversationId, setConversationId] = useState<string | undefined>(initialId);
   const [messages, setMessages] = useState<UIMsg[]>(initialMessages);
@@ -35,7 +35,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [] }
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, message: text }),
+        body: JSON.stringify(conversationId ? { conversationId, message: text } : projectId ? { projectId, message: text } : { message: text }),
       });
       if (!res.ok || !res.body) {
         const j = await res.json().catch(() => ({}));
@@ -70,10 +70,13 @@ export default function Chat({ conversationId: initialId, initialMessages = [] }
 
   return (
     <div className="flex h-full flex-col">
+      {projectId && projectName && (
+        <a href={`/app/projects/${projectId}`} data-testid="chat-project" className="mx-auto mt-3 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/70 hover:bg-white/10">📁 {projectName}</a>
+      )}
       <div className="flex-1 overflow-y-auto px-4 py-6" data-testid="thread">
         {messages.length === 0 ? (
           <div className="mx-auto mt-10 max-w-xl text-center">
-            <h1 className="text-3xl font-extrabold">What should we hit today?</h1>
+            <h1 className="text-3xl font-extrabold">{projectName ? `New chat in ${projectName}` : "What should we hit today?"}</h1>
             <div className="mt-8 grid gap-3 sm:grid-cols-2">
               {STARTERS.map((s) => (
                 <button key={s} data-testid="starter" onClick={() => send(s)} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left text-sm text-white/70 transition hover:bg-white/10">

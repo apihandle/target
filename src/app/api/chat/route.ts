@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { MODELS, SYSTEM_PROMPT, parseSSE, titleFrom, type ChatMsg } from "@/lib/ai";
+import { projectBlock } from "@/lib/projects";
 import { EXTRACT_PROMPT, MAX_MEMORIES, explicitRemember, isDuplicate, memoryBlock, parseFacts } from "@/lib/memory";
 
 export const runtime = "nodejs";
@@ -11,18 +12,25 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Not signed in" }, { status: 401 });
 
-  let body: { conversationId?: string; message?: string };
+  let body: { conversationId?: string; projectId?: string; message?: string };
   try { body = await req.json(); } catch { return Response.json({ error: "Bad JSON" }, { status: 400 }); }
   const text = (body.message ?? "").trim();
   if (!text) return Response.json({ error: "Empty message" }, { status: 400 });
   if (text.length > 8000) return Response.json({ error: "Message too long" }, { status: 400 });
 
   let conversationId = body.conversationId;
+  let projectId: string | null = null;
   if (conversationId) {
-    const { data: owned } = await supabase.from("conversations").select("id").eq("id", conversationId).maybeSingle();
+    const { data: owned } = await supabase.from("conversations").select("id, project_id").eq("id", conversationId).maybeSingle();
     if (!owned) return Response.json({ error: "Chat not found" }, { status: 404 });
+    projectId = (owned.project_id as string | null) ?? null;
   } else {
-    const { data, error } = await supabase.from("conversations").insert({ user_id: user.id, title: titleFrom(text) }).select("id").single();
+    if (body.projectId) {
+      const { data: proj } = await supabase.from("projects").select("id").eq("id", body.projectId).maybeSingle();
+      if (!proj) return Response.json({ error: "Project not found" }, { status: 404 });
+      projectId = proj.id as string;
+    }
+    const { data, error } = await supabase.from("conversations").insert({ user_id: user.id, title: titleFrom(text), project_id: projectId }).select("id").single();
     if (error || !data) return Response.json({ error: error?.message ?? "Could not create chat" }, { status: 500 });
     conversationId = data.id as string;
   }
@@ -46,7 +54,14 @@ export async function POST(req: Request) {
   }
   const memNote = savedExplicit ? `\n(You just saved this to memory: "${explicit}". Confirm briefly.)` : "";
 
-  const messages: ChatMsg[] = [{ role: "system", content: SYSTEM_PROMPT + memoryBlock(known) + memNote }, ...((history ?? []) as ChatMsg[]), { role: "user", content: text }];
+  let project: { name: string; instructions: string } | null = null;
+  if (projectId) {
+    const { data: p } = await supabase.from("projects").select("name, instructions").eq("id", projectId).maybeSingle();
+    project = (p as { name: string; instructions: string } | null) ?? null;
+    await supabase.from("projects").update({ updated_at: new Date().toISOString() }).eq("id", projectId);
+  }
+
+  const messages: ChatMsg[] = [{ role: "system", content: SYSTEM_PROMPT + projectBlock(project) + memoryBlock(known) + memNote }, ...((history ?? []) as ChatMsg[]), { role: "user", content: text }];
 
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return Response.json({ error: "AI is not configured" }, { status: 503 });
