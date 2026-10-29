@@ -3,6 +3,7 @@ import { SYSTEM_PROMPT, parseSSE, titleFrom, type ChatMsg } from "@/lib/ai";
 import { llm, llmText, LLMError } from "@/lib/llm";
 import { ACTIONS_PROMPT, heuristicActions, mergeActions, sanitizeAction, type Action } from "@/lib/actions";
 import { projectBlock } from "@/lib/projects";
+import { needsSearch, searchBlock, searchQuery, sourcesFence, tavilySearch, type SearchResult } from "@/lib/search";
 import { EXTRACT_PROMPT, MAX_MEMORIES, explicitRemember, isDuplicate, memoryBlock, parseFacts } from "@/lib/memory";
 
 export const runtime = "nodejs";
@@ -14,7 +15,7 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Not signed in" }, { status: 401 });
 
-  let body: { conversationId?: string; projectId?: string; message?: string };
+  let body: { conversationId?: string; projectId?: string; message?: string; web?: boolean };
   try { body = await req.json(); } catch { return Response.json({ error: "Bad JSON" }, { status: 400 }); }
   const text = (body.message ?? "").trim();
   if (!text) return Response.json({ error: "Empty message" }, { status: 400 });
@@ -63,7 +64,21 @@ export async function POST(req: Request) {
     await supabase.from("projects").update({ updated_at: new Date().toISOString() }).eq("id", projectId);
   }
 
-  const messages: ChatMsg[] = [{ role: "system", content: SYSTEM_PROMPT + nowLine() + projectBlock(project) + memoryBlock(known) + memNote }, ...((history ?? []) as ChatMsg[]), { role: "user", content: text }];
+  // Feature 9: live web search (Tavily) when asked or when the question needs fresh info
+  let webNote = "";
+  let found: SearchResult | null = null;
+  const tavilyKey = process.env.TAVILY_API_KEY;
+  if (tavilyKey && (body.web === true || needsSearch(text))) {
+    const q = searchQuery(text);
+    try {
+      found = await tavilySearch(q, tavilyKey);
+      webNote = searchBlock(q, found);
+    } catch {
+      webNote = "\n\n(Live web search failed just now. If the answer needs current info, say so briefly instead of guessing.)";
+    }
+  }
+
+  const messages: ChatMsg[] = [{ role: "system", content: SYSTEM_PROMPT + nowLine() + projectBlock(project) + memoryBlock(known) + memNote + webNote }, ...((history ?? []) as ChatMsg[]), { role: "user", content: text }];
 
   let upstream: Response;
   try {
@@ -93,6 +108,11 @@ export async function POST(req: Request) {
       } catch {
         controller.enqueue(encoder.encode("\n\n[connection interrupted]"));
       } finally {
+        if (full && found?.results.length) {
+          const src = sourcesFence(found);
+          full += src;
+          controller.enqueue(encoder.encode(src));
+        }
         if (full && text.length >= 12 && !/```actions?/i.test(full)) {
           try {
             const acts = mergeActions(heuristicActions(text), await suggestActions(text, full));

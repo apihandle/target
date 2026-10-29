@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ActionButtons from "@/components/ActionButtons";
 import { splitActions } from "@/lib/actions";
+import SourceList from "@/components/SourceList";
+import { splitSources } from "@/lib/search";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -22,6 +24,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [web, setWeb] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: "smooth" }); }, [messages]);
@@ -37,7 +40,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(conversationId ? { conversationId, message: text } : projectId ? { projectId, message: text } : { message: text }),
+        body: JSON.stringify({ ...(conversationId ? { conversationId } : projectId ? { projectId } : {}), message: text, ...(web ? { web: true } : {}) }),
       });
       if (!res.ok || !res.body) {
         const j = await res.json().catch(() => ({}));
@@ -96,11 +99,13 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
                 ) : (
                   <div className="prose-target text-sm leading-relaxed text-white/90">
                     {m.content ? (() => {
-                      const { text, actions } = splitActions(m.content);
+                      const { text: withSources, actions } = splitActions(m.content);
+                      const { text, sources } = splitSources(withSources);
                       const isLive = streaming && i === messages.length - 1;
                       return (
                         <>
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+                          {!isLive && <SourceList sources={sources} />}
                           {!isLive && <ActionButtons actions={actions} />}
                         </>
                       );
@@ -120,13 +125,23 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
         onSubmit={(e) => { e.preventDefault(); send(); }}
         className="mx-auto mb-4 flex w-full max-w-2xl items-end gap-2 px-4"
       >
+        <button
+          type="button"
+          data-testid="web-toggle"
+          aria-pressed={web}
+          title="Search the web for this message"
+          onClick={() => setWeb((w) => !w)}
+          className={`h-11 rounded-full border px-3 text-xs font-semibold transition ${web ? "border-orange-400 bg-orange-500/20 text-orange-200" : "border-white/15 bg-white/[0.06] text-white/50 hover:text-white/80"}`}
+        >
+          🌐 Web
+        </button>
         <textarea
           data-testid="chat-input"
           rows={1}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-          placeholder="Ask TARGET anything…"
+          placeholder={web ? "Search the web…" : "Ask TARGET anything…"}
           className="max-h-40 flex-1 resize-none rounded-3xl border border-white/15 bg-white/[0.06] px-4 py-3 text-sm outline-none placeholder:text-white/30 focus:border-orange-400"
         />
         <button data-testid="chat-send" type="submit" disabled={streaming || !input.trim()} className="h-11 rounded-full bg-gradient-to-r from-orange-500 to-rose-600 px-5 text-sm font-semibold disabled:opacity-40">
