@@ -102,7 +102,7 @@ export async function POST(req: Request) {
       } catch {
         controller.enqueue(encoder.encode("\n\n[connection interrupted]"));
       } finally {
-        if (full && !/```actions?/i.test(full)) {
+        if (full && text.length >= 12 && !/```actions?/i.test(full)) {
           try {
             const acts = await suggestActions(key, text, full);
             if (acts.length) {

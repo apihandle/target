@@ -64,6 +64,6 @@ export const EXTRACT_PROMPT =
   "You extract long-term memories about a user from their latest chat message. " +
   "Keep only durable personal facts or preferences worth remembering for future chats " +
   "(name, location, job, projects, people in their life, likes/dislikes, diet, goals, how they like answers). " +
-  "Ignore questions, one-off tasks, greetings and anything about the assistant. " +
+  "Ignore questions, one-off tasks and plans (a meeting on some date, a single trip), greetings and anything about the assistant. " +
   "Write each fact as a short third-person sentence in English, e.g. \"Lives in Patna\". " +
   "Do not repeat facts already known. Reply with ONLY a JSON array of strings, [] if nothing.";
