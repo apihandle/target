@@ -8,7 +8,7 @@ describe("Feature 1: Hero", () => {
   it("renders navbar brand and sign up", () => {
     render(<Navbar />);
     expect(screen.getByLabelText("TARGET home")).toBeInTheDocument();
-    expect(screen.getByTestId("nav-signup")).toHaveAttribute("href", "#signup");
+    expect(screen.getByTestId("nav-signup")).toHaveAttribute("href", "/login");
   });
   it("renders headline and signup card", () => {
     render(<Hero />);

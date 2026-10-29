@@ -8,7 +8,7 @@ export default function Navbar() {
         </a>
         <div className="flex items-center gap-3">
           <a href="#features" className="hidden text-sm text-white/70 hover:text-white sm:block">Features</a>
-          <a href="#signup" data-testid="nav-signup" className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/90">Sign Up</a>
+          <a href="/login" data-testid="nav-signup" className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/90">Sign in</a>
         </div>
       </nav>
     </header>
