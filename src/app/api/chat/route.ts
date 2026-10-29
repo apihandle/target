@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { MODELS, SYSTEM_PROMPT, parseSSE, titleFrom, type ChatMsg } from "@/lib/ai";
-import { ACTIONS_PROMPT } from "@/lib/actions";
+import { ACTIONS_PROMPT, sanitizeAction } from "@/lib/actions";
 import { projectBlock } from "@/lib/projects";
 import { EXTRACT_PROMPT, MAX_MEMORIES, explicitRemember, isDuplicate, memoryBlock, parseFacts } from "@/lib/memory";
 
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
     await supabase.from("projects").update({ updated_at: new Date().toISOString() }).eq("id", projectId);
   }
 
-  const messages: ChatMsg[] = [{ role: "system", content: SYSTEM_PROMPT + nowLine() + ACTIONS_PROMPT + projectBlock(project) + memoryBlock(known) + memNote }, ...((history ?? []) as ChatMsg[]), { role: "user", content: text }];
+  const messages: ChatMsg[] = [{ role: "system", content: SYSTEM_PROMPT + nowLine() + projectBlock(project) + memoryBlock(known) + memNote }, ...((history ?? []) as ChatMsg[]), { role: "user", content: text }];
 
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return Response.json({ error: "AI is not configured" }, { status: 503 });
@@ -102,6 +102,16 @@ export async function POST(req: Request) {
       } catch {
         controller.enqueue(encoder.encode("\n\n[connection interrupted]"));
       } finally {
+        if (full && !/```actions?/i.test(full)) {
+          try {
+            const acts = await suggestActions(key, text, full);
+            if (acts.length) {
+              const blockText = "\n\n```actions\n" + JSON.stringify(acts) + "\n```";
+              full += blockText;
+              controller.enqueue(encoder.encode(blockText));
+            }
+          } catch { /* buttons are best-effort */ }
+        }
         if (full) {
           await supabase.from("messages").insert({ conversation_id: convId, user_id: user.id, role: "assistant", content: full });
           await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
@@ -153,4 +163,35 @@ async function extractFacts(key: string, text: string, known: string[]): Promise
 function nowLine(): string {
   const now = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" });
   return ` Current date-time: ${now} IST (UTC+05:30).`;
+}
+
+async function suggestActions(key: string, userText: string, reply: string) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      signal: ctrl.signal,
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://gettarget.vercel.app", "X-Title": "TARGET" },
+      body: JSON.stringify({
+        model: MODELS[0], models: MODELS, reasoning: { enabled: false }, temperature: 0,
+        messages: [
+          { role: "system", content: "You pick action buttons for a chat reply." + nowLine() + ACTIONS_PROMPT +
+            "\nReply with ONLY the JSON array (no fence, no prose). Return [] for small talk or when no button clearly helps." },
+          { role: "user", content: `User said:\n${userText}\n\nAssistant replied:\n${reply.slice(0, 3000)}` },
+        ],
+      }),
+    });
+    if (!r.ok) return [];
+    const j = await r.json();
+    const raw: string = j.choices?.[0]?.message?.content ?? "";
+    const m = raw.match(/\[[\s\S]*\]/);
+    if (!m) return [];
+    const arr = JSON.parse(m[0]);
+    return (Array.isArray(arr) ? arr : []).map(sanitizeAction).filter(Boolean).slice(0, 3);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
 }

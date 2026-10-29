@@ -8,14 +8,14 @@ export type Action =
 
 export const ACTIONS_PROMPT = `
 
-ACTION BUTTONS: when a concrete next step would help, end your reply with ONE fenced block tagged \`actions\` holding a JSON array (max 3) of buttons. Only use these types:
+ACTION BUTTONS: choose up to 3 one-tap buttons for concrete next steps the reply points to. Only use these types:
 - {"type":"calendar","title":"…","start":"2026-11-02T18:00:00+05:30","end":"…","location":"…"}  (an event/reminder with a real date-time)
 - {"type":"map","query":"place name, city"}  (a place the user may go to)
 - {"type":"link","label":"…","url":"https://…"}  (only well-known official URLs you are sure exist)
 - {"type":"memory","content":"short fact about the user"}  (when the user shares a lasting personal fact)
 - {"type":"panel","kind":"weather|countdown|crypto|ai|note","title":"…","config":{…}}  (weather {"city"}, countdown {"date":"YYYY-MM-DD"}, crypto {"symbol":"BTC"}, ai {"prompt"}, note {"text"}) for things worth tracking on their Home
 - {"type":"copy","label":"Copy message","text":"…"}  (a draft the user will paste somewhere)
-Never mention the block in prose. Skip it when no button truly helps (most small talk).`;
+Prefer a calendar button whenever a specific date/time is planned, a map button for a named place, a panel button when the user wants to keep checking something.`;
 
 const TYPES = new Set(["calendar", "map", "link", "memory", "panel", "copy"]);
 const PANEL_KINDS = new Set(["weather", "countdown", "crypto", "ai", "note"]);
