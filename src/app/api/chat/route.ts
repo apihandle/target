@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
-import { MODELS, SYSTEM_PROMPT, parseSSE, titleFrom, type ChatMsg } from "@/lib/ai";
+import { SYSTEM_PROMPT, parseSSE, titleFrom, type ChatMsg } from "@/lib/ai";
+import { llm, llmText, LLMError } from "@/lib/llm";
 import { ACTIONS_PROMPT, heuristicActions, mergeActions, sanitizeAction, type Action } from "@/lib/actions";
 import { projectBlock } from "@/lib/projects";
 import { EXTRACT_PROMPT, MAX_MEMORIES, explicitRemember, isDuplicate, memoryBlock, parseFacts } from "@/lib/memory";
@@ -64,26 +65,12 @@ export async function POST(req: Request) {
 
   const messages: ChatMsg[] = [{ role: "system", content: SYSTEM_PROMPT + nowLine() + projectBlock(project) + memoryBlock(known) + memNote }, ...((history ?? []) as ChatMsg[]), { role: "user", content: text }];
 
-  const key = process.env.OPENROUTER_API_KEY;
-  if (!key) return Response.json({ error: "AI is not configured" }, { status: 503 });
-
-  const callAI = () => fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://gettarget.vercel.app",
-      "X-Title": "TARGET",
-    },
-    body: JSON.stringify({ model: MODELS[0], models: MODELS, messages, stream: true, reasoning: { effort: "low", exclude: true } }),
-  });
-  let upstream = await callAI();
-  if (!upstream.ok || !upstream.body) { await upstream.text().catch(() => ""); upstream = await callAI(); } // free models hiccup: retry once
-  if (!upstream.ok || !upstream.body) {
-    const detail = await upstream.text().catch(() => "");
-    if (upstream.status === 429)
-      return Response.json({ error: "TARGET's free AI quota for today is used up. It resets at 5:30 AM IST." }, { status: 429 });
-    return Response.json({ error: `AI error ${upstream.status}`, detail: detail.slice(0, 300) }, { status: 502 });
+  let upstream: Response;
+  try {
+    upstream = await llm({ messages, stream: true, timeoutMs: 30000 });
+  } catch (e) {
+    const err = e instanceof LLMError ? e : new LLMError("AI error", 502);
+    return Response.json({ error: err.message }, { status: err.status });
   }
 
   const encoder = new TextEncoder();
@@ -108,7 +95,7 @@ export async function POST(req: Request) {
       } finally {
         if (full && text.length >= 12 && !/```actions?/i.test(full)) {
           try {
-            const acts = mergeActions(heuristicActions(text), await suggestActions(key, text, full));
+            const acts = mergeActions(heuristicActions(text), await suggestActions(text, full));
             if (acts.length) {
               const blockText = "\n\n```actions\n" + JSON.stringify(acts) + "\n```";
               full += blockText;
@@ -122,7 +109,7 @@ export async function POST(req: Request) {
         }
         if (!explicit) {
           try {
-            const facts = await extractFacts(key, text, known);
+            const facts = await extractFacts(text, known);
             const fresh: string[] = [];
             for (const f of facts) if (!isDuplicate(f, [...known, ...fresh])) fresh.push(f);
             if (fresh.length && known.length < MAX_MEMORIES)
@@ -139,29 +126,16 @@ export async function POST(req: Request) {
   });
 }
 
-async function extractFacts(key: string, text: string, known: string[]): Promise<string[]> {
+async function extractFacts(text: string, known: string[]): Promise<string[]> {
   if (text.length < 8) return [];
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20000);
-  try {
-    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://gettarget.vercel.app", "X-Title": "TARGET" },
-      body: JSON.stringify({
-        model: MODELS[0], models: MODELS, reasoning: { effort: "low", exclude: true }, temperature: 0,
-        messages: [
-          { role: "system", content: EXTRACT_PROMPT },
-          { role: "user", content: `Already known:\n${known.slice(-50).map((k) => "- " + k).join("\n") || "(nothing)"}\n\nLatest user message:\n${text}` },
-        ],
-      }),
-    });
-    if (!r.ok) return [];
-    const j = await r.json();
-    return parseFacts(j.choices?.[0]?.message?.content ?? "");
-  } finally {
-    clearTimeout(timer);
-  }
+  const raw = await llmText({
+    temperature: 0, maxTokens: 300,
+    messages: [
+      { role: "system", content: EXTRACT_PROMPT },
+      { role: "user", content: `Already known:\n${known.slice(-50).map((k) => "- " + k).join("\n") || "(nothing)"}\n\nLatest user message:\n${text}` },
+    ],
+  });
+  return parseFacts(raw);
 }
 
 function nowLine(): string {
@@ -174,33 +148,21 @@ function nowLine(): string {
   return ` Current date-time: ${now} IST (UTC+05:30). Today = ${day(0)}; tomorrow ("kal") = ${day(1)}; day after ("parso") = ${day(2)}.`;
 }
 
-async function suggestActions(key: string, userText: string, reply: string): Promise<Action[]> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20000);
+async function suggestActions(userText: string, reply: string): Promise<Action[]> {
+  const raw = await llmText({
+    temperature: 0, maxTokens: 500,
+    messages: [
+      { role: "system", content: "You pick action buttons for a chat reply." + nowLine() + ACTIONS_PROMPT +
+        "\nReply with ONLY the JSON array (no fence, no prose). Return [] for small talk or when no button clearly helps." },
+      { role: "user", content: `User said:\n${userText}\n\nAssistant replied:\n${reply.slice(0, 3000)}` },
+    ],
+  });
   try {
-    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://gettarget.vercel.app", "X-Title": "TARGET" },
-      body: JSON.stringify({
-        model: MODELS[0], models: MODELS, reasoning: { effort: "low", exclude: true }, temperature: 0,
-        messages: [
-          { role: "system", content: "You pick action buttons for a chat reply." + nowLine() + ACTIONS_PROMPT +
-            "\nReply with ONLY the JSON array (no fence, no prose). Return [] for small talk or when no button clearly helps." },
-          { role: "user", content: `User said:\n${userText}\n\nAssistant replied:\n${reply.slice(0, 3000)}` },
-        ],
-      }),
-    });
-    if (!r.ok) return [];
-    const j = await r.json();
-    const raw: string = j.choices?.[0]?.message?.content ?? "";
     const m = raw.match(/\[[\s\S]*\]/);
     if (!m) return [];
     const arr = JSON.parse(m[0]);
     return (Array.isArray(arr) ? arr : []).map(sanitizeAction).filter((x): x is Action => !!x).slice(0, 3);
   } catch {
     return [];
-  } finally {
-    clearTimeout(timer);
   }
 }

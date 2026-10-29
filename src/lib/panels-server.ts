@@ -1,4 +1,4 @@
-import { MODELS } from "@/lib/ai";
+import { llmText } from "@/lib/llm";
 import type { Panel } from "@/lib/panels";
 
 async function getJSON(url: string, init?: RequestInit) {
@@ -37,21 +37,14 @@ export async function computePanelData(p: Pick<Panel, "kind" | "config">): Promi
       return { amount, currency: p.config.currency, symbol: p.config.symbol, source: "coinbase.com" };
     }
     case "ai": {
-      const key = process.env.OPENROUTER_API_KEY;
-      if (!key) throw new Error("AI is not configured");
       const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" });
-      const j = await getJSON("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://gettarget.vercel.app", "X-Title": "TARGET" },
-        body: JSON.stringify({
-          model: MODELS[0], models: MODELS, reasoning: { effort: "low", exclude: true },
-          messages: [
-            { role: "system", content: `You write the content of a small glanceable dashboard panel. Today is ${today}. Be concrete and short: at most 4 short lines or bullets, no preamble, plain markdown.` },
-            { role: "user", content: p.config.prompt },
-          ],
-        }),
+      const text = await llmText({
+        maxTokens: 400, timeoutMs: 25000,
+        messages: [
+          { role: "system", content: `You write the content of a small glanceable dashboard panel. Today is ${today}. Be concrete and short: at most 4 short lines or bullets, no preamble, plain markdown.` },
+          { role: "user", content: p.config.prompt },
+        ],
       });
-      const text = (j.choices?.[0]?.message?.content ?? "").trim();
       if (!text) throw new Error("AI returned nothing");
       return { text: text.slice(0, 1200) };
     }

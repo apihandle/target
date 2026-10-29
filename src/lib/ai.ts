@@ -5,10 +5,6 @@ export const SYSTEM_PROMPT =
   "Answer first, be specific and concise, take a side when asked for a recommendation. " +
   "Reply in the user's language and style (Hinglish if they write Hinglish). Use markdown when it helps.";
 
-// Free-tier models (account has no credits); first that answers wins. Override with OPENROUTER_MODEL.
-export const MODELS = (process.env.OPENROUTER_MODEL || "nvidia/nemotron-3.5-super-vl:free,nvidia/nemotron-3-ultra-550b-a55b:free,openrouter/free")
-  .split(",").map((m) => m.trim()).filter(Boolean);
-
 export function titleFrom(text: string): string {
   const t = text.replace(/\s+/g, " ").trim();
   return t.length > 48 ? t.slice(0, 47).trimEnd() + "…" : t || "New chat";
