@@ -4,7 +4,7 @@ import { useState } from "react";
 
 export type ConvItem = { id: string; title: string };
 
-export default function Sidebar({ conversations, activeId, email, section = "chat" }: { conversations: ConvItem[]; activeId?: string; email: string; section?: "chat" | "memory" | "projects" }) {
+export default function Sidebar({ conversations, activeId, email, section = "chat" }: { conversations: ConvItem[]; activeId?: string; email: string; section?: "chat" | "memory" | "projects" | "home" }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -16,8 +16,10 @@ export default function Sidebar({ conversations, activeId, email, section = "cha
           <span className="font-extrabold tracking-widest">TARGET</span>
         </div>
         <Link href="/app" data-testid="new-chat" onClick={() => setOpen(false)} className="mt-6 rounded-full bg-white py-2 text-center text-sm font-semibold text-black">+ New chat</Link>
+        <Link href="/app/home" data-testid="nav-home" onClick={() => setOpen(false)}
+          className={`mt-3 rounded-xl px-3 py-2 text-sm ${section === "home" ? "bg-white/10 text-white" : "text-white/60 hover:bg-white/5"}`}>🏠 Home</Link>
         <Link href="/app/memory" data-testid="nav-memory" onClick={() => setOpen(false)}
-          className={`mt-3 rounded-xl px-3 py-2 text-sm ${section === "memory" ? "bg-white/10 text-white" : "text-white/60 hover:bg-white/5"}`}>🧠 Memory</Link>
+          className={`rounded-xl px-3 py-2 text-sm ${section === "memory" ? "bg-white/10 text-white" : "text-white/60 hover:bg-white/5"}`}>🧠 Memory</Link>
         <Link href="/app/projects" data-testid="nav-projects" onClick={() => setOpen(false)}
           className={`rounded-xl px-3 py-2 text-sm ${section === "projects" ? "bg-white/10 text-white" : "text-white/60 hover:bg-white/5"}`}>📁 Projects</Link>
         <nav className="mt-4 flex-1 space-y-1 overflow-y-auto" data-testid="conv-list">
