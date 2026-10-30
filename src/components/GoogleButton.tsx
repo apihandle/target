@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-export default function GoogleButton({ next = "/app" }: { next?: string }) {
+export default function GoogleButton({ next = "/app", variant = "dark" }: { next?: string; variant?: "dark" | "light" }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -27,7 +27,11 @@ export default function GoogleButton({ next = "/app" }: { next?: string }) {
         data-testid="google-btn"
         onClick={go}
         disabled={loading}
-        className="flex w-full items-center justify-center gap-2 rounded-full bg-white py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:opacity-60"
+        className={
+          variant === "light"
+            ? "flex h-9 w-full items-center justify-center gap-2 rounded-[6px] border border-[#e2e0dc] bg-[#f2f0ec] text-[14px] font-medium text-[#1a1a1a] transition hover:bg-[#ebe8e2] disabled:opacity-60"
+            : "flex w-full items-center justify-center gap-2 rounded-full bg-white py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:opacity-60"
+        }
       >
         <svg aria-hidden width="18" height="18" viewBox="0 0 48 48">
           <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/>
@@ -37,7 +41,7 @@ export default function GoogleButton({ next = "/app" }: { next?: string }) {
         </svg>
         {loading ? "Opening Google…" : "Continue with Google"}
       </button>
-      {error && <p data-testid="google-error" className="mt-2 text-center text-xs text-rose-400">{error}</p>}
+      {error && <p data-testid="google-error" className="mt-2 text-center text-xs text-rose-500">{error}</p>}
     </>
   );
 }

@@ -15,7 +15,7 @@ describe("Feature 1: Hero (water redesign)", () => {
   it("renders cursive brand and glass sign up", () => {
     render(<Navbar />);
     expect(screen.getByLabelText("TARGET home")).toHaveTextContent("Target");
-    expect(screen.getByTestId("nav-signup")).toHaveAttribute("href", "/login");
+    expect(screen.getByTestId("nav-signup")).toHaveAttribute("href", "/login?mode=signup");
     expect(screen.getByTestId("nav-signup")).toHaveTextContent("Sign up");
   });
   it("renders headline, search bar and four chips", () => {
