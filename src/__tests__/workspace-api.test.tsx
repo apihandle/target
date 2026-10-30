@@ -16,7 +16,7 @@ import * as projectRoute from "@/app/api/projects/[id]/route";
 import * as panelRoute from "@/app/api/panels/[id]/route";
 import * as memoryRoute from "@/app/api/memories/[id]/route";
 import * as settingsRoute from "@/app/api/settings/route";
-import * as integrationsRoute from "@/app/api/integrations/route";
+import * as connectorsRoute from "@/app/api/connectors/route";
 import * as convRoute from "@/app/api/conversations/[id]/route";
 import { decideApproval, executeApproval, proposeAction } from "@/lib/server/approvals";
 import type { Db } from "@/lib/server/auth";
@@ -54,7 +54,7 @@ describe("authorization boundaries", () => {
       executeRoute.POST(req(), ctx(AP)), approvalsRoute.GET(new Request("http://t/api/approvals")),
       activityRoute.GET(new Request("http://t/api/activity")), projectsRoute.GET(new Request("http://t/api/projects")),
       panelRoute.PATCH(req({ title: "x" }), ctx(PN)), memoryRoute.PATCH(req({ content: "x y" }), ctx(M)),
-      settingsRoute.PATCH(req({ memory_enabled: false })), integrationsRoute.GET(), convRoute.DELETE(req(), ctx(C)),
+      settingsRoute.PATCH(req({ memory_enabled: false })), connectorsRoute.GET(), convRoute.DELETE(req(), ctx(C)),
     ]);
     expect(results.map((r) => r.status)).toEqual(Array(results.length).fill(401));
     expect(db.rows("approval_requests")[0].status).toBe("pending");
@@ -205,7 +205,7 @@ describe("approval enforcement", () => {
   });
 });
 
-describe("settings, panels and integrations endpoints", () => {
+describe("settings, panels and connectors endpoints", () => {
   it("saves memory toggle and validates quick actions", async () => {
     db.as(A);
     const r = await settingsRoute.PATCH(req({ memory_enabled: false }));
@@ -224,9 +224,9 @@ describe("settings, panels and integrations endpoints", () => {
 
   it("never reports an app as connected without a stored connection, and flags missing setup", async () => {
     db.as(A);
-    const j = await (await integrationsRoute.GET()).json();
-    const cal = j.integrations.find((i: { id: string }) => i.id === "google_calendar");
-    expect(cal.status).toBe("setup_required");
-    expect(j.integrations.some((i: { status: string }) => i.status === "connected")).toBe(false);
+    const j = await (await connectorsRoute.GET()).json();
+    const g = j.connectors.find((i: { id: string }) => i.id === "google");
+    expect(g.status).toBe("setup_required");
+    expect(j.connectors.some((i: { status: string }) => i.status === "connected")).toBe(false);
   });
 });

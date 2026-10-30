@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { ACTION_DEFS, STATUS_TEXT, type Approval } from "@/lib/approvals";
 
-const FIELD_LABEL: Record<string, string> = { title: "Title", notes: "Notes", name: "Name", description: "Purpose", start: "Starts", end: "Ends", location: "Location", details: "Details" };
+const FIELD_LABEL: Record<string, string> = { connector: "App", tool: "Action", args: "Details", title: "Title", notes: "Notes", name: "Name", description: "Purpose", start: "Starts", end: "Ends", location: "Location", details: "Details" };
 
 function fmt(k: string, v: unknown) {
   if ((k === "start" || k === "end") && typeof v === "string" && !isNaN(Date.parse(v)))
     return new Date(v).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) + " IST";
+  if (v && typeof v === "object") return JSON.stringify(v, null, 2);
   return String(v);
 }
 

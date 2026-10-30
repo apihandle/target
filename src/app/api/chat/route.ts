@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { SYSTEM_PROMPT, parseSSE, titleFrom, type ChatMsg } from "@/lib/ai";
+import { SYSTEM_PROMPT, titleFrom, type ChatMsg } from "@/lib/ai";
 import { llm, llmText, LLMError } from "@/lib/llm";
 import { ACTIONS_PROMPT, heuristicActions, mergeActions, sanitizeAction, type Action } from "@/lib/actions";
 import { projectBlock } from "@/lib/projects";
@@ -12,6 +12,12 @@ import { parseProposal, ACTION_DEFS } from "@/lib/approvals";
 import { connectedProviders, proposeAction } from "@/lib/server/approvals";
 import { logActivity } from "@/lib/server/activity";
 import type { Db } from "@/lib/server/auth";
+import type { LLMMessage } from "@/lib/llm";
+import { executeToolCall, loadToolsForUser, toOpenAITools, toolsPrompt, SEP, META_TOOL, type LoadedTool } from "@/lib/connectors/loadTools";
+import { getConnector } from "@/lib/connectors/registry";
+import { UNTRUSTED_RULES } from "@/lib/connectors/safety";
+import { checkLimit, LIMITS, tooMany } from "@/lib/connectors/rateLimit";
+import { runAgent, type ToolCall } from "@/lib/agent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,8 +28,9 @@ export async function POST(req: Request) {
   const db = supabase as unknown as Db;
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Not signed in" }, { status: 401 });
+  if (!(await checkLimit(LIMITS.chat(user.id)))) return tooMany();
 
-  let body: { conversationId?: unknown; projectId?: unknown; message?: unknown; web?: unknown; retry?: unknown; taskId?: unknown };
+  let body: { conversationId?: unknown; projectId?: unknown; message?: unknown; web?: unknown; retry?: unknown; taskId?: unknown; resume?: unknown };
   try { body = await req.json(); } catch { return Response.json({ error: "Bad JSON" }, { status: 400 }); }
   const text = (typeof body.message === "string" ? body.message : "").trim();
   if (!text) return Response.json({ error: "Empty message" }, { status: 400 });
@@ -47,10 +54,10 @@ export async function POST(req: Request) {
   }
 
   // Task being worked on from this chat (optional). Must belong to the user.
-  type TaskRef = { id: string; title: string; status: TaskStatus; project_id: string | null };
+  type TaskRef = { id: string; title: string; status: TaskStatus; project_id: string | null; needs_connector?: string | null; conversation_id?: string | null };
   let task: TaskRef | null = null;
   if (body.taskId) {
-    const { data: t } = await supabase.from("tasks").select("id, title, status, project_id").eq("id", body.taskId as string).eq("user_id", user.id).maybeSingle();
+    const { data: t } = await supabase.from("tasks").select("id, title, status, project_id, needs_connector, conversation_id").eq("id", body.taskId as string).eq("user_id", user.id).maybeSingle();
     if (!t) return Response.json({ error: "Task not found" }, { status: 404 });
     task = t as unknown as TaskRef;
     if (!conversationId && !projectId && task.project_id) projectId = task.project_id;
@@ -109,8 +116,16 @@ export async function POST(req: Request) {
   const taskNote = (openTasks ? tasksBlock(openTasks as { title: string; status: TaskStatus }[]) : "") +
     (task ? `\n\nThe user opened this chat to work on their task "${task.title}". Help them make concrete progress on it.` : "");
 
+  // Connectors: only tools of connectors this user has connected are offered to the model.
+  let loaded: { tools: LoadedTool[]; connected: Set<string> } = { tools: [], connected: new Set() };
+  try { loaded = await loadToolsForUser(user.id, db); } catch { /* connectors unavailable (e.g. migration 0007 not applied) */ }
+  const toolSpecs = toOpenAITools(loaded.tools, loaded.connected);
+  const resumed = body.resume === true && task?.needs_connector && loaded.connected.has(task.needs_connector) ? getConnector(task.needs_connector) : undefined;
+  const connectorNote = toolSpecs.length ? toolsPrompt(loaded.tools, loaded.connected) + UNTRUSTED_RULES : "";
+  const resumeNote = resumed ? `\n\nThe user has just connected ${resumed.name}. Continue the task that was paused waiting for it, using its tools.` : "";
+
   if (task) {
-    await supabase.from("tasks").update({ status: "planning", conversation_id: convId, error: null, progress: "TARGET is reading the context…", updated_at: new Date().toISOString() }).eq("id", task.id).eq("user_id", user.id);
+    await supabase.from("tasks").update({ status: "planning", needs_connector: null, conversation_id: convId, error: null, progress: "TARGET is reading the context…", updated_at: new Date().toISOString() }).eq("id", task.id).eq("user_id", user.id);
     await logActivity(db, user.id, { category: "task", title: `Started working on “${task.title}”`, status: "planning", task_id: task.id, project_id: task.project_id });
   }
 
@@ -130,8 +145,8 @@ export async function POST(req: Request) {
     webNote = "\n\n(The user asked for a web search, but web search isn't set up on this server. Say so briefly and answer from general knowledge, clearly labelled as possibly out of date.)";
   }
 
-  const messages: ChatMsg[] = [
-    { role: "system", content: SYSTEM_PROMPT + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote },
+  const messages: LLMMessage[] = [
+    { role: "system", content: SYSTEM_PROMPT + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + connectorNote + resumeNote },
     ...history, { role: "user", content: text },
   ];
 
@@ -142,8 +157,16 @@ export async function POST(req: Request) {
   };
 
   let upstream: Response;
+  let toolsOff = false;
   try {
-    upstream = await llm({ messages, stream: true, timeoutMs: 30000 });
+    try {
+      upstream = await llm({ messages, stream: true, timeoutMs: 30000, tools: toolSpecs.length ? toolSpecs : undefined });
+    } catch (e) {
+      // The model/provider can't do tool calling: ordinary chat still works, without connector tools.
+      if (!(e instanceof LLMError) || !e.toolsRejected) throw e;
+      toolsOff = true;
+      upstream = await llm({ messages: messages.map((m) => (m.role === "system" ? { ...m, content: String(m.content).replace(connectorNote, "") } : m)), stream: true, timeoutMs: 30000 });
+    }
   } catch (e) {
     const err = e instanceof LLMError ? e : new LLMError("AI error", 502);
     await failTask(err.message);
@@ -152,24 +175,44 @@ export async function POST(req: Request) {
   if (task) await supabase.from("tasks").update({ status: "in_progress", progress: "TARGET is writing a reply…", updated_at: new Date().toISOString() }).eq("id", task.id).eq("user_id", user.id);
 
   const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
   let cancelled = false;
-  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   const stream = new ReadableStream({
     async start(controller) {
       const send = (s: string) => { if (cancelled) return; try { controller.enqueue(encoder.encode(s)); } catch { cancelled = true; } };
-      reader = upstream.body!.getReader();
-      let buf = "";
       let full = "";
       let interrupted = false;
+      let paused = false;
       try {
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done || cancelled) break;
-          buf += decoder.decode(value, { stream: true });
-          const { deltas, rest } = parseSSE(buf);
-          buf = rest;
-          for (const d of deltas) { full += d; send(d); }
+        if (toolsOff && loaded.connected.size) { const n = "_(Connector tools aren't available with the AI model answering right now, so this reply can't use your connected apps.)_\n\n"; full += n; send(n); }
+        const result = await runAgent({
+          messages, first: upstream,
+          next: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 30000, tools: toolSpecs }),
+          onText: (d) => { full += d; send(d); },
+          label: (call: ToolCall) => toolLabel(call.function.name),
+          onTool: (call: ToolCall) => executeToolCall({ db, userId: user.id, projectId, conversationId: convId, taskId: task?.id ?? null }, call.function.name, call.function.arguments, loaded),
+          cancelled: () => cancelled,
+        });
+        if (result.interrupted && !cancelled) { interrupted = true; send("\n\n[connection interrupted]"); }
+        if (result.hitLimit) { const n = "\n\n_I stopped after several tool steps. Tell me to continue if you want me to keep going._"; full += n; send(n); }
+        if (result.pause?.kind === "needs_connection") {
+          paused = true;
+          const c = getConnector(result.pause.connector);
+          const name = c?.name ?? result.pause.connector;
+          const why = result.pause.status === "expired" ? `Your ${name} connection has expired.` : `To do this I need access to your ${name} account.`;
+          let taskId = task?.id ?? null;
+          const patch = { status: "needs_connection", needs_connector: result.pause.connector, conversation_id: convId, progress: `Waiting for you to connect ${name}.`, updated_at: new Date().toISOString() };
+          if (taskId) await supabase.from("tasks").update(patch).eq("id", taskId).eq("user_id", user.id);
+          else {
+            const { data: t } = await supabase.from("tasks").insert({ user_id: user.id, title: titleFrom(text), origin: "assistant", project_id: projectId, ...patch }).select("id").single();
+            taskId = (t?.id as string) ?? null;
+          }
+          await logActivity(db, user.id, { category: "task", title: `Paused: needs ${name}`, detail: "Connect it to let TARGET continue.", status: "needs_connection", task_id: taskId, project_id: projectId });
+          const block = `\n\n${why} ${result.pause.status === "expired" ? "Reconnect it" : "Connect it"} below and I'll pick up where I left off.\n\n\`\`\`actions\n${JSON.stringify([{ type: "connect", connector: result.pause.connector, ...(taskId ? { taskId } : {}) }])}\n\`\`\``;
+          full += block; send(block);
+        } else if (result.pause?.kind === "approval") {
+          paused = true;
+          const block = `\n\nI've prepared this for your approval: **${result.pause.summary.replace(/[*_`]/g, "")}**. Nothing happens until you approve it.\n\n\`\`\`actions\n${JSON.stringify([{ type: "approval", id: result.pause.approvalId }])}\n\`\`\``;
+          full += block; send(block);
         }
       } catch {
         if (!cancelled) { interrupted = true; send("\n\n[connection interrupted]"); }
@@ -206,7 +249,7 @@ export async function POST(req: Request) {
           await supabase.from("messages").insert({ conversation_id: convId, user_id: user.id, role: "assistant", content: full });
           await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId).eq("user_id", user.id);
         }
-        if (task) {
+        if (task && !paused) {
           if (interrupted || !full) await failTask(interrupted ? "The AI connection was interrupted." : "The AI returned an empty reply.");
           else {
             await supabase.from("tasks").update({ status: "in_progress", progress: cancelled ? "You stopped TARGET's reply." : "TARGET replied in chat. Review it, then mark the task done.", updated_at: new Date().toISOString() }).eq("id", task.id).eq("user_id", user.id);
@@ -226,9 +269,9 @@ export async function POST(req: Request) {
       }
     },
     cancel() {
-      // The browser pressed Stop (or went away): stop reading from the model.
+      // The browser pressed Stop (or went away): the agent loop sees `cancelled` and stops reading.
       cancelled = true;
-      reader?.cancel().catch(() => undefined);
+      upstream.body?.cancel().catch(() => undefined);
     },
   });
 
@@ -247,6 +290,14 @@ async function extractFacts(text: string, known: string[]): Promise<string[]> {
     ],
   });
   return parseFacts(raw);
+}
+
+/** "Supabase · run sql" for a tool step note. Never includes arguments (they may contain data). */
+function toolLabel(name: string): string {
+  if (name === META_TOOL) return "Checking which account is needed";
+  const [cid, t] = name.split(SEP);
+  const c = getConnector(cid ?? "");
+  return c && t ? `${c.name} · ${t.replace(/_/g, " ")}` : "Tool";
 }
 
 function nowLine(): string {
@@ -276,7 +327,7 @@ async function suggestActions(userText: string, reply: string): Promise<{ action
     const list = Array.isArray(arr) ? arr : [];
     const proposals = list.filter((x) => x && typeof x === "object" && x.type === "propose").map(parseProposal);
     // The model may not mint approval cards or limitation notes itself; only the server creates those.
-    const actions = list.filter((x) => x && typeof x === "object" && x.type !== "propose" && x.type !== "approval" && x.type !== "unavailable")
+    const actions = list.filter((x) => x && typeof x === "object" && x.type !== "propose" && x.type !== "approval" && x.type !== "unavailable" && x.type !== "connect")
       .map(sanitizeAction).filter((x): x is Action => !!x).slice(0, 3);
     return { actions, proposals };
   } catch {

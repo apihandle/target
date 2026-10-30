@@ -44,6 +44,11 @@ export default function TaskList({ initial, projectId, allowAdd = true, emptyTex
   }
 
   const chatHref = (t: Task) => `/app?t=${t.id}${t.project_id ? `&p=${t.project_id}` : ""}`;
+  /** After connecting, the user returns to the task's chat and it resumes. */
+  const connectHref = (t: Task) => {
+    const back = t.conversation_id ? `/app?c=${t.conversation_id}&resume=${t.id}` : `/app?t=${t.id}`;
+    return `/app/connectors?connect=${encodeURIComponent(t.needs_connector ?? "")}&return=${encodeURIComponent(back)}`;
+  };
 
   return (
     <div data-testid="task-list">
@@ -76,6 +81,8 @@ export default function TaskList({ initial, projectId, allowAdd = true, emptyTex
               <div className="flex flex-wrap items-center gap-1.5">
                 {t.status === "waiting_approval" ? (
                   <Link href="/app/activity?filter=approvals" className="text-xs text-warn underline">Review approval</Link>
+                ) : t.status === "needs_connection" && t.needs_connector ? (
+                  <Link href={connectHref(t)} data-testid="task-connect" className="rounded-full bg-accent px-3 py-1 text-xs font-semibold text-accent-ink hover:bg-accent-strong">Connect {t.needs_connector}</Link>
                 ) : (
                   <>
                     <Link href={chatHref(t)} data-testid="task-chat" className="rounded-full px-2.5 py-1 text-xs text-accent-strong hover:bg-surface-2">

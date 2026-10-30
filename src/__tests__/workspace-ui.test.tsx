@@ -4,12 +4,12 @@ import ApprovalCard from "@/components/ApprovalCard";
 import ActionButtons from "@/components/ActionButtons";
 import TaskList from "@/components/TaskList";
 import Chat from "@/components/Chat";
-import Connections from "@/components/Connections";
+import ConnectorsGrid from "@/components/ConnectorsGrid";
 import QuickActions from "@/components/QuickActions";
 import PanelHome from "@/components/PanelHome";
 import MemoryManager from "@/components/MemoryManager";
 import ProjectDetail from "@/components/ProjectDetail";
-import { integrationViews } from "@/lib/integrations/registry";
+import { connectorViews } from "@/lib/connectors/registry";
 import { DEFAULT_QUICK_ACTIONS } from "@/lib/settings";
 import type { Approval } from "@/lib/approvals";
 import type { Task } from "@/lib/tasks";
@@ -155,11 +155,11 @@ describe("chat controls", () => {
 
 describe("connected apps, quick actions, panels, memory", () => {
   it("shows Setup required (never Connected) when the server isn't configured", () => {
-    render(<Connections initial={integrationViews({}, [])} />);
-    const cal = screen.getAllByTestId("integration").find((e) => e.getAttribute("data-id") === "google_calendar")!;
-    expect(cal).toHaveTextContent("Setup required");
-    expect(cal).toHaveTextContent("GOOGLE_OAUTH_CLIENT_ID");
-    expect(screen.queryByTestId("integration-connect")).toBeNull();
+    render(<ConnectorsGrid initial={connectorViews({}, [])} />);
+    const g = screen.getAllByTestId("connector-card").find((e) => e.getAttribute("data-id") === "google")!;
+    expect(g).toHaveTextContent("Setup required");
+    expect(g).toHaveTextContent("GOOGLE_OAUTH_CLIENT_ID");
+    expect(screen.queryByTestId("connector-connect")).toBeNull();
     expect(screen.queryByText("Connected")).toBeNull();
   });
 
@@ -167,11 +167,11 @@ describe("connected apps, quick actions, panels, memory", () => {
     const f = vi.fn().mockResolvedValue(ok({ ok: true }));
     vi.stubGlobal("fetch", f);
     const env = { GOOGLE_OAUTH_CLIENT_ID: "a", GOOGLE_OAUTH_CLIENT_SECRET: "b", TOKEN_ENCRYPTION_KEY: "c", SUPABASE_SERVICE_ROLE_KEY: "d" };
-    render(<Connections initial={integrationViews(env, [{ provider: "google_calendar", account_label: "me@x.com" }])} />);
-    fireEvent.click(screen.getByTestId("integration-disconnect"));
-    fireEvent.click(screen.getByTestId("integration-disconnect-confirm"));
-    await waitFor(() => expect(screen.getByTestId("integration-connect")).toHaveAttribute("href", "/api/integrations/google_calendar/connect"));
-    expect(f).toHaveBeenCalledWith("/api/integrations/google_calendar", { method: "DELETE" });
+    render(<ConnectorsGrid initial={connectorViews(env, [{ connector_id: "google", status: "connected", scopes: [], account_label: "me@x.com" }])} />);
+    fireEvent.click(screen.getByTestId("connector-disconnect"));
+    fireEvent.click(screen.getByTestId("connector-disconnect-confirm"));
+    await waitFor(() => expect(screen.getAllByTestId("connector-connect").length).toBeGreaterThan(0));
+    expect(f).toHaveBeenCalledWith("/api/connectors/google/disconnect", { method: "POST" });
   });
 
   it("quick actions link to a pre-filled chat and can be hidden", async () => {

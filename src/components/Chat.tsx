@@ -25,9 +25,11 @@ type Props = {
   /** Pre-filled (not sent) text, e.g. from a quick action. */
   initialPrompt?: string;
   taskId?: string; taskTitle?: string;
+  /** Task paused for a connection that the user has just connected: continue it once on open. */
+  resumeTaskId?: string;
 };
 
-export default function Chat({ conversationId: initialId, initialMessages = [], projectId, projectName, aiConfigured = true, webAvailable = true, initialPrompt = "", taskId, taskTitle }: Props) {
+export default function Chat({ conversationId: initialId, initialMessages = [], projectId, projectName, aiConfigured = true, webAvailable = true, initialPrompt = "", taskId, taskTitle, resumeTaskId }: Props) {
   const router = useRouter();
   const [conversationId, setConversationId] = useState<string | undefined>(initialId);
   const [messages, setMessages] = useState<UIMsg[]>(initialMessages);
@@ -43,10 +45,16 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
 
   useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: "smooth" }); }, [messages]);
   useEffect(() => { if (initialPrompt) inputRef.current?.focus(); }, [initialPrompt]);
+  const resumed = useRef(false);
+  useEffect(() => {
+    if (!resumeTaskId || resumed.current || !aiConfigured) return;
+    resumed.current = true;
+    send("I've connected it. Please continue.", { resumeTaskId });
+  }, [resumeTaskId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function stop() { abortRef.current?.abort(); }
 
-  async function send(textArg?: string, opts: { retry?: boolean } = {}) {
+  async function send(textArg?: string, opts: { retry?: boolean; resumeTaskId?: string } = {}) {
     const text = (textArg ?? input).trim();
     if (!text || streaming || !aiConfigured) return;
     setError(null); setFailedText(null);
@@ -67,7 +75,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
           message: text,
           ...(web ? { web: true } : {}),
           ...(opts.retry && conversationId ? { retry: true } : {}),
-          ...(sendTask ? { taskId } : {}),
+          ...(opts.resumeTaskId ? { taskId: opts.resumeTaskId, resume: true } : sendTask ? { taskId } : {}),
         }),
       });
       if (sendTask) taskUsed.current = true;
@@ -91,7 +99,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
           return copy;
         });
       }
-      if (newId && newId !== initialId) router.replace(`/app?c=${newId}`);
+      if ((newId && newId !== initialId) || opts.resumeTaskId) router.replace(`/app?c=${newId ?? conversationId ?? ""}`);
       router.refresh();
     } catch (e) {
       if (ctrl.signal.aborted) {

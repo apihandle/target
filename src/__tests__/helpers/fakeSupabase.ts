@@ -11,7 +11,15 @@ type Filter = (r: Row) => boolean;
 export class FakeDb {
   tables: Record<string, Row[]> = {};
   uid: string | null = null;
+  /** Service-role view: bypasses RLS and column grants. */
+  bypass = false;
+  rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
+  rpcResult: unknown = true;
   constructor(seed: Record<string, Row[]> = {}) { for (const [k, v] of Object.entries(seed)) this.tables[k] = v.map((r) => ({ ...r })); }
+  /** A service-role client over the same tables (like createAdminClient()). */
+  private parent: FakeDb | null = null;
+  admin() { const a = new FakeDb(); a.tables = this.tables; a.bypass = true; a.parent = this; return a; }
+  async rpc(fn: string, args: Record<string, unknown>) { const root = this.parent ?? this; root.rpcCalls.push({ fn, args }); return { data: root.rpcResult, error: null }; }
   as(uid: string | null) { this.uid = uid; return this; }
   rows(t: string) { return (this.tables[t] ??= []); }
   get auth() { return { getUser: async () => ({ data: { user: this.uid ? { id: this.uid, email: `${this.uid}@x.test`, user_metadata: {}, app_metadata: {} } : null } }) }; }
@@ -35,10 +43,12 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
   private countMode = false; private head = false;
   private lim = Infinity;
   constructor(private db: FakeDb, private table: string) {}
-  private visible(r: Row) { return !("user_id" in r) || r.user_id === this.db.uid || this.table === "__admin"; }
-  select(_cols?: string, opts?: { count?: string; head?: boolean }) { if (this.op === "select") { this.countMode = !!opts?.count; this.head = !!opts?.head; } else this.returning = true; return this; }
+  private cols = "";
+  private conflict = "";
+  private visible(r: Row) { return this.db.bypass || !("user_id" in r) || r.user_id === this.db.uid || this.table === "__admin"; }
+  select(cols?: string, opts?: { count?: string; head?: boolean }) { this.cols = cols ?? "*"; if (this.op === "select") { this.countMode = !!opts?.count; this.head = !!opts?.head; } else this.returning = true; return this; }
   insert(p: Row | Row[]) { this.op = "insert"; this.payload = p; return this; }
-  upsert(p: Row | Row[]) { this.op = "upsert"; this.payload = p; return this; }
+  upsert(p: Row | Row[], opts?: { onConflict?: string }) { this.op = "upsert"; this.payload = p; this.conflict = opts?.onConflict ?? ""; return this; }
   update(p: Row) { this.op = "update"; this.payload = p; return this; }
   delete() { this.op = "delete"; return this; }
   eq(k: string, v: unknown) { this.filters.push((r) => r[k] === v); return this; }
@@ -52,6 +62,13 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   then<A = any, B = never>(ok?: ((v: any) => A | PromiseLike<A>) | null, bad?: ((e: unknown) => B | PromiseLike<B>) | null) { return Promise.resolve(this.run()).then(ok, bad); }
   private run(): { data: unknown; error: { message: string } | null; count?: number } {
+    // Simulates migration 0007's column grants: browser roles can't read connections.encrypted_credentials,
+    // can't insert/update connections, and can't touch the server-only tables at all.
+    if (!this.db.bypass) {
+      if (this.table === "connections" && (this.cols === "*" || /encrypted_credentials/.test(this.cols))) return { data: null, error: { message: "permission denied for column encrypted_credentials" } };
+      if (this.table === "connections" && (this.op === "insert" || this.op === "upsert" || this.op === "update")) return { data: null, error: { message: "permission denied for table connections" } };
+      if (["connection_secrets", "connector_oauth_states", "connector_rate_limits"].includes(this.table)) return { data: null, error: { message: `permission denied for table ${this.table}` } };
+    }
     const all = this.db.rows(this.table);
     const match = () => all.filter((r) => this.visible(r) && this.filters.every((f) => f(r)));
     const finish = (rows: Row[]) => {
@@ -68,10 +85,10 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
       const list = Array.isArray(this.payload) ? this.payload : [this.payload!];
       const out: Row[] = [];
       for (const p of list) {
-        if ("user_id" in p && p.user_id !== this.db.uid) return { data: null, error: { message: "RLS: user_id mismatch" } };
+        if (!this.db.bypass && "user_id" in p && p.user_id !== this.db.uid) return { data: null, error: { message: "RLS: user_id mismatch" } };
         if (this.table === "approval_requests" && p.status !== "pending") return { data: null, error: { message: "RLS: must start pending" } };
-        const key = this.table === "user_settings" ? "user_id" : "id";
-        const existing = this.op === "upsert" ? all.find((r) => r[key] === p[key]) : undefined;
+        const keys = this.conflict ? this.conflict.split(",") : [this.table === "user_settings" ? "user_id" : "id"];
+        const existing = this.op === "upsert" ? all.find((r) => keys.every((k) => r[k] === p[k])) : undefined;
         if (existing) { Object.assign(existing, p); out.push(existing); continue; }
         const row = { id: randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...(DEFAULTS[this.table] ?? {}), ...p };
         all.push(row); out.push(row);

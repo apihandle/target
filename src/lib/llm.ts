@@ -22,15 +22,31 @@ export function providers(env: Record<string, string | undefined> = process.env)
   return out;
 }
 
-export type LLMOpts = { messages: ChatMsg[]; stream?: boolean; temperature?: number; maxTokens?: number; timeoutMs?: number };
+/** Chat message incl. the OpenAI tool-calling shapes used by the connector agent loop. */
+export type LLMMessage = ChatMsg | {
+  role: "assistant" | "tool"; content: string | null;
+  tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[];
+  tool_call_id?: string;
+};
 
-export class LLMError extends Error { constructor(msg: string, public status: number) { super(msg); } }
+export type LLMOpts = {
+  messages: LLMMessage[]; stream?: boolean; temperature?: number; maxTokens?: number; timeoutMs?: number;
+  /** OpenAI-compatible function tools. Models/providers that reject them are skipped. */
+  tools?: unknown[];
+};
+
+export class LLMError extends Error {
+  /** True when every model refused the request while tools were attached (likely no tool-calling support). */
+  public toolsRejected = false;
+  constructor(msg: string, public status: number) { super(msg); }
+}
 
 /** Try each provider/model until one answers OK. Returns the raw Response (SSE when stream). */
 export async function llm(opts: LLMOpts): Promise<Response> {
   const ps = providers();
   if (!ps.length) throw new LLMError("AI is not configured", 503);
-  let last = 502, rateLimited = false;
+  let last = 502, rateLimited = false, toolRefusals = 0, attempts = 0;
+  const withTools = !!opts.tools?.length;
   for (const p of ps) {
     for (const model of p.models) {
       const ctrl = new AbortController();
@@ -43,18 +59,24 @@ export async function llm(opts: LLMOpts): Promise<Response> {
             model, messages: opts.messages, stream: !!opts.stream,
             ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
             max_tokens: Math.max(opts.maxTokens ?? 2048, p.minTokens ?? 0), ...(p.extra ?? {}),
+            ...(withTools ? { tools: opts.tools, tool_choice: "auto" } : {}),
           }),
         });
+        attempts++;
         if (r.ok && r.body) { clearTimeout(timer); return r; }
         last = r.status; if (r.status === 429) rateLimited = true;
+        // 400/404/422 with tools attached usually means "this model/route can't do tool calling".
+        if (withTools && (r.status === 400 || r.status === 404 || r.status === 422)) toolRefusals++;
         await r.text().catch(() => "");
-      } catch { last = 504; }
+      } catch { last = 504; attempts++; }
       clearTimeout(timer);
       // OpenRouter routes across its own list itself; one model attempt per provider is enough after a 429.
       if (p.name === "openrouter" && last === 429) break;
     }
   }
-  throw new LLMError(rateLimited && last === 429 ? "TARGET's free AI quota is used up for now. Try again later." : `AI error ${last}`, rateLimited && last === 429 ? 429 : 502);
+  const e = new LLMError(rateLimited && last === 429 ? "TARGET's free AI quota is used up for now. Try again later." : `AI error ${last}`, rateLimited && last === 429 ? 429 : 502);
+  e.toolsRejected = withTools && toolRefusals > 0 && !rateLimited && toolRefusals >= Math.ceil(attempts / 2);
+  throw e;
 }
 
 /** Non-streaming helper: returns the reply text ("" on any failure). */

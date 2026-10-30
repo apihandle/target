@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { actionLabel, calendarUrl, mapUrl, type Action } from "@/lib/actions";
 import ApprovalCard from "@/components/ApprovalCard";
+import ConnectCard from "@/components/ConnectCard";
 
 type State = "idle" | "busy" | "done" | "error";
 
@@ -30,7 +31,8 @@ export default function ActionButtons({ actions }: { actions: Action[] }) {
   const cls = "inline-flex items-center gap-1 rounded-full border border-line-strong bg-surface px-3 py-1.5 text-xs text-ink-soft no-underline transition hover:bg-surface-2 disabled:opacity-50";
   const approvals = actions.filter((a): a is Extract<Action, { type: "approval" }> => a.type === "approval");
   const limits = actions.filter((a): a is Extract<Action, { type: "unavailable" }> => a.type === "unavailable");
-  const buttons = actions.filter((a) => a.type !== "approval" && a.type !== "unavailable");
+  const connects = actions.filter((a): a is Extract<Action, { type: "connect" }> => a.type === "connect");
+  const buttons = actions.filter((a) => a.type !== "approval" && a.type !== "unavailable" && a.type !== "connect");
   return (
     <>
     {buttons.length > 0 && <div data-testid="actions" className="mt-3 flex flex-wrap gap-2">
@@ -50,6 +52,7 @@ export default function ActionButtons({ actions }: { actions: Action[] }) {
         <p className="mt-0.5">{l.reason}</p>
       </div>
     ))}
+    {connects.map((c) => <ConnectCard key={`${c.connector}-${c.taskId ?? ""}`} connector={c.connector} taskId={c.taskId} />)}
     {approvals.map((a) => <ApprovalCard key={a.id} id={a.id} />)}
     </>
   );

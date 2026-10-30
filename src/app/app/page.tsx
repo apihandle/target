@@ -6,7 +6,7 @@ import { isUuid } from "@/lib/ids";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Chat · TARGET" };
 
-export default async function ChatPage({ searchParams }: { searchParams: { c?: string; p?: string; q?: string; t?: string } }) {
+export default async function ChatPage({ searchParams }: { searchParams: { c?: string; p?: string; q?: string; t?: string; resume?: string } }) {
   const { supabase, user } = await getSessionOrRedirect("/app");
   const activeId = isUuid(searchParams.c) ? searchParams.c : undefined;
   let initial: UIMsg[] = [];
@@ -47,7 +47,8 @@ export default async function ChatPage({ searchParams }: { searchParams: { c?: s
       ) : (
         <Chat key={activeId ?? `new-${projectId ?? ""}-${taskId ?? ""}`} conversationId={activeId} initialMessages={initial}
           projectId={projectId} projectName={projectName} aiConfigured={providers().length > 0} webAvailable={!!process.env.TAVILY_API_KEY}
-          initialPrompt={prefill} taskId={taskId} taskTitle={taskTitle} />
+          initialPrompt={prefill} taskId={taskId} taskTitle={taskTitle}
+          resumeTaskId={activeId && isUuid(searchParams.resume) ? searchParams.resume : undefined} />
       )}
     </AppShell>
   );

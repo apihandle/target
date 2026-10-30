@@ -1,6 +1,6 @@
 import type { Db } from "@/lib/server/auth";
 import { ACTION_DEFS, APPROVAL_COLS, availability, type Approval, type Params, type Proposal } from "@/lib/approvals";
-import { getIntegration, isConfigured } from "@/lib/integrations/registry";
+import { getConnector, isConfigured } from "@/lib/connectors/registry";
 import { logActivity } from "@/lib/server/activity";
 
 export type ExecCtx = { db: Db; userId: string; projectId: string | null };
@@ -19,21 +19,26 @@ export const EXECUTORS: Record<string, Executor> = {
     return { project_id: data.id };
   },
   async calendar_event(p, { userId }) {
-    const { getAccessToken } = await import("@/lib/integrations/store");
-    const { createEvent } = await import("@/lib/integrations/google");
-    const token = await getAccessToken(userId, "google_calendar");
-    return await createEvent(token, { title: p.title, start: p.start, end: p.end, location: p.location, details: p.details });
+    const { getCredentials } = await import("@/lib/connectors/store");
+    const { createEvent, google } = await import("@/lib/connectors/google");
+    const { creds } = await getCredentials(userId, google);
+    return await createEvent(creds.access_token, { title: p.title, start: p.start, end: p.end, location: p.location, details: p.details });
+  },
+  /** A connector tool marked requiresApproval, proposed by the agent loop. Payload is immutable after creation. */
+  async connector_tool(p, { userId }) {
+    const { runApprovedTool } = await import("@/lib/connectors/loadTools");
+    return await runApprovedTool(userId, p as unknown as { connector: string; tool: string; args: unknown });
   },
 };
 
 export async function connectedProviders(db: Db, userId: string): Promise<Set<string>> {
-  const { data } = await db.from("connections").select("provider").eq("user_id", userId);
-  return new Set((data ?? []).map((r) => r.provider as string));
+  const { data } = await db.from("connections").select("connector_id, status").eq("user_id", userId);
+  return new Set((data ?? []).filter((r) => (r.status ?? "connected") === "connected").map((r) => r.connector_id as string));
 }
 
 export const providerConfigured = (env: Record<string, string | undefined> = process.env) => (id: string) => {
-  const i = getIntegration(id);
-  return !!i && isConfigured(i, env);
+  const c = getConnector(id);
+  return !!c && isConfigured(c, env);
 };
 
 /**

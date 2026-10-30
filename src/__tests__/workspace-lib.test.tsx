@@ -4,8 +4,9 @@ import { availability, canMoveApproval, parseProposal } from "@/lib/approvals";
 import { validatePanel, validateItems, validatePanelPatch, summarizePanel, isStale } from "@/lib/panels";
 import { validateQuickActions, resolveSettings, quickActionHref, DEFAULT_QUICK_ACTIONS } from "@/lib/settings";
 import { safeNext, isUuid } from "@/lib/ids";
-import { encryptSecret, decryptSecret, loadKey, signState, verifyState } from "@/lib/integrations/crypto";
-import { integrationViews } from "@/lib/integrations/registry";
+import { encryptSecret, decryptSecret, parseKey } from "@/lib/connectors/crypto";
+import { connectorViews } from "@/lib/connectors/registry";
+import { BUILTINS, builtinReady } from "@/lib/connectors/builtins";
 import { sanitizeAction, splitActions } from "@/lib/actions";
 import { validateProject } from "@/lib/projects";
 import { parseFilter } from "@/lib/activity";
@@ -48,7 +49,7 @@ describe("approval catalogue", () => {
     expect(availability("purchase", ctx()).available).toBe(false);
     expect(availability("calendar_event", ctx([], false))).toMatchObject({ available: false, reason: expect.stringMatching(/isn't set up/) });
     expect(availability("calendar_event", ctx([], true))).toMatchObject({ available: false, reason: expect.stringMatching(/Connect/) });
-    expect(availability("calendar_event", ctx(["google_calendar"], true)).available).toBe(true);
+    expect(availability("calendar_event", ctx(["google"], true)).available).toBe(true);
     expect(availability("rm_rf", ctx()).available).toBe(false);
   });
   it("validates proposals and writes its own summary", () => {
@@ -121,31 +122,25 @@ describe("settings, ids, projects", () => {
   });
 });
 
-describe("integration security helpers", () => {
-  const key = loadKey(Buffer.alloc(32, 7).toString("base64"));
+describe("connector security helpers", () => {
+  const key = parseKey(Buffer.alloc(32, 7).toString("base64"));
   it("encrypts tokens with AES-GCM and detects tampering", () => {
     const box = encryptSecret('{"access_token":"t"}', key);
     expect(box).not.toContain("access_token");
     expect(decryptSecret(box, key)).toBe('{"access_token":"t"}');
     const parts = box.split("."); parts[3] = parts[3].slice(0, -2) + (parts[3].endsWith("A") ? "BB" : "AA");
     expect(() => decryptSecret(parts.join("."), key)).toThrow();
-    expect(() => loadKey("short")).toThrow();
-  });
-  it("signs OAuth state", () => {
-    const s = signState({ uid: "u", provider: "google_calendar", nonce: "n" }, key);
-    expect(verifyState(s, key)).toEqual({ uid: "u", provider: "google_calendar", nonce: "n" });
-    expect(verifyState(s.replace(/.$/, (c) => (c === "A" ? "B" : "A")), key)).toBeNull();
-    expect(verifyState("garbage", key)).toBeNull();
+    expect(() => parseKey("short")).toThrow();
   });
   it("computes statuses from env and stored rows only", () => {
-    const none = integrationViews({}, []);
-    expect(none.find((i) => i.id === "ai_model")?.status).toBe("setup_required");
-    expect(none.find((i) => i.id === "gmail")?.status).toBe("unavailable");
+    const none = connectorViews({}, []);
+    expect(none.find((i) => i.id === "google")?.status).toBe("setup_required");
+    expect(builtinReady(BUILTINS.find((b) => b.id === "ai_model")!, {})).toBe(false);
     const env = { GOOGLE_OAUTH_CLIENT_ID: "a", GOOGLE_OAUTH_CLIENT_SECRET: "b", TOKEN_ENCRYPTION_KEY: "c", SUPABASE_SERVICE_ROLE_KEY: "d", OPENROUTER_API_KEY: "e" };
-    const configured = integrationViews(env, []);
-    expect(configured.find((i) => i.id === "google_calendar")?.status).toBe("not_connected");
-    expect(configured.find((i) => i.id === "ai_model")?.status).toBe("ready");
-    expect(integrationViews(env, [{ provider: "google_calendar", account_label: "me@x" }]).find((i) => i.id === "google_calendar")).toMatchObject({ status: "connected", accountLabel: "me@x" });
+    const configured = connectorViews(env, []);
+    expect(configured.find((i) => i.id === "google")?.status).toBe("not_connected");
+    expect(builtinReady(BUILTINS.find((b) => b.id === "ai_model")!, env)).toBe(true);
+    expect(connectorViews(env, [{ connector_id: "google", status: "connected", scopes: [], account_label: "me@x" }]).find((i) => i.id === "google")).toMatchObject({ status: "connected", accountLabel: "me@x" });
     expect(JSON.stringify(configured)).not.toMatch(/"a"|"b"|"d"/);
   });
 });

@@ -8,7 +8,9 @@ export type Action =
   /** A pending approval request created by the server. Details are always re-read from the server. */
   | { type: "approval"; id: string }
   /** An action the user asked for that this build can't perform; shown as a limitation, never as an approval. */
-  | { type: "unavailable"; label: string; reason: string };
+  | { type: "unavailable"; label: string; reason: string }
+  /** Created by the server when a task paused because a connector isn't connected. */
+  | { type: "connect"; connector: string; taskId?: string };
 
 export const ACTIONS_PROMPT = `
 
@@ -30,7 +32,7 @@ Rules: base buttons ONLY on what the user asks in their latest message, never on
 - The user wants to check/track something regularly (a price, weather, a date) -> ALWAYS a panel button (crypto {"symbol"}, weather {"city"}, countdown {"date"}).
 - Greetings, thanks, small talk, general questions -> [].`;
 
-const TYPES = new Set(["calendar", "map", "link", "memory", "panel", "copy", "approval", "unavailable"]);
+const TYPES = new Set(["calendar", "map", "link", "memory", "panel", "copy", "approval", "unavailable", "connect"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PANEL_KINDS = new Set(["weather", "countdown", "crypto", "ai", "note"]);
 const s = (v: unknown, max = 300) => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -60,6 +62,10 @@ export function sanitizeAction(raw: unknown): Action | null {
     }
     case "copy": { const text = s(a.text, 4000); return text ? { type: "copy", text, label: s(a.label, 40) || undefined } : null; }
     case "approval": { const id = s(a.id, 40); return UUID.test(id) ? { type: "approval", id } : null; }
+    case "connect": {
+      const connector = s(a.connector, 30), taskId = s(a.taskId, 40);
+      return /^[a-z][a-z0-9_]{1,29}$/.test(connector) ? { type: "connect", connector, ...(UUID.test(taskId) ? { taskId } : {}) } : null;
+    }
     case "unavailable": {
       const label = s(a.label, 80), reason = s(a.reason, 300);
       return label && reason ? { type: "unavailable", label, reason } : null;
@@ -112,6 +118,7 @@ export function actionLabel(a: Action): string {
     case "copy": return `📋 ${a.label ?? "Copy"}`;
     case "approval": return "Review action";
     case "unavailable": return a.label;
+    case "connect": return `Connect ${a.connector}`;
   }
 }
 

@@ -14,9 +14,10 @@ export function Badge({ tone = "neutral", children, className = "", ...rest }: {
 }
 
 const STATUS_TONE: Record<string, Tone> = {
-  queued: "neutral", planning: "info", in_progress: "info", waiting_approval: "warn", completed: "ok", failed: "danger", cancelled: "neutral",
+  queued: "neutral", planning: "info", in_progress: "info", waiting_approval: "warn", needs_connection: "warn", completed: "ok", failed: "danger", cancelled: "neutral",
   pending: "warn", approved: "info", executing: "info", executed: "ok", rejected: "neutral",
   active: "accent", paused: "neutral", archived: "neutral",
+  connected: "ok", expired: "warn", revoked: "danger", not_connected: "neutral", setup_required: "warn",
 };
 export const toneFor = (status: string | null | undefined): Tone => (status ? STATUS_TONE[status] ?? "neutral" : "neutral");
 

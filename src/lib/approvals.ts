@@ -36,6 +36,8 @@ type Def = {
   provider: string | null;
   /** Actions that can never be executed in this build. */
   unavailable?: string;
+  /** Created only by the server (connector agent loop); the model's action buttons can't propose it. */
+  internal?: boolean;
   validate(raw: Record<string, unknown>): { ok: true; params: Params } | { ok: false; error: string };
   describe(p: Params): { summary: string; destination: string };
 };
@@ -65,7 +67,7 @@ export const ACTION_DEFS: Record<string, Def> = {
     describe: (p) => ({ summary: `Create the project “${p.name}”`, destination: "TARGET · Projects" }),
   },
   calendar_event: {
-    label: "Add to Google Calendar", provider: "google_calendar",
+    label: "Add to Google Calendar", provider: "google",
     validate(r) {
       const title = cleanText(r.title, 120), start = cleanText(r.start, 60), end = cleanText(r.end, 60);
       if (!title) return { ok: false, error: "Event needs a title" };
@@ -76,6 +78,15 @@ export const ACTION_DEFS: Record<string, Def> = {
       return { ok: true, params: { title, start: startIso, end: endIso, location: cleanText(r.location, 200), details: cleanMultiline(r.details, 1000) } };
     },
     describe: (p) => ({ summary: `Add “${p.title}” on ${fmtWhen(p.start)}${p.location ? ` at ${p.location}` : ""}`, destination: "Your Google Calendar (primary)" }),
+  },
+  connector_tool: {
+    label: "Connector action", provider: null, internal: true,
+    validate(r) {
+      const connector = cleanText(r.connector, 30), tool = cleanText(r.tool, 60);
+      if (!/^[a-z][a-z0-9_]{1,29}$/.test(connector) || !/^[a-z][a-z0-9_]{1,59}$/.test(tool)) return { ok: false, error: "Bad connector action" };
+      return { ok: true, params: { connector, tool } };
+    },
+    describe: (p) => ({ summary: `${p.connector}: ${p.tool.replace(/_/g, " ")}`, destination: p.connector }),
   },
   send_email: {
     label: "Send an email", provider: "gmail",
@@ -106,7 +117,7 @@ export function availability(type: string, ctx: { connected: ReadonlySet<string>
   if (def.unavailable) return { available: false, reason: def.unavailable };
   if (def.provider) {
     if (!ctx.configured(def.provider)) return { available: false, reason: `${def.label} needs an integration that isn't set up on this TARGET server yet.` };
-    if (!ctx.connected.has(def.provider)) return { available: false, reason: `Connect your account in Settings → Connected apps to let TARGET ${def.label.toLowerCase()} (only after you approve).` };
+    if (!ctx.connected.has(def.provider)) return { available: false, reason: `Connect your account on the Connectors page to let TARGET ${def.label.toLowerCase()} (only after you approve).` };
   }
   return { available: true };
 }
@@ -119,7 +130,7 @@ export function parseProposal(raw: unknown): { ok: true; value: Proposal } | { o
   const r = raw as Record<string, unknown>;
   const action = typeof r.action === "string" ? r.action : "";
   const def = ACTION_DEFS[action];
-  if (!def) return { ok: false, error: "Unknown action" };
+  if (!def || def.internal) return { ok: false, error: "Unknown action" };
   const v = def.validate(r);
   if (!v.ok) return { ok: false, action, error: v.error };
   return { ok: true, value: { action, params: v.params, ...def.describe(v.params) } };

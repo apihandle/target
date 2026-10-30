@@ -1,27 +1,34 @@
 import { cleanMultiline, cleanText, isUuid } from "@/lib/ids";
 
-export const TASK_STATUSES = ["queued", "planning", "in_progress", "waiting_approval", "completed", "failed", "cancelled"] as const;
+export const TASK_STATUSES = ["queued", "planning", "in_progress", "waiting_approval", "needs_connection", "completed", "failed", "cancelled"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
 export type Task = {
   id: string; title: string; notes: string; status: TaskStatus; progress: string; error: string | null;
   origin: "user" | "assistant"; project_id: string | null; conversation_id: string | null;
+  /** Connector id the task is waiting on when status is needs_connection. */
+  needs_connector?: string | null;
   created_at?: string; updated_at?: string;
 };
 
-export const TASK_COLS = "id, title, notes, status, progress, error, origin, project_id, conversation_id, created_at, updated_at";
+export const TASK_COLS = "id, title, notes, status, progress, error, origin, project_id, conversation_id, needs_connector, created_at, updated_at";
 
 export const STATUS_LABEL: Record<TaskStatus, string> = {
-  queued: "Queued", planning: "Planning", in_progress: "In progress", waiting_approval: "Waiting for approval",
+  queued: "Queued", planning: "Planning", in_progress: "In progress", waiting_approval: "Waiting for approval", needs_connection: "Needs a connection",
   completed: "Completed", failed: "Failed", cancelled: "Cancelled",
 };
 
-/** Allowed lifecycle moves. "waiting_approval" is entered only by the server when an approval is requested. */
+/**
+ * Allowed lifecycle moves. "waiting_approval" is entered only by the server when an approval is requested;
+ * "needs_connection" only when the agent paused because a connector isn't connected (it resumes to
+ * planning/in_progress after the user connects).
+ */
 const TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   queued: ["planning", "in_progress", "completed", "cancelled"],
-  planning: ["in_progress", "waiting_approval", "failed", "cancelled"],
-  in_progress: ["planning", "waiting_approval", "completed", "failed", "cancelled"],
+  planning: ["in_progress", "waiting_approval", "needs_connection", "failed", "cancelled"],
+  in_progress: ["planning", "waiting_approval", "needs_connection", "completed", "failed", "cancelled"],
   waiting_approval: ["in_progress", "completed", "failed", "cancelled"],
+  needs_connection: ["planning", "in_progress", "failed", "cancelled"],
   completed: ["queued"],
   failed: ["queued", "planning", "in_progress", "cancelled"],
   cancelled: ["queued"],

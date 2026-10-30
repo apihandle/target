@@ -3,13 +3,14 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 export type ConvItem = { id: string; title: string };
-export type Section = "home" | "chat" | "projects" | "panels" | "activity" | "settings" | "memory";
+export type Section = "home" | "chat" | "projects" | "panels" | "activity" | "connectors" | "settings" | "memory";
 
 const NAV: { id: Section; href: string; label: string; icon: string }[] = [
   { id: "home", href: "/app/home", label: "Home", icon: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" },
   { id: "chat", href: "/app", label: "Chat", icon: "M4 5h16v11H8l-4 4z" },
   { id: "projects", href: "/app/projects", label: "Projects", icon: "M3 6h7l2 2h9v11H3z" },
   { id: "panels", href: "/app/panels", label: "Panels", icon: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" },
+  { id: "connectors", href: "/app/connectors", label: "Connectors", icon: "M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5" },
   { id: "activity", href: "/app/activity", label: "Activity", icon: "M3 12h4l3-7 4 14 3-7h4" },
   { id: "settings", href: "/app/settings", label: "Settings", icon: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19 12l2-1-2-4-2 .5-1.5-1L15 4h-6l-.5 2.5-1.5 1L5 7l-2 4 2 1v0l-2 1 2 4 2-.5 1.5 1L9 20h6l.5-2.5 1.5-1 2 .5 2-4z" },
 ];
