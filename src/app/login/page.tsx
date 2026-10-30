@@ -1,10 +1,11 @@
 import Link from "next/link";
 import AuthForm from "@/components/AuthForm";
+import { safeNext } from "@/lib/ids";
 
 export const metadata = { title: "Sign in · TARGET" };
 
 export default function LoginPage({ searchParams }: { searchParams: { email?: string; next?: string; error?: string } }) {
-  const next = searchParams.next?.startsWith("/") ? searchParams.next : "/app";
+  const next = safeNext(searchParams.next);
   return (
     <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-5">
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
