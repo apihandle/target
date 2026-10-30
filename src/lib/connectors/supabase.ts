@@ -33,7 +33,7 @@ order by 1, 2 limit 500;`;
 export const supabase = defineConnector({
   id: "supabase",
   name: "Supabase",
-  icon: "⚡",
+  icon: "S",
   description: "Query and change your Supabase databases, apply migrations and deploy Edge Functions.",
   auth: "api_key",
   scopes: ["projects:read", "database:read", "database:write", "edge_functions:write"],

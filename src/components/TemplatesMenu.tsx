@@ -59,7 +59,7 @@ export default function TemplatesMenu({ current, onPick, disabled }: { current: 
     <div ref={box} className="relative">
       <button type="button" data-testid="templates-btn" onClick={toggle} disabled={disabled} aria-expanded={open} aria-haspopup="dialog"
         className="h-8 rounded-full border border-line-strong bg-surface px-3 text-xs font-semibold text-muted hover:text-ink disabled:opacity-40">
-        ✦ Templates
+        Templates
       </button>
       {open && (
         <div role="dialog" aria-label="Prompt templates" data-testid="templates-menu"
@@ -95,7 +95,7 @@ export default function TemplatesMenu({ current, onPick, disabled }: { current: 
           ) : (
             <button type="button" data-testid="template-new" onClick={() => setEditing({ title: "", prompt: current })}
               className="mt-2 w-full rounded-lg border border-dashed border-line-strong px-2 py-1.5 text-xs text-muted hover:text-ink">
-              ＋ {current.trim() ? "Save current message as a template" : "New template"}
+              + {current.trim() ? "Save current message as a template" : "New template"}
             </button>
           )}
           {error && <p role="alert" className="px-2 pt-2 text-xs text-danger">{error}</p>}

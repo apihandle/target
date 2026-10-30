@@ -114,10 +114,10 @@ export function PanelBody({ p, onSaved, readOnly }: { p: Panel; onSaved?: (p: Pa
   switch (p.kind) {
     case "weather": {
       if (p.data == null || d.temp === undefined) return null;
-      const [label, icon] = weatherLabel(Number(d.code));
+      const [label] = weatherLabel(Number(d.code));
       return (
         <div data-testid="weather-body">
-          <div className="flex items-end gap-3"><span className="text-4xl" aria-hidden>{icon}</span><span className="text-4xl font-semibold">{Math.round(d.temp)}°</span></div>
+          <div className="flex items-end gap-3"><span className="text-4xl font-semibold">{Math.round(d.temp)}°</span></div>
           <p className="mt-1 text-sm text-ink-soft">{label} · H {Math.round(d.high)}° L {Math.round(d.low)}°{d.rain != null ? ` · ${d.rain}% rain` : ""}</p>
           <p className="mt-1 text-xs text-muted">{d.place}</p>
         </div>

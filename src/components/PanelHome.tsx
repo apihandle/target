@@ -8,14 +8,14 @@ import { isStale, type Panel, type PanelKind } from "@/lib/panels";
 
 type TypeDef = { kind: PanelKind; label: string; hint: string; field?: string; placeholder?: string; input?: string; group: "mine" | "live" };
 const TYPES: TypeDef[] = [
-  { kind: "weather", label: "🌤️ Weather", hint: "Live forecast from open-meteo.com.", field: "city", placeholder: "City, e.g. Patna", group: "live" },
+  { kind: "weather", label: "Weather", hint: "Live forecast from open-meteo.com.", field: "city", placeholder: "City, e.g. Patna", group: "live" },
   { kind: "countdown", label: "⏳ Countdown", hint: "Days until (or since) a date.", field: "date", placeholder: "", input: "date", group: "mine" },
   { kind: "crypto", label: "₿ Crypto price", hint: "Spot price from coinbase.com.", field: "symbol", placeholder: "Coin, e.g. BTC", group: "live" },
-  { kind: "ai", label: "✨ AI panel", hint: "AI-written text, refreshed daily. Can be wrong; not connected to any account.", field: "prompt", placeholder: "e.g. A motivating quote for today", group: "live" },
-  { kind: "note", label: "📝 Note", hint: "Text you keep in sight.", field: "text", placeholder: "Anything to keep in sight", group: "mine" },
-  { kind: "list", label: "☑️ List", hint: "A checklist you maintain by hand.", group: "mine" },
-  { kind: "tracker", label: "🗂️ Task tracker", hint: "To do / doing / done, maintained by you.", group: "mine" },
-  { kind: "goal", label: "🎯 Goal", hint: "A target number and progress you log.", field: "target", placeholder: "Target, e.g. 50", input: "number", group: "mine" },
+  { kind: "ai", label: "AI panel", hint: "AI-written text, refreshed daily. Can be wrong; not connected to any account.", field: "prompt", placeholder: "e.g. A motivating quote for today", group: "live" },
+  { kind: "note", label: "Note", hint: "Text you keep in sight.", field: "text", placeholder: "Anything to keep in sight", group: "mine" },
+  { kind: "list", label: "List", hint: "A checklist you maintain by hand.", group: "mine" },
+  { kind: "tracker", label: "Task tracker", hint: "To do / doing / done, maintained by you.", group: "mine" },
+  { kind: "goal", label: "Goal", hint: "A target number and progress you log.", field: "target", placeholder: "Target, e.g. 50", input: "number", group: "mine" },
 ];
 
 const FILTERS = [

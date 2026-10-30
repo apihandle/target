@@ -110,12 +110,12 @@ export function mapUrl(query: string): string {
 
 export function actionLabel(a: Action): string {
   switch (a.type) {
-    case "calendar": return `📅 Add “${a.title}” to calendar`;
-    case "map": return `📍 ${a.label ?? a.query}`;
-    case "link": return `🔗 ${a.label}`;
-    case "memory": return "🧠 Remember this";
-    case "panel": return `➕ Add ${a.title ?? a.kind} panel to Home`;
-    case "copy": return `📋 ${a.label ?? "Copy"}`;
+    case "calendar": return `Add “${a.title}” to calendar`;
+    case "map": return `${a.label ?? a.query}`;
+    case "link": return `${a.label}`;
+    case "memory": return "Remember this";
+    case "panel": return `Add ${a.title ?? a.kind} panel to Home`;
+    case "copy": return `${a.label ?? "Copy"}`;
     case "approval": return "Review action";
     case "unavailable": return a.label;
     case "connect": return `Connect ${a.connector}`;

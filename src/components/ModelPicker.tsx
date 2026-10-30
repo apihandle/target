@@ -18,7 +18,7 @@ export default function ModelPicker({ options, value, onChange, disabled }: { op
       <select data-testid="model-picker" value={value} disabled={disabled} onChange={(e) => pick(e.target.value)}
         title="Which AI model answers first. If it's unavailable, TARGET falls back to the others."
         className="h-8 max-w-[11rem] truncate rounded-full border border-line-strong bg-surface px-2 text-xs text-ink-soft outline-none focus:border-accent sm:max-w-[14rem]">
-        {options.map((o) => <option key={o.id} value={o.id}>{o.label}{o.vision ? " 👁" : ""}</option>)}
+        {options.map((o) => <option key={o.id} value={o.id}>{o.label}{o.vision ? " (vision)" : ""}</option>)}
       </select>
     </label>
   );

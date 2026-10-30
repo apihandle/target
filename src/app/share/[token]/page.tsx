@@ -49,7 +49,7 @@ export default async function SharedChatPage({ params }: { params: { token: stri
             <div key={i} data-testid={`share-msg-${m.role}`} className={m.role === "user" ? "flex flex-col items-end" : ""}>
               {!!m.attachments?.length && (
                 <ul className="mb-1 flex flex-wrap justify-end gap-1.5" aria-label="Attachments">
-                  {m.attachments.map((f, j) => <li key={j} className="rounded-full border border-line-strong bg-surface px-2.5 py-0.5 text-[11px] text-muted">📎 {f.name}</li>)}
+                  {m.attachments.map((f, j) => <li key={j} className="rounded-full border border-line-strong bg-surface px-2.5 py-0.5 text-[11px] text-muted">{f.name}</li>)}
                 </ul>
               )}
               {m.role === "user" ? (
