@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* In-memory stand-in for the Supabase client, used to test route handlers end to end.
  * It simulates row-level security (rows are only visible to their user_id owner) and
  * the approval_requests guard trigger from migration 0006. */

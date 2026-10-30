@@ -28,7 +28,7 @@ export default async function PrivacyPage() {
             <p><strong className="text-ink">AI and search providers.</strong> To answer you, your message, the chat history, project instructions, open task titles and (if memory is on) your saved memories are sent to the configured AI provider (NVIDIA NIM or OpenRouter). When web search runs, a query based on your message is sent to Tavily. Their own privacy terms apply.</p>
             <p><strong className="text-ink">Passwords and cards.</strong> Sign-in is handled by Supabase Auth; TARGET never sees or stores your password. TARGET doesn&apos;t ask for or store payment cards. Don&apos;t paste passwords, card numbers or API keys into chat: chat text is stored like any other message.</p>
             <p><strong className="text-ink">Connected apps.</strong> If you connect an app (e.g. Google Calendar), its access tokens are encrypted on the server (AES-256-GCM) and kept in a table browsers can&apos;t read. Disconnecting revokes access with the provider where possible and deletes the stored tokens.</p>
-            <p><strong className="text-ink">Ads.</strong> The public homepage shows ads from a third-party network (Monetag). Ads aren&apos;t shown inside this signed-in workspace, and your workspace data isn&apos;t shared with advertisers.</p>
+            <p><strong className="text-ink">Ads.</strong> TARGET&apos;s public pages show ads from a third-party network (Monetag), which may use cookies. The ad script is set up not to load on workspace (/app), sign-in or auth pages, and TARGET doesn&apos;t share your chats, memories or projects with advertisers.</p>
           </Card>
         </section>
 
