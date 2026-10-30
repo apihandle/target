@@ -62,7 +62,7 @@ export default function AuthForm({ initialEmail = "", next = "/app", initialMode
   }
 
   const input =
-    "h-10 w-full rounded-[10px] border border-white/10 bg-white/[0.06] px-3.5 text-[14px] text-stucco outline-none transition placeholder:text-stucco/40 focus:border-sky-accent/60 focus:ring-2 focus:ring-sky-accent/20";
+    "h-10 w-full rounded-[10px] border border-white/10 bg-white/[0.06] px-3.5 text-[14px] text-stucco outline-none transition placeholder:text-stucco/40 focus:border-sun-glint/60 focus:ring-2 focus:ring-sun-glint/20";
 
   return (
     <div className="w-full max-w-[448px] overflow-hidden rounded-[18px] border border-white/10 bg-black/40 text-stucco shadow-[0_30px_80px_-20px_rgba(0,0,0,0.8)] backdrop-blur-xl">
@@ -125,7 +125,7 @@ export default function AuthForm({ initialEmail = "", next = "/app", initialMode
             data-testid="auth-submit"
             type="submit"
             disabled={loading}
-            className="flex h-10 w-full items-center justify-center gap-1.5 rounded-[10px] bg-sea text-[14px] font-medium text-white transition hover:bg-[#0d4982] disabled:opacity-60"
+            className="flex h-10 w-full items-center justify-center gap-1.5 rounded-[10px] bg-sun-glint text-[14px] font-medium text-deep-sea transition hover:bg-[#f0d6a4] disabled:opacity-60"
           >
             {loading ? "Please wait…" : "Continue"}
             {!loading && <span aria-hidden="true" className="text-[10px]">▶</span>}
@@ -139,7 +139,7 @@ export default function AuthForm({ initialEmail = "", next = "/app", initialMode
         {mode === "signin" ? (
           <p>
             Don&apos;t have an account?{" "}
-            <button type="button" data-testid="tab-signup" onClick={() => switchTo("signup")} className="font-medium text-sky-accent hover:text-stucco">
+            <button type="button" data-testid="tab-signup" onClick={() => switchTo("signup")} className="font-medium text-sun-glint hover:text-stucco">
               Create one here
             </button>
             .
@@ -147,7 +147,7 @@ export default function AuthForm({ initialEmail = "", next = "/app", initialMode
         ) : (
           <p>
             Already have an account?{" "}
-            <button type="button" data-testid="tab-signin" onClick={() => switchTo("signin")} className="font-medium text-sky-accent hover:text-stucco">
+            <button type="button" data-testid="tab-signin" onClick={() => switchTo("signin")} className="font-medium text-sun-glint hover:text-stucco">
               Sign in here
             </button>
             .
@@ -155,7 +155,7 @@ export default function AuthForm({ initialEmail = "", next = "/app", initialMode
         )}
         <p>
           Or go back to the{" "}
-          <Link href="/" className="font-medium text-sky-accent hover:text-stucco">homepage</Link>.
+          <Link href="/" className="font-medium text-sun-glint hover:text-stucco">homepage</Link>.
         </p>
       </div>
     </div>

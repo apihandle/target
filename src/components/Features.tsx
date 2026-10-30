@@ -86,7 +86,7 @@ function Preview({ user, bot, prompt }: { user: string; bot: string; prompt: str
         <span className="ml-3 font-script text-[18px] leading-none text-stucco/70">Target</span>
       </div>
       <div className="space-y-3 p-4">
-        <div className="ml-auto w-fit max-w-[80%] rounded-[14px] rounded-br-[4px] bg-sea px-3.5 py-2.5 text-[13px] leading-[1.4] text-white">{user}</div>
+        <div className="ml-auto w-fit max-w-[80%] rounded-[14px] rounded-br-[4px] border border-sun-glint/20 bg-sun-glint/15 px-3.5 py-2.5 text-[13px] leading-[1.4] text-stucco">{user}</div>
         <div className="w-fit max-w-[85%] rounded-[14px] rounded-bl-[4px] bg-stucco/[0.07] px-3.5 py-2.5 text-[13px] leading-[1.45] text-stucco/85">{bot}</div>
         <div className="flex items-center justify-between rounded-full border border-white/[0.08] bg-white/[0.03] py-1.5 pl-4 pr-1.5 text-[13px] text-stucco/35">
           {prompt}
@@ -124,7 +124,7 @@ export default function Features() {
               </div>
               <h3 className="mt-5 max-w-[450px] font-display text-[26px] font-normal leading-[1.15] text-stucco md:text-[32px]">{f.title}</h3>
               <p className="mt-3 max-w-[450px] text-[15px] leading-[1.55] text-stucco/60 md:text-[16px]">{f.body}</p>
-              <a href={f.href} className="mt-7 inline-flex w-fit items-center gap-2 rounded-[10px] bg-sea px-4 py-3 text-[15px] leading-none text-white transition hover:bg-[#0d4982]">
+              <a href={f.href} className="mt-7 inline-flex w-fit items-center gap-2 rounded-[10px] bg-sun-glint px-4 py-3 text-[15px] leading-none text-deep-sea transition hover:bg-[#f0d6a4]">
                 {f.cta} <span aria-hidden="true" className="transition group-hover:translate-x-0.5">→</span>
               </a>
             </div>
