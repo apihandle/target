@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * Full-screen realistic moving-water background (WebGL caustics + slow swell),
+ * Full-screen realistic moving-water background: a night lake surface with
+ * rippling crests and warm golden light glints (WebGL),
  * with a dark cinematic tint/vignette and a bottom-right pause/play toggle.
  * Falls back to a static deep-water gradient when WebGL is unavailable.
  * Starts paused for users who prefer reduced motion.
@@ -18,37 +19,63 @@ precision mediump float;
 #endif
 uniform vec2 u_res;
 uniform float u_time;
-#define TAU 6.28318530718
-#define MAX_ITER 5
 
-float caustic(vec2 uv, float time){
-  vec2 p = uv * TAU - 250.0;
-  vec2 i = p;
-  float c = 1.0;
-  float inten = 0.005;
-  for (int n = 0; n < MAX_ITER; n++) {
-    float t = time * (1.0 - (3.5 / float(n + 1)));
-    i = p + vec2(cos(t - i.x) + sin(t + i.y), sin(t - i.y) + cos(t + i.x));
-    c += 1.0 / length(vec2(p.x / (sin(i.x + t) / inten), p.y / (cos(i.y + t) / inten)));
+float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float noise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+             mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float height(vec2 p, float t){
+  vec2 q = vec2(p.x * 0.55, p.y * 1.8);
+  float h = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) {
+    float fi = float(i);
+    h += a * noise(q + vec2(t * 0.15 * (fi + 1.0), -t * (0.35 + 0.12 * fi)));
+    q = q * 2.07 + vec2(1.7, 9.2);
+    a *= 0.5;
   }
-  c /= float(MAX_ITER);
-  c = 1.17 - pow(c, 1.4);
-  return pow(abs(c), 8.0);
+  h += 0.08 * sin(p.y * 2.6 - t * 0.9 + sin(p.x * 0.7) * 1.2);
+  return h;
 }
 
 void main(){
-  vec2 uv = gl_FragCoord.xy / u_res.y;
-  vec2 q  = gl_FragCoord.xy / u_res;
-  float time = u_time * 0.35 + 23.0;
-  vec2 swell = vec2(sin(uv.y * 3.0 + time * 0.6), cos(uv.x * 2.5 + time * 0.5)) * 0.015;
-  float c1 = caustic(uv * 0.9 + swell, time);
-  float c2 = caustic(uv * 1.6 - swell * 1.5 + 0.37, time * 0.8);
-  float light = c1 * 0.7 + c2 * 0.3;
-  vec3 deep = vec3(0.01, 0.05, 0.09);
-  vec3 mid  = vec3(0.03, 0.20, 0.30);
-  vec3 col = mix(deep, mid, smoothstep(0.0, 1.2, q.y)) + vec3(0.45, 0.80, 0.95) * light * 0.55;
+  vec2 uv = gl_FragCoord.xy / u_res;
+  float aspect = u_res.x / u_res.y;
+  float horizon = 1.55;
+  float depth = 1.0 / (horizon - uv.y);
+  vec2 p = vec2((uv.x - 0.5) * aspect * depth * 2.2, depth * 4.2);
+  float t = u_time;
+
+  float e = 0.02 * depth;
+  float h  = height(p, t);
+  float hx = height(p + vec2(e, 0.0), t) - h;
+  float hy = height(p + vec2(0.0, e), t) - h;
+  vec2 g = vec2(hx, hy) / e;
+
+  // facet facing viewer reflects the brighter sky; facing away reflects dark water
+  float tilt = g.y * 0.30 / depth;
+  float sky = clamp(0.5 + tilt * 1.1, 0.0, 1.0);
+
+  vec3 dark = vec3(0.020, 0.032, 0.042);
+  vec3 lit  = vec3(0.17, 0.25, 0.31);
+  vec3 col = mix(dark, lit, smoothstep(0.15, 0.95, sky));
+
+  // golden glints: distant lights reflected on crests, concentrated toward the top and right
+  float cols = smoothstep(0.25, 0.70, noise(vec2(uv.x * 6.0 + 3.0, 0.5)));
+  float lights = smoothstep(0.30, 0.90, uv.y) * cols * 1.2;
+  lights += 0.8 * smoothstep(0.6, 1.0, uv.x) * smoothstep(0.2, 0.65, uv.y) * smoothstep(0.3, 0.7, noise(vec2(uv.x * 9.0, uv.y * 4.0)));
+  float crest = smoothstep(0.70, 0.95, sky) * smoothstep(0.25, 0.65, noise(p * vec2(2.5, 9.0) + vec2(0.0, -t * 0.8)));
+  float glint = crest * clamp(lights, 0.0, 1.0);
+  col += vec3(0.95, 0.66, 0.30) * glint * 1.1;
+
+  // haze toward the horizon, darker foreground
+  col = mix(col, vec3(0.10, 0.13, 0.15), smoothstep(0.75, 1.0, uv.y) * 0.25);
+  col *= mix(0.65, 1.0, smoothstep(0.0, 0.6, uv.y));
   gl_FragColor = vec4(col, 1.0);
-}`;
+}
+`;
 
 function WaterCanvas({ playing }: { playing: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -103,7 +130,7 @@ function WaterCanvas({ playing }: { playing: boolean }) {
 
     const draw = () => {
       g.uniform2f(uRes, canvas.width, canvas.height);
-      g.uniform1f(uTime, simTime);
+      g.uniform1f(uTime, simTime * 0.6);
       g.drawArrays(g.TRIANGLES, 0, 3);
     };
 
@@ -145,7 +172,7 @@ function WaterCanvas({ playing }: { playing: boolean }) {
   }, []);
 
   if (failed) {
-    return <div data-testid="water-fallback" className="fixed inset-0 -z-20 bg-gradient-to-b from-[#02121c] via-[#06283a] to-[#0a3a4f]" />;
+    return <div data-testid="water-fallback" className="fixed inset-0 -z-20 bg-gradient-to-b from-[#1b252d] via-[#0d151b] to-[#05090c]" />;
   }
   return <canvas ref={canvasRef} aria-hidden="true" data-testid="water-canvas" className="fixed left-0 top-0 -z-20 block h-full w-full" />;
 }
@@ -160,11 +187,11 @@ export default function WaterBackground() {
   return (
     <>
       <WaterCanvas playing={playing} />
-      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 bg-black/50" />
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 bg-black/30" />
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 -z-10"
-        style={{ background: "radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(0,0,0,0.75) 100%)" }}
+        style={{ background: "radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.6) 100%)" }}
       />
       <button
         type="button"
@@ -172,12 +199,12 @@ export default function WaterBackground() {
         onClick={() => setPlaying((p) => !p)}
         aria-label={playing ? "Pause water motion" : "Play water motion"}
         aria-pressed={!playing}
-        className="fixed bottom-5 right-5 z-40 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white backdrop-blur-md transition-all hover:bg-white/20"
+        className="fixed bottom-6 right-6 z-40 flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white/70 backdrop-blur-md transition-all hover:bg-white/20 hover:text-white md:bottom-14 md:right-10"
       >
         {playing ? (
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
         ) : (
-          <svg viewBox="0 0 24 24" className="h-4 w-4 translate-x-[1px]" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z" /></svg>
+          <svg viewBox="0 0 24 24" className="h-3 w-3 translate-x-[1px]" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z" /></svg>
         )}
       </button>
     </>
