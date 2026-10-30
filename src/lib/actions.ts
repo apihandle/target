@@ -4,7 +4,11 @@ export type Action =
   | { type: "link"; url: string; label: string }
   | { type: "memory"; content: string }
   | { type: "panel"; kind: "weather" | "countdown" | "crypto" | "ai" | "note"; title?: string; config: Record<string, string> }
-  | { type: "copy"; text: string; label?: string };
+  | { type: "copy"; text: string; label?: string }
+  /** A pending approval request created by the server. Details are always re-read from the server. */
+  | { type: "approval"; id: string }
+  /** An action the user asked for that this build can't perform; shown as a limitation, never as an approval. */
+  | { type: "unavailable"; label: string; reason: string };
 
 export const ACTIONS_PROMPT = `
 
@@ -15,12 +19,19 @@ ACTION BUTTONS: choose up to 3 one-tap buttons for concrete next steps the reply
 - {"type":"memory","content":"short fact about the user"}  (when the user shares a lasting personal fact)
 - {"type":"panel","kind":"weather|countdown|crypto|ai|note","title":"…","config":{…}}  (weather {"city"}, countdown {"date":"YYYY-MM-DD"}, crypto {"symbol":"BTC"}, ai {"prompt"}, note {"text"}) for things worth tracking on their Home
 - {"type":"copy","label":"Copy message","text":"…"}  (a draft the user will paste somewhere)
+- {"type":"propose","action":"create_task","title":"…","notes":"…"}  (the user asks TARGET to add/track a to-do)
+- {"type":"propose","action":"create_project","name":"…","description":"…"}  (the user wants to start a longer effort as a project)
+- {"type":"propose","action":"calendar_event","title":"…","start":"…","end":"…","location":"…"}  (the user asks TARGET itself to put an event on their Google Calendar)
+- {"type":"propose","action":"send_email","to":"…","subject":"…"}  (the user asks TARGET to send an email/message for them; also add a copy button with the draft)
+- {"type":"propose","action":"purchase"} or {"type":"propose","action":"booking"}  (the user asks TARGET to buy, book or cancel something for them)
+"propose" buttons are only proposals: the app asks the user to approve, or explains that the action isn't available.
 Rules: base buttons ONLY on what the user asks in their latest message, never on older context.
 - A specific date/time being planned -> calendar button. A named place to visit -> map button.
 - The user wants to check/track something regularly (a price, weather, a date) -> ALWAYS a panel button (crypto {"symbol"}, weather {"city"}, countdown {"date"}).
 - Greetings, thanks, small talk, general questions -> [].`;
 
-const TYPES = new Set(["calendar", "map", "link", "memory", "panel", "copy"]);
+const TYPES = new Set(["calendar", "map", "link", "memory", "panel", "copy", "approval", "unavailable"]);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PANEL_KINDS = new Set(["weather", "countdown", "crypto", "ai", "note"]);
 const s = (v: unknown, max = 300) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
@@ -48,6 +59,11 @@ export function sanitizeAction(raw: unknown): Action | null {
       return { type: "panel", kind: a.kind as Extract<Action, { type: "panel" }>["kind"], title: s(a.title, 80) || undefined, config };
     }
     case "copy": { const text = s(a.text, 4000); return text ? { type: "copy", text, label: s(a.label, 40) || undefined } : null; }
+    case "approval": { const id = s(a.id, 40); return UUID.test(id) ? { type: "approval", id } : null; }
+    case "unavailable": {
+      const label = s(a.label, 80), reason = s(a.reason, 300);
+      return label && reason ? { type: "unavailable", label, reason } : null;
+    }
   }
   return null;
 }
@@ -61,7 +77,7 @@ export function splitActions(content: string): { text: string; actions: Action[]
       const parsed = JSON.parse(body.trim());
       for (const r of Array.isArray(parsed) ? parsed : [parsed]) {
         const a = sanitizeAction(r);
-        if (a && actions.length < 3) actions.push(a);
+        if (a && actions.length < 4) actions.push(a);
       }
     } catch { /* malformed block: drop silently */ }
     return "";
@@ -94,6 +110,8 @@ export function actionLabel(a: Action): string {
     case "memory": return "🧠 Remember this";
     case "panel": return `➕ Add ${a.title ?? a.kind} panel to Home`;
     case "copy": return `📋 ${a.label ?? "Copy"}`;
+    case "approval": return "Review action";
+    case "unavailable": return a.label;
   }
 }
 

@@ -1,0 +1,42 @@
+import { badRequest, dbError, json, readJson, requireUser, unauthorized } from "@/lib/server/auth";
+import { loadSettings, validateQuickActions } from "@/lib/settings";
+import { logActivity } from "@/lib/server/activity";
+
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  const a = await requireUser();
+  if (!a) return unauthorized();
+  return json({ settings: await loadSettings(a.db, a.user.id) });
+}
+
+export async function PATCH(req: Request) {
+  const a = await requireUser();
+  if (!a) return unauthorized();
+  const body = await readJson(req);
+  if (!body) return badRequest("Bad JSON");
+  const row: Record<string, unknown> = { user_id: a.user.id, updated_at: new Date().toISOString() };
+  if (body.memory_enabled !== undefined) {
+    if (typeof body.memory_enabled !== "boolean") return badRequest("memory_enabled must be true or false");
+    row.memory_enabled = body.memory_enabled;
+  }
+  if (body.quick_actions !== undefined) {
+    if (body.quick_actions === null) row.quick_actions = null; // reset to defaults
+    else {
+      const v = validateQuickActions(body.quick_actions);
+      if (!v.ok) return badRequest(v.error);
+      row.quick_actions = v.value;
+    }
+  }
+  if (body.hidden_quick_actions !== undefined) {
+    const h = body.hidden_quick_actions;
+    if (!Array.isArray(h) || h.length > 20 || h.some((x) => typeof x !== "string" || x.length > 40)) return badRequest("Bad hidden list");
+    row.hidden_quick_actions = h;
+  }
+  if (Object.keys(row).length === 2) return badRequest("Nothing to update");
+  const { error } = await a.db.from("user_settings").upsert(row, { onConflict: "user_id" });
+  if (error) return dbError(error, "Could not save settings");
+  if (row.memory_enabled !== undefined)
+    await logActivity(a.db, a.user.id, { category: "memory", title: row.memory_enabled ? "Memory turned on" : "Memory turned off" });
+  return json({ settings: await loadSettings(a.db, a.user.id) });
+}
