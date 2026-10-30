@@ -67,4 +67,19 @@ describe("Feature 4: streaming chat", () => {
     expect(screen.getAllByTestId(/msg-/)).toHaveLength(2);
     expect(screen.getByTestId("chat-send")).toBeDisabled();
   });
+
+  it("regenerates the last reply in place and copies a reply", async () => {
+    const f = vi.fn(async () => streamResponse(["fresh answer"]));
+    vi.stubGlobal("fetch", f);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(<Chat conversationId="c1" initialMessages={[{ role: "user", content: "q" }, { role: "assistant", content: "old answer" }]} />);
+    fireEvent.click(screen.getByTestId("copy-reply"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("old answer"));
+    fireEvent.click(screen.getByTestId("regenerate-reply"));
+    await waitFor(() => expect(screen.getAllByTestId("msg-assistant")[0]).toHaveTextContent("fresh answer"));
+    expect(screen.getAllByTestId("msg-assistant")).toHaveLength(1);
+    const body = JSON.parse((f.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body).toMatchObject({ conversationId: "c1", message: "q", retry: true, regenerate: true });
+  });
 });
