@@ -78,7 +78,7 @@ function Glyph({ name }: { name: Icon }) {
 
 function Preview({ user, bot, prompt }: { user: string; bot: string; prompt: string }) {
   return (
-    <div aria-hidden="true" className="relative overflow-hidden rounded-[16px] border border-white/[0.08] bg-[#070d13] shadow-[0_20px_60px_-30px_rgba(0,0,0,0.9)]">
+    <div aria-hidden="true" className="relative overflow-hidden rounded-[16px] border border-white/[0.10] bg-black/30 backdrop-blur-md shadow-[0_20px_60px_-30px_rgba(0,0,0,0.9)]">
       <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-4 py-3">
         <span className="h-2 w-2 rounded-full bg-white/15" />
         <span className="h-2 w-2 rounded-full bg-white/15" />
@@ -112,7 +112,7 @@ export default function Features() {
           <article
             key={f.title}
             data-testid="feature-card"
-            className="group relative grid items-center gap-8 overflow-hidden rounded-[24px] border border-white/[0.08] bg-gradient-to-b from-white/[0.045] to-white/[0.01] p-6 transition duration-300 hover:border-white/[0.16] md:grid-cols-2 md:gap-12 md:p-10"
+            className="group relative grid items-center gap-8 overflow-hidden rounded-[24px] border border-white/[0.10] bg-white/[0.035] backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] p-6 transition duration-300 hover:border-white/[0.16] md:grid-cols-2 md:gap-12 md:p-10"
           >
             <div aria-hidden="true" className="pointer-events-none absolute -top-24 left-1/2 h-48 w-2/3 -translate-x-1/2 rounded-full bg-sky-accent/10 opacity-0 blur-3xl transition duration-500 group-hover:opacity-100" />
             <div className={`relative flex flex-col justify-center ${i % 2 ? "md:order-2" : ""}`}>

@@ -25,10 +25,10 @@ export default function Home() {
       </div>
 
       {/* soft fade from the water into the sections */}
-      <div aria-hidden="true" className="pointer-events-none relative -mt-32 h-32 bg-gradient-to-b from-transparent to-deep-sea" />
+      <div aria-hidden="true" className="pointer-events-none relative -mt-32 h-32 bg-gradient-to-b from-transparent to-deep-sea/75" />
 
       {/* Below the fold */}
-      <div className="relative isolate bg-deep-sea text-stucco">
+      <div className="relative isolate bg-deep-sea/75 text-stucco">
         <Features />
         <Privacy />
         <FinalCta />

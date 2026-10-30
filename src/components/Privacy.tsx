@@ -18,7 +18,7 @@ export default function Privacy() {
       </p>
       <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {TIERS.map((t) => (
-          <div key={t.title} className="group relative overflow-hidden rounded-[24px] border border-white/[0.08] bg-gradient-to-b from-white/[0.045] to-white/[0.01] p-6 transition duration-300 hover:-translate-y-0.5 hover:border-white/[0.16]">
+          <div key={t.title} className="group relative overflow-hidden rounded-[24px] border border-white/[0.10] bg-white/[0.035] backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] p-6 transition duration-300 hover:-translate-y-0.5 hover:border-white/[0.16]">
             <div className="flex items-center justify-between">
               <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-sky-accent">{t.tier}</p>
               <span aria-hidden="true" className="grid h-8 w-8 place-items-center rounded-[9px] border border-sky-accent/20 bg-sky-accent/10 text-sky-accent">
