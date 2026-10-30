@@ -7,11 +7,11 @@ import AdTag from "@/components/AdTag";
 export default function Home() {
   return (
     <main>
+      <AdTag />
       <Navbar />
       <Hero />
       <Features />
       <Footer />
-      <AdTag />
     </main>
   );
 }
