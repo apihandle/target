@@ -39,7 +39,7 @@ describe("Feature 1: Hero (water redesign)", () => {
     fireEvent.click(screen.getByText("Surprise Me"));
     expect((screen.getByTestId("hero-input") as HTMLInputElement).value.length).toBeGreaterThan(0);
   });
-  it("water toggle pauses and plays (falls back without WebGL)", () => {
+  it("water toggle pauses and plays the water video", () => {
     render(<WaterBackground />);
     const t = screen.getByTestId("water-toggle");
     expect(t).toHaveAttribute("aria-label", "Pause water motion");
