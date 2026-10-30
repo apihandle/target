@@ -99,7 +99,7 @@ export async function runAgent(o: Opts): Promise<AgentResult> {
 
     messages.push({ role: "assistant", content: roundText || null, tool_calls: calls });
     for (const call of calls) {
-      const note = `\n\n> ⚙︎ ${o.label ? o.label(call) : call.function.name}\n\n`;
+      const note = `\n\n> ${o.label ? o.label(call) : call.function.name}\n\n`;
       text += note; o.onText(note);
       const outcome = await o.onTool(call);
       steps.push({ connector: "connector" in outcome ? outcome.connector : undefined, tool: call.function.name, ok: outcome.kind === "result" });

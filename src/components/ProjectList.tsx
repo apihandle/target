@@ -79,7 +79,7 @@ export default function ProjectList({ initial, startOpen = false, archivedView =
         {initial.map((p) => (
           <Link key={p.id} href={`/app/projects/${p.id}`} data-testid="project-card" className="group rounded-xl2 border border-line bg-surface p-4 transition hover:border-line-strong hover:bg-surface-2">
             <div className="flex items-start justify-between gap-2">
-              <p className="font-medium text-ink">📁 {p.name}</p>
+              <p className="font-medium text-ink">{p.name}</p>
               {p.status && <StatusBadge status={p.status} label={STATUS_LABEL[p.status] ?? p.status} />}
             </div>
             <p className="mt-1 line-clamp-2 text-xs text-muted">{p.description || p.instructions || "No purpose written yet"}</p>

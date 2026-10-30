@@ -23,12 +23,8 @@ function Icon({ d }: { d: string }) {
 }
 
 export function Logo({ size = "sm" }: { size?: "sm" | "md" }) {
-  return (
-    <span className="flex items-center gap-2">
-      <span aria-hidden className={`grid place-items-center rounded-full bg-accent font-black text-accent-ink ${size === "md" ? "h-9 w-9" : "h-7 w-7 text-sm"}`}>◎</span>
-      <span className={`font-extrabold tracking-[0.2em] ${size === "md" ? "text-xl" : "text-sm"}`}>TARGET</span>
-    </span>
-  );
+  // Same script wordmark as the landing page
+  return <span className={`font-script leading-none text-stucco ${size === "md" ? "text-4xl" : "text-3xl"}`}>Target</span>;
 }
 
 export default function Sidebar({ conversations, activeId, email, section = "chat", pendingApprovals = 0 }: { conversations: ConvItem[]; activeId?: string; email: string; section?: Section; pendingApprovals?: number }) {
@@ -101,14 +97,14 @@ export default function Sidebar({ conversations, activeId, email, section = "cha
         <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
       </button>
       {open && <div aria-hidden className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={close} />}
-      <aside id="app-nav" aria-label="Workspace" className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-line bg-[#0f1014] p-3 transition-transform md:static md:w-64 md:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}>
+      <aside id="app-nav" aria-label="Workspace" className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-white/[0.06] bg-[#071014]/80 backdrop-blur-xl p-3 transition-transform md:static md:w-64 md:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="flex items-center justify-between px-2 py-1.5">
           <Link href="/app/home" onClick={close} aria-label="TARGET home"><Logo /></Link>
           <button onClick={close} aria-label="Close navigation" className="rounded-full px-2 py-1 text-muted hover:text-ink md:hidden">✕</button>
         </div>
         <Link href="/app" data-testid="new-chat" onClick={close}
           className="mt-4 flex h-10 items-center justify-center gap-2 rounded-full bg-accent text-sm font-semibold text-accent-ink hover:bg-accent-strong">
-          <span aria-hidden>＋</span> New chat
+          <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg> New chat
         </Link>
         <nav aria-label="Main" className="mt-4 space-y-0.5">
           {NAV.map((n) => {

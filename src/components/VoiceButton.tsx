@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 /* Minimal typing for the Web Speech API (not in TS's DOM lib). */
 type Recognition = {
@@ -19,14 +19,14 @@ export function getRecognition(w: unknown = typeof window !== "undefined" ? wind
  * Mic button using the browser's own Web Speech API (no paid service). Renders nothing when the
  * browser doesn't support it. Final transcripts are appended to the composer via onText.
  */
-export default function VoiceButton({ onText, disabled }: { onText: (text: string) => void; disabled?: boolean }) {
+export default function VoiceButton({ onText, disabled, fallback = null }: { onText: (text: string) => void; disabled?: boolean; fallback?: ReactNode }) {
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const rec = useRef<Recognition | null>(null);
 
   useEffect(() => { setSupported(!!getRecognition()); return () => rec.current?.abort(); }, []);
-  if (!supported) return null;
+  if (!supported) return <>{fallback}</>;
 
   function toggle() {
     if (listening) { rec.current?.stop(); return; }
@@ -52,8 +52,8 @@ export default function VoiceButton({ onText, disabled }: { onText: (text: strin
   return (
     <button type="button" data-testid="voice-btn" onClick={toggle} disabled={disabled} aria-pressed={listening}
       aria-label={listening ? "Stop voice input" : "Speak your message"} title={error ?? (listening ? "Listening… click to stop" : "Speak your message")}
-      className={`grid h-11 w-11 shrink-0 place-items-center rounded-full border transition disabled:opacity-40 ${listening ? "animate-pulse border-danger bg-danger-subtle text-danger" : error ? "border-warn/50 bg-surface text-warn" : "border-line-strong bg-surface text-muted hover:text-ink"}`}>
-      <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+      className={`grid h-10 w-10 shrink-0 place-items-center rounded-full transition disabled:opacity-40 ${listening ? "animate-pulse bg-danger-subtle text-danger" : error ? "text-warn" : "text-muted hover:bg-surface-3 hover:text-ink"}`}>
+      <svg aria-hidden viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
     </button>
   );
 }

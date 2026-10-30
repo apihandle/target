@@ -191,12 +191,21 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
 
   const contextLabel = taskTitle ? `Task: ${taskTitle}` : projectName ? `Project: ${projectName}` : null;
 
+  const hasContent = !!input.trim() || ready.length > 0;
+  const sendButton = (
+    <button data-testid="chat-send" type="submit" aria-label="Send" title="Send"
+      disabled={!hasContent || uploading || !aiConfigured}
+      className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent text-accent-ink transition hover:bg-accent-strong disabled:opacity-40">
+      <svg aria-hidden viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+    </button>
+  );
+
   return (
     <div className="flex h-full flex-col">
       <div className="relative flex min-h-12 items-center justify-center gap-2 border-b border-line px-14 py-2 pr-20 md:pl-4 md:pr-24">
         {projectId && projectName ? (
           <a href={`/app/projects/${projectId}`} data-testid="chat-project" className="inline-flex max-w-full items-center gap-1.5 truncate rounded-full border border-line-strong bg-surface px-3 py-1 text-xs text-ink-soft hover:bg-surface-2">
-            <span className="text-muted">Working in</span> 📁 {projectName}
+            <span className="text-muted">Working in</span> {projectName}
           </a>
         ) : (
           <span className="text-xs text-muted">General chat · not in a project</span>
@@ -271,12 +280,9 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
         onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); addFiles(e.dataTransfer.files); } }}
         className="mx-auto mb-4 w-full max-w-2xl space-y-2 px-4">
         <AttachmentChips items={chips} onRemove={removeChip} />
+        <input ref={fileRef} type="file" multiple accept={ACCEPT_ATTR} className="hidden" data-testid="file-input" aria-hidden tabIndex={-1}
+          onChange={(e) => addFiles(e.target.files)} />
         <div className="flex flex-wrap items-center gap-1.5">
-          <input ref={fileRef} type="file" multiple accept={ACCEPT_ATTR} className="hidden" data-testid="file-input" aria-hidden tabIndex={-1}
-            onChange={(e) => addFiles(e.target.files)} />
-          <button type="button" data-testid="attach-btn" disabled={!aiConfigured || streaming} onClick={() => fileRef.current?.click()}
-            title="Attach PDF, image, TXT or CSV (max 10 MB)" aria-label="Attach files"
-            className="h-8 rounded-full border border-line-strong bg-surface px-3 text-xs font-semibold text-muted hover:text-ink disabled:opacity-40">📎 Attach</button>
           <button
             type="button"
             data-testid="web-toggle"
@@ -286,12 +292,18 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
             onClick={() => setWeb((w) => !w)}
             className={`h-8 rounded-full border px-3 text-xs font-semibold transition disabled:opacity-40 ${web ? "border-accent bg-accent-subtle text-accent-strong" : "border-line-strong bg-surface text-muted hover:text-ink"}`}
           >
-            🌐 Web
+            Web
           </button>
           <TemplatesMenu current={input} disabled={!aiConfigured} onPick={(p) => { setInput(p); inputRef.current?.focus(); }} />
           <ModelPicker options={models} value={model} onChange={setModel} disabled={!aiConfigured || streaming} />
         </div>
-        <div className="flex items-end gap-2">
+        {/* One pill composer: + attaches files, mic on the right turns into a send arrow once there's something to send */}
+        <div className="flex items-end gap-1.5 rounded-[26px] border border-accent/60 bg-surface/90 p-1.5 backdrop-blur-xl focus-within:border-accent">
+          <button type="button" data-testid="attach-btn" disabled={!aiConfigured || streaming} onClick={() => fileRef.current?.click()}
+            title="Attach PDF, image, TXT or CSV (max 10 MB)" aria-label="Attach files"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-muted transition hover:bg-surface-3 hover:text-ink disabled:opacity-40">
+            <svg aria-hidden viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+          </button>
           <label htmlFor="chat-input" className="sr-only">Message TARGET</label>
           <textarea
             id="chat-input"
@@ -302,15 +314,18 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
             placeholder={!aiConfigured ? "AI isn't configured" : web ? "Search the web…" : "Ask TARGET anything…"}
-            className="max-h-40 flex-1 resize-none rounded-2xl border border-line-strong bg-surface px-4 py-3 text-sm text-ink outline-none placeholder:text-muted-soft focus:border-accent"
+            className="max-h-40 min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm text-ink outline-none focus-visible:outline-none placeholder:text-muted-soft"
           />
-          <VoiceButton disabled={!aiConfigured || streaming} onText={(t) => setInput((cur) => (cur.trim() ? `${cur.trimEnd()} ${t}` : t))} />
           {streaming ? (
-            <button data-testid="chat-stop" type="button" onClick={stop} className="h-11 rounded-full border border-line-strong bg-surface-2 px-4 text-sm font-semibold text-ink hover:bg-surface-3">Stop</button>
-          ) : (
-            <button data-testid="chat-send" type="submit" disabled={(!input.trim() && !ready.length) || uploading || !aiConfigured} className="h-11 rounded-full bg-accent px-5 text-sm font-semibold text-accent-ink hover:bg-accent-strong disabled:opacity-40">
-              Send
+            <button data-testid="chat-stop" type="button" onClick={stop} aria-label="Stop" title="Stop"
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-surface-3 text-ink hover:bg-line-strong">
+              <span aria-hidden className="h-3 w-3 rounded-[3px] bg-current" />
             </button>
+          ) : hasContent ? (
+            sendButton
+          ) : (
+            <VoiceButton disabled={!aiConfigured} fallback={sendButton}
+              onText={(t) => setInput((cur) => (cur.trim() ? `${cur.trimEnd()} ${t}` : t))} />
           )}
         </div>
       </form>
