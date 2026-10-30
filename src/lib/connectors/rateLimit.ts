@@ -13,6 +13,9 @@ export const LIMITS = {
   connect: (uid: string): Limit => ({ key: `connect:${uid}`, limit: 10, windowSec: 600 }),
   toolCall: (uid: string): Limit => ({ key: `tool:${uid}`, limit: 30, windowSec: 60 }),
   chat: (uid: string): Limit => ({ key: `chat:${uid}`, limit: 20, windowSec: 60 }),
+  // Abuse limits for the features in migration 0008 (not usage quotas).
+  upload: (uid: string): Limit => ({ key: `upload:${uid}`, limit: 30, windowSec: 600 }),
+  share: (uid: string): Limit => ({ key: `share:${uid}`, limit: 20, windowSec: 600 }),
 };
 
 const mem = new Map<string, { window: number; hits: number }>();

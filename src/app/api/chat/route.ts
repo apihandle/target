@@ -18,6 +18,9 @@ import { getConnector } from "@/lib/connectors/registry";
 import { UNTRUSTED_RULES } from "@/lib/connectors/safety";
 import { checkLimit, LIMITS, tooMany } from "@/lib/connectors/rateLimit";
 import { runAgent, type ToolCall } from "@/lib/agent";
+import { resolveModel, visionModels, type ContentPart, type ModelRef } from "@/lib/llm";
+import { loadPreferredModel } from "@/lib/settings";
+import { attachmentContext, claimableAttachments, conversationAttachments, linkAttachments, parseAttachmentIds } from "@/lib/server/attachments";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,9 +33,12 @@ export async function POST(req: Request) {
   if (!user) return Response.json({ error: "Not signed in" }, { status: 401 });
   if (!(await checkLimit(LIMITS.chat(user.id)))) return tooMany();
 
-  let body: { conversationId?: unknown; projectId?: unknown; message?: unknown; web?: unknown; retry?: unknown; taskId?: unknown; resume?: unknown };
+  let body: { conversationId?: unknown; projectId?: unknown; message?: unknown; web?: unknown; retry?: unknown; taskId?: unknown; resume?: unknown; attachmentIds?: unknown; model?: unknown };
   try { body = await req.json(); } catch { return Response.json({ error: "Bad JSON" }, { status: 400 }); }
-  const text = (typeof body.message === "string" ? body.message : "").trim();
+  const att = parseAttachmentIds(body.attachmentIds);
+  if (!att.ok) return Response.json({ error: att.error }, { status: 400 });
+  let text = (typeof body.message === "string" ? body.message : "").trim();
+  if (!text && att.ids.length) text = att.ids.length > 1 ? "Please take a look at the attached files." : "Please take a look at the attached file.";
   if (!text) return Response.json({ error: "Empty message" }, { status: 400 });
   if (text.length > 8000) return Response.json({ error: "Message too long" }, { status: 400 });
   if (body.conversationId !== undefined && !isUuid(body.conversationId)) return Response.json({ error: "Chat not found" }, { status: 404 });
@@ -63,6 +69,10 @@ export async function POST(req: Request) {
     if (!conversationId && !projectId && task.project_id) projectId = task.project_id;
   }
 
+  // New files for this message: must be the user's own, unsent, and not from another chat.
+  const newFiles = await claimableAttachments(db, user.id, att.ids, conversationId);
+  if (!newFiles) return Response.json({ error: "Attachment not found" }, { status: 404 });
+
   if (!conversationId) {
     const { data, error } = await supabase.from("conversations").insert({ user_id: user.id, title: titleFrom(task?.title ?? text), project_id: projectId }).select("id").single();
     if (error || !data) return Response.json({ error: "Could not create chat" }, { status: 500 });
@@ -71,19 +81,34 @@ export async function POST(req: Request) {
   const convId = conversationId;
 
   const { data: historyRaw, error: hErr } = await supabase
-    .from("messages").select("role, content").eq("conversation_id", convId)
+    .from("messages").select("id, role, content").eq("conversation_id", convId)
     .order("created_at", { ascending: true }).limit(40);
   if (hErr) return Response.json({ error: "Could not load chat" }, { status: 500 });
-  let history = (historyRaw ?? []) as ChatMsg[];
+  const historyRows = (historyRaw ?? []) as (ChatMsg & { id?: string })[];
+  let history: ChatMsg[] = historyRows.map((m) => ({ role: m.role, content: m.content }));
 
   // Retry: the user message is already stored (the reply failed or was stopped) — don't store it twice.
   const last = history[history.length - 1];
   const isRetry = body.retry === true && last?.role === "user" && last.content === text;
-  if (isRetry) history = history.slice(0, -1);
-  else {
-    const { error: insErr } = await supabase.from("messages").insert({ conversation_id: convId, user_id: user.id, role: "user", content: text });
+  const currentIds = new Set(att.ids);
+  if (isRetry) {
+    history = history.slice(0, -1);
+    const lastId = historyRows[historyRows.length - 1]?.id;
+    if (lastId) (await conversationAttachments(db, user.id, convId)).filter((r) => r.message_id === lastId).forEach((r) => currentIds.add(r.id));
+    if (newFiles.length) await linkAttachments(db, user.id, att.ids, convId, lastId ?? null);
+  } else {
+    const { data: saved, error: insErr } = await supabase.from("messages").insert({ conversation_id: convId, user_id: user.id, role: "user", content: text }).select("id").single();
     if (insErr) return Response.json({ error: "Could not save your message" }, { status: 500 });
+    if (newFiles.length) await linkAttachments(db, user.id, att.ids, convId, (saved?.id as string | undefined) ?? null);
   }
+
+  // Attachments: file text as untrusted context; images to a vision-capable model when one is configured.
+  const vision = visionModels();
+  const allFiles = await conversationAttachments(db, user.id, convId);
+  const files = await attachmentContext(db, allFiles, currentIds, vision.length > 0);
+  const only: ModelRef[] | undefined = files.imageParts.length ? vision : undefined;
+  // Model picker: validated against the configured allow-list; the rest stay as fallback.
+  const prefer = body.model !== undefined ? resolveModel(body.model) : resolveModel(await loadPreferredModel(supabase, user.id));
 
   const settings = await loadSettings(supabase, user.id);
 
@@ -146,8 +171,9 @@ export async function POST(req: Request) {
   }
 
   const messages: LLMMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + connectorNote + resumeNote },
-    ...history, { role: "user", content: text },
+    { role: "system", content: SYSTEM_PROMPT + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + files.block + connectorNote + resumeNote },
+    ...history,
+    files.imageParts.length ? { role: "user", content: [{ type: "text", text }, ...files.imageParts] as ContentPart[] } : { role: "user", content: text },
   ];
 
   const failTask = async (msg: string) => {
@@ -160,12 +186,12 @@ export async function POST(req: Request) {
   let toolsOff = false;
   try {
     try {
-      upstream = await llm({ messages, stream: true, timeoutMs: 30000, tools: toolSpecs.length ? toolSpecs : undefined });
+      upstream = await llm({ messages, stream: true, timeoutMs: 30000, tools: toolSpecs.length ? toolSpecs : undefined, prefer, only });
     } catch (e) {
       // The model/provider can't do tool calling: ordinary chat still works, without connector tools.
       if (!(e instanceof LLMError) || !e.toolsRejected) throw e;
       toolsOff = true;
-      upstream = await llm({ messages: messages.map((m) => (m.role === "system" ? { ...m, content: String(m.content).replace(connectorNote, "") } : m)), stream: true, timeoutMs: 30000 });
+      upstream = await llm({ messages: messages.map((m) => (m.role === "system" ? { ...m, content: String(m.content).replace(connectorNote, "") } : m)), stream: true, timeoutMs: 30000, prefer, only });
     }
   } catch (e) {
     const err = e instanceof LLMError ? e : new LLMError("AI error", 502);
@@ -186,7 +212,7 @@ export async function POST(req: Request) {
         if (toolsOff && loaded.connected.size) { const n = "_(Connector tools aren't available with the AI model answering right now, so this reply can't use your connected apps.)_\n\n"; full += n; send(n); }
         const result = await runAgent({
           messages, first: upstream,
-          next: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 30000, tools: toolSpecs }),
+          next: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 30000, tools: toolSpecs, prefer, only }),
           onText: (d) => { full += d; send(d); },
           label: (call: ToolCall) => toolLabel(call.function.name),
           onTool: (call: ToolCall) => executeToolCall({ db, userId: user.id, projectId, conversationId: convId, taskId: task?.id ?? null }, call.function.name, call.function.arguments, loaded),

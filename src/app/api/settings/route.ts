@@ -1,5 +1,6 @@
 import { badRequest, dbError, json, readJson, requireUser, unauthorized } from "@/lib/server/auth";
-import { loadSettings, validateQuickActions } from "@/lib/settings";
+import { loadPreferredModel, loadSettings, validateQuickActions } from "@/lib/settings";
+import { AUTO_MODEL, resolveModel } from "@/lib/llm";
 import { logActivity } from "@/lib/server/activity";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const a = await requireUser();
   if (!a) return unauthorized();
-  return json({ settings: await loadSettings(a.db, a.user.id) });
+  return json({ settings: { ...(await loadSettings(a.db, a.user.id)), preferred_model: await loadPreferredModel(a.db, a.user.id) } });
 }
 
 export async function PATCH(req: Request) {
@@ -33,10 +34,19 @@ export async function PATCH(req: Request) {
     if (!Array.isArray(h) || h.length > 20 || h.some((x) => typeof x !== "string" || x.length > 40)) return badRequest("Bad hidden list");
     row.hidden_quick_actions = h;
   }
+  if (body.preferred_model !== undefined) {
+    // Remembered model choice: must be one of the server's configured models, or "auto"/null.
+    if (body.preferred_model === null || body.preferred_model === AUTO_MODEL) row.preferred_model = null;
+    else {
+      const m = resolveModel(body.preferred_model);
+      if (!m) return badRequest("That model isn't available");
+      row.preferred_model = m.id;
+    }
+  }
   if (Object.keys(row).length === 2) return badRequest("Nothing to update");
   const { error } = await a.db.from("user_settings").upsert(row, { onConflict: "user_id" });
   if (error) return dbError(error, "Could not save settings");
   if (row.memory_enabled !== undefined)
     await logActivity(a.db, a.user.id, { category: "memory", title: row.memory_enabled ? "Memory turned on" : "Memory turned off" });
-  return json({ settings: await loadSettings(a.db, a.user.id) });
+  return json({ settings: { ...(await loadSettings(a.db, a.user.id)), ...(row.preferred_model !== undefined ? { preferred_model: row.preferred_model } : {}) } });
 }

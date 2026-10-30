@@ -24,6 +24,26 @@ export class FakeDb {
   rows(t: string) { return (this.tables[t] ??= []); }
   get auth() { return { getUser: async () => ({ data: { user: this.uid ? { id: this.uid, email: `${this.uid}@x.test`, user_metadata: {}, app_metadata: {} } : null } }) }; }
   from(table: string) { return new Query(this, table); }
+  /** Storage objects by "bucket/path". Simulates migration 0008's policy: a user only sees "<own uid>/..." keys. */
+  files: Record<string, Uint8Array> = {};
+  get storage() {
+    const root = this.parent ?? this;
+    const own = (path: string) => this.bypass || (!!this.uid && path.split("/")[0] === this.uid);
+    return {
+      from: (bucket: string) => ({
+        upload: async (path: string, bytes: Uint8Array) => {
+          if (!own(path)) return { data: null, error: { message: "new row violates row-level security policy" } };
+          root.files[`${bucket}/${path}`] = bytes; return { data: { path }, error: null };
+        },
+        download: async (path: string) => {
+          const b = own(path) ? root.files[`${bucket}/${path}`] : undefined;
+          if (!b) return { data: null, error: { message: "Object not found" } };
+          return { data: { arrayBuffer: async () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) }, error: null };
+        },
+        remove: async (paths: string[]) => { for (const p of paths) if (own(p)) delete root.files[`${bucket}/${p}`]; return { data: [], error: null }; },
+      }),
+    };
+  }
 }
 
 const DEFAULTS: Record<string, Row> = {
@@ -54,6 +74,20 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
   eq(k: string, v: unknown) { this.filters.push((r) => r[k] === v); return this; }
   neq(k: string, v: unknown) { this.filters.push((r) => r[k] !== v); return this; }
   in(k: string, v: unknown[]) { this.filters.push((r) => v.includes(r[k])); return this; }
+  lte(k: string, v: string) { this.filters.push((r) => r[k] != null && String(r[k]) <= v); return this; }
+  is(k: string, v: unknown) { this.filters.push((r) => (r[k] ?? null) === v); return this; }
+  ilike(k: string, pattern: string) {
+    // Translate a SQL ILIKE pattern (with \ escapes) into a case-insensitive regex.
+    let re = "";
+    for (let i = 0; i < pattern.length; i++) {
+      const c = pattern[i];
+      if (c === "\\" && i + 1 < pattern.length) { re += pattern[++i].replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); continue; }
+      re += c === "%" ? ".*" : c === "_" ? "." : c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+    const rx = new RegExp(`^${re}$`, "is");
+    this.filters.push((r) => typeof r[k] === "string" && rx.test(r[k] as string));
+    return this;
+  }
   not(k: string, _op: string, _v: unknown) { this.filters.push((r) => r[k] != null); return this; }
   order() { return this; }
   limit(n: number) { this.lim = n; return this; }

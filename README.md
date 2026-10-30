@@ -36,6 +36,10 @@ Executable actions in this build: `create_task`, `create_project` (inside TARGET
 
 Per-user connections to external accounts live in `src/lib/connectors/` (one file per connector + one line in `registry.ts`). The chat route runs a server-side tool-calling loop (`src/lib/agent.ts`) that only offers tools of connectors the user has connected; a missing connector pauses the task as `needs_connection` with a Connect button, and destructive tools go through the approval gate above. Setup, redirect URLs, security model and test plan: **[docs/CONNECTORS.md](docs/CONNECTORS.md)**. Settings → Connected apps now only lists the server-wide services (AI model, web search) and links to the Connectors page.
 
+## Chat extras, scheduling and PWA
+
+Attachments (PDF, images, TXT, CSV) in chat, chat search and pinning, read-only share links, scheduled prompts (Vercel Cron), a model picker, voice input, prompt templates and an installable PWA for `/app`. Setup (migration 0008, the `chat-attachments` bucket, `CRON_SECRET`, cron schedule) and how each works: **[docs/FEATURES.md](docs/FEATURES.md)**.
+
 ## Privacy
 
 What this build does and does not protect is described in-app at **Settings → Privacy & memory**. In short: data is in Supabase Postgres, isolated per account by RLS and by server-side ownership checks; it is **not** end-to-end encrypted. Users can review, edit, clear or turn off memory and clear activity history.
@@ -44,10 +48,11 @@ What this build does and does not protect is described in-app at **Settings → 
 
 1. `npm ci`
 2. Copy `.env.example` to `.env.local` and fill in values (see comments in that file).
-3. Apply the SQL migrations in `supabase/migrations` **in order** (0001 → 0007) to your Supabase project, e.g. with the Supabase SQL editor or `supabase db push`. 0006 and 0007 are additive: they add columns and tables (0007 renames `connections.provider` to `connector_id`) and do not drop user data.
+3. Apply the SQL migrations in `supabase/migrations` **in order** (0001 → 0008) to your Supabase project, e.g. with the Supabase SQL editor or `supabase db push`. 0006 and 0007 are additive: they add columns and tables (0007 renames `connections.provider` to `connector_id`) and do not drop user data.
 4. In Supabase Auth, keep `https://<your-domain>/auth/callback` in the redirect allow-list (email confirmation and Google sign-in).
 5. Optional, for connectors: set `SUPABASE_SERVICE_ROLE_KEY` and `CONNECTOR_ENCRYPTION_KEY`, then register OAuth apps as described in [docs/CONNECTORS.md](docs/CONNECTORS.md). Redirect URLs have the form `https://<your-domain>/api/connectors/<id>/callback`.
-6. `npm run dev` and open http://localhost:3000
+6. Optional, for scheduled prompts: set `CRON_SECRET` (and `SUPABASE_SERVICE_ROLE_KEY`); see [docs/FEATURES.md](docs/FEATURES.md) for the cron schedule.
+7. `npm run dev` and open http://localhost:3000
 
 ## Scripts
 

@@ -56,3 +56,17 @@ export async function loadSettings(db: { from: (t: string) => any }, userId: str
     return resolveSettings(null);
   }
 }
+
+/**
+ * The model the user last picked ("provider:model"), or null for automatic. Read separately from
+ * loadSettings so a database without migration 0008 never affects memory/quick-action settings.
+ */
+export async function loadPreferredModel(db: { from: (t: string) => any }, userId: string): Promise<string | null> { // eslint-disable-line @typescript-eslint/no-explicit-any
+  try {
+    const { data, error } = await db.from("user_settings").select("preferred_model").eq("user_id", userId).maybeSingle();
+    if (error) return null;
+    return typeof data?.preferred_model === "string" ? data.preferred_model : null;
+  } catch {
+    return null;
+  }
+}

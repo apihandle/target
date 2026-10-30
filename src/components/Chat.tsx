@@ -8,8 +8,14 @@ import { splitSources } from "@/lib/search";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ErrorNote } from "@/components/ui/EmptyState";
+import AttachmentChips, { type Chip } from "@/components/AttachmentChips";
+import ModelPicker, { type ModelChoice } from "@/components/ModelPicker";
+import VoiceButton from "@/components/VoiceButton";
+import TemplatesMenu from "@/components/TemplatesMenu";
+import ShareButton from "@/components/ShareButton";
+import { ACCEPT_ATTR, ATTACHMENT_BUCKET, MAX_ATTACHMENTS_PER_MESSAGE, MAX_ATTACHMENT_BYTES, safeFileName, storageKeyName, typeFor } from "@/lib/attachments";
 
-export type UIMsg = { role: "user" | "assistant"; content: string };
+export type UIMsg = { role: "user" | "assistant"; content: string; attachments?: { name: string; kind: string }[] };
 
 const STARTERS = [
   "Plan a 3-day Goa trip under ₹20,000",
@@ -27,9 +33,11 @@ type Props = {
   taskId?: string; taskTitle?: string;
   /** Task paused for a connection that the user has just connected: continue it once on open. */
   resumeTaskId?: string;
+  /** Model picker options (server allow-list incl. "auto") and the user's remembered choice. */
+  models?: ModelChoice[]; initialModel?: string;
 };
 
-export default function Chat({ conversationId: initialId, initialMessages = [], projectId, projectName, aiConfigured = true, webAvailable = true, initialPrompt = "", taskId, taskTitle, resumeTaskId }: Props) {
+export default function Chat({ conversationId: initialId, initialMessages = [], projectId, projectName, aiConfigured = true, webAvailable = true, initialPrompt = "", taskId, taskTitle, resumeTaskId, models = [], initialModel = "auto" }: Props) {
   const router = useRouter();
   const [conversationId, setConversationId] = useState<string | undefined>(initialId);
   const [messages, setMessages] = useState<UIMsg[]>(initialMessages);
@@ -38,6 +46,11 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
   const [error, setError] = useState<string | null>(null);
   const [failedText, setFailedText] = useState<string | null>(null);
   const [web, setWeb] = useState(false);
+  const [chips, setChips] = useState<Chip[]>([]);
+  const [model, setModel] = useState(initialModel);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const uploading = chips.some((c) => c.status === "uploading");
+  const ready = chips.filter((c) => c.status === "ready" && c.id);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -54,12 +67,56 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
 
   function stop() { abortRef.current?.abort(); }
 
+  const patchChip = (key: string, p: Partial<Chip>) => setChips((cs) => cs.map((c) => (c.key === key ? { ...c, ...p } : c)));
+
+  /** Upload straight to the private bucket (own folder only), then let the server validate and read it. */
+  async function addFiles(list: FileList | File[] | null) {
+    if (!list) return;
+    setError(null);
+    const room = MAX_ATTACHMENTS_PER_MESSAGE - chips.filter((c) => c.status !== "error").length;
+    const files = Array.from(list);
+    if (files.length > room) setError(`You can attach up to ${MAX_ATTACHMENTS_PER_MESSAGE} files per message.`);
+    for (const f of files.slice(0, Math.max(0, room))) {
+      const key = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const name = safeFileName(f.name);
+      const t = typeFor(name);
+      if (!t) { setChips((c) => [...c, { key, name, status: "error", error: "Only PDF, images, TXT and CSV files can be attached." }]); continue; }
+      if (f.size > MAX_ATTACHMENT_BYTES) { setChips((c) => [...c, { key, name, kind: t.kind, status: "error", error: "Files can be at most 10 MB." }]); continue; }
+      setChips((c) => [...c, { key, name, kind: t.kind, status: "uploading" }]);
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Sign in again to attach files.");
+        const path = `${user.id}/${crypto.randomUUID()}/${storageKeyName(name)}`;
+        const { error: upErr } = await supabase.storage.from(ATTACHMENT_BUCKET).upload(path, f, { contentType: t.mime, upsert: false });
+        if (upErr) throw new Error("Upload failed. Check the file and try again.");
+        const r = await fetch("/api/attachments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, name: f.name }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || "Upload failed");
+        patchChip(key, { status: "ready", id: j.attachment.id, error: j.readable ? undefined : "No readable text found in this file." });
+      } catch (e) {
+        patchChip(key, { status: "error", error: e instanceof Error ? e.message : "Upload failed" });
+      }
+    }
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  function removeChip(key: string) {
+    const c = chips.find((x) => x.key === key);
+    if (c?.id) fetch(`/api/attachments/${c.id}`, { method: "DELETE" }).catch(() => undefined);
+    setChips((cs) => cs.filter((x) => x.key !== key));
+  }
+
   async function send(textArg?: string, opts: { retry?: boolean; resumeTaskId?: string } = {}) {
     const text = (textArg ?? input).trim();
-    if (!text || streaming || !aiConfigured) return;
+    const files = opts.retry ? [] : ready;
+    if ((!text && !files.length) || streaming || !aiConfigured || (uploading && !opts.retry)) return;
     setError(null); setFailedText(null);
-    if (!opts.retry) setInput("");
-    setMessages((m) => (opts.retry ? [...m, { role: "assistant", content: "" }] : [...m, { role: "user", content: text }, { role: "assistant", content: "" }]));
+    if (!opts.retry) { setInput(""); setChips([]); }
+    const shown = text || (files.length > 1 ? "Please take a look at the attached files." : "Please take a look at the attached file.");
+    const atts = files.map((c) => ({ name: c.name, kind: c.kind ?? "" }));
+    setMessages((m) => (opts.retry ? [...m, { role: "assistant", content: "" }] : [...m, { role: "user", content: shown, ...(atts.length ? { attachments: atts } : {}) }, { role: "assistant", content: "" }]));
     setStreaming(true);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -73,6 +130,8 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
         body: JSON.stringify({
           ...(conversationId ? { conversationId } : projectId ? { projectId } : {}),
           message: text,
+          ...(files.length ? { attachmentIds: files.map((c) => c.id) } : {}),
+          ...(models.length > 1 && model !== "auto" ? { model } : {}),
           ...(web ? { web: true } : {}),
           ...(opts.retry && conversationId ? { retry: true } : {}),
           ...(opts.resumeTaskId ? { taskId: opts.resumeTaskId, resume: true } : sendTask ? { taskId } : {}),
@@ -113,7 +172,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
         if (newId && newId !== initialId) router.replace(`/app?c=${newId}`);
       } else {
         setError(e instanceof Error ? e.message : "Something went wrong");
-        setFailedText(text);
+        setFailedText(shown);
         setMessages((m) => (m[m.length - 1]?.role === "assistant" && !m[m.length - 1].content ? m.slice(0, -1) : m));
       }
     } finally {
@@ -126,7 +185,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex min-h-12 items-center justify-center gap-2 border-b border-line px-14 py-2 md:px-4">
+      <div className="relative flex min-h-12 items-center justify-center gap-2 border-b border-line px-14 py-2 pr-20 md:pl-4 md:pr-24">
         {projectId && projectName ? (
           <a href={`/app/projects/${projectId}`} data-testid="chat-project" className="inline-flex max-w-full items-center gap-1.5 truncate rounded-full border border-line-strong bg-surface px-3 py-1 text-xs text-ink-soft hover:bg-surface-2">
             <span className="text-muted">Working in</span> 📁 {projectName}
@@ -134,6 +193,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
         ) : (
           <span className="text-xs text-muted">General chat · not in a project</span>
         )}
+        {conversationId && messages.length > 0 && <div className="absolute right-3 top-2"><ShareButton conversationId={conversationId} /></div>}
         {taskTitle && <span data-testid="chat-task" className="hidden truncate rounded-full border border-info/30 bg-info-subtle px-3 py-1 text-xs text-info sm:inline">{contextLabel}</span>}
       </div>
 
@@ -162,9 +222,12 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
         ) : (
           <div className="mx-auto max-w-2xl space-y-5">
             {messages.map((m, i) => (
-              <div key={i} data-testid={`msg-${m.role}`} className={m.role === "user" ? "flex justify-end" : ""}>
+              <div key={i} data-testid={`msg-${m.role}`} className={m.role === "user" ? "flex flex-col items-end gap-1" : ""}>
                 {m.role === "user" ? (
-                  <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-surface-3 px-4 py-2.5 text-sm text-ink">{m.content}</div>
+                  <>
+                    {!!m.attachments?.length && <AttachmentChips align="end" items={m.attachments.map((a, j) => ({ key: `${i}-${j}`, name: a.name, kind: a.kind }))} />}
+                    <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-surface-3 px-4 py-2.5 text-sm text-ink">{m.content}</div>
+                  </>
                 ) : (
                   <div className="prose-target text-sm leading-relaxed text-ink-soft">
                     {m.content ? (() => {
@@ -195,37 +258,53 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
           <ErrorNote testId="chat-error" onRetry={failedText ? () => send(failedText, { retry: true }) : undefined}>{error}</ErrorNote>
         </div>
       )}
-      <form onSubmit={(e) => { e.preventDefault(); send(); }} className="mx-auto mb-4 flex w-full max-w-2xl items-end gap-2 px-4">
-        <button
-          type="button"
-          data-testid="web-toggle"
-          aria-pressed={web}
-          disabled={!webAvailable}
-          title={webAvailable ? "Search the web for this message" : "Web search isn't set up on this server"}
-          onClick={() => setWeb((w) => !w)}
-          className={`h-11 rounded-full border px-3 text-xs font-semibold transition disabled:opacity-40 ${web ? "border-accent bg-accent-subtle text-accent-strong" : "border-line-strong bg-surface text-muted hover:text-ink"}`}
-        >
-          🌐 Web
-        </button>
-        <label htmlFor="chat-input" className="sr-only">Message TARGET</label>
-        <textarea
-          id="chat-input"
-          ref={inputRef}
-          data-testid="chat-input"
-          rows={1}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-          placeholder={!aiConfigured ? "AI isn't configured" : web ? "Search the web…" : "Ask TARGET anything…"}
-          className="max-h-40 flex-1 resize-none rounded-2xl border border-line-strong bg-surface px-4 py-3 text-sm text-ink outline-none placeholder:text-muted-soft focus:border-accent"
-        />
-        {streaming ? (
-          <button data-testid="chat-stop" type="button" onClick={stop} className="h-11 rounded-full border border-line-strong bg-surface-2 px-4 text-sm font-semibold text-ink hover:bg-surface-3">Stop</button>
-        ) : (
-          <button data-testid="chat-send" type="submit" disabled={!input.trim() || !aiConfigured} className="h-11 rounded-full bg-accent px-5 text-sm font-semibold text-accent-ink hover:bg-accent-strong disabled:opacity-40">
-            Send
+      <form onSubmit={(e) => { e.preventDefault(); send(); }}
+        onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }}
+        onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); addFiles(e.dataTransfer.files); } }}
+        className="mx-auto mb-4 w-full max-w-2xl space-y-2 px-4">
+        <AttachmentChips items={chips} onRemove={removeChip} />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <input ref={fileRef} type="file" multiple accept={ACCEPT_ATTR} className="hidden" data-testid="file-input" aria-hidden tabIndex={-1}
+            onChange={(e) => addFiles(e.target.files)} />
+          <button type="button" data-testid="attach-btn" disabled={!aiConfigured || streaming} onClick={() => fileRef.current?.click()}
+            title="Attach PDF, image, TXT or CSV (max 10 MB)" aria-label="Attach files"
+            className="h-8 rounded-full border border-line-strong bg-surface px-3 text-xs font-semibold text-muted hover:text-ink disabled:opacity-40">📎 Attach</button>
+          <button
+            type="button"
+            data-testid="web-toggle"
+            aria-pressed={web}
+            disabled={!webAvailable}
+            title={webAvailable ? "Search the web for this message" : "Web search isn't set up on this server"}
+            onClick={() => setWeb((w) => !w)}
+            className={`h-8 rounded-full border px-3 text-xs font-semibold transition disabled:opacity-40 ${web ? "border-accent bg-accent-subtle text-accent-strong" : "border-line-strong bg-surface text-muted hover:text-ink"}`}
+          >
+            🌐 Web
           </button>
-        )}
+          <TemplatesMenu current={input} disabled={!aiConfigured} onPick={(p) => { setInput(p); inputRef.current?.focus(); }} />
+          <ModelPicker options={models} value={model} onChange={setModel} disabled={!aiConfigured || streaming} />
+        </div>
+        <div className="flex items-end gap-2">
+          <label htmlFor="chat-input" className="sr-only">Message TARGET</label>
+          <textarea
+            id="chat-input"
+            ref={inputRef}
+            data-testid="chat-input"
+            rows={1}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder={!aiConfigured ? "AI isn't configured" : web ? "Search the web…" : "Ask TARGET anything…"}
+            className="max-h-40 flex-1 resize-none rounded-2xl border border-line-strong bg-surface px-4 py-3 text-sm text-ink outline-none placeholder:text-muted-soft focus:border-accent"
+          />
+          <VoiceButton disabled={!aiConfigured || streaming} onText={(t) => setInput((cur) => (cur.trim() ? `${cur.trimEnd()} ${t}` : t))} />
+          {streaming ? (
+            <button data-testid="chat-stop" type="button" onClick={stop} className="h-11 rounded-full border border-line-strong bg-surface-2 px-4 text-sm font-semibold text-ink hover:bg-surface-3">Stop</button>
+          ) : (
+            <button data-testid="chat-send" type="submit" disabled={(!input.trim() && !ready.length) || uploading || !aiConfigured} className="h-11 rounded-full bg-accent px-5 text-sm font-semibold text-accent-ink hover:bg-accent-strong disabled:opacity-40">
+              Send
+            </button>
+          )}
+        </div>
       </form>
     </div>
   );
