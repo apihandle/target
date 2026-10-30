@@ -1,6 +1,13 @@
-import Script from "next/script";
+/**
+ * Monetag In-Page Push tag (zone 12150496), placed in <head> from the root layout as
+ * Monetag's installation check requires. The exact snippet only runs on public pages:
+ * it never loads inside the signed-in workspace (/app), /login or /auth.
+ */
+const SNIPPET =
+  "if(!/^\\/(app|login|auth)(\\/|$)/.test(location.pathname)){" +
+  "(function(s){s.dataset.zone='12150496',s.src='https://nap5k.com/tag.min.js'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))" +
+  "}";
 
-/** Third-party ad tag (Monetag). Only rendered on public marketing pages, never inside /app. */
 export default function AdTag() {
-  return <Script id="monetag-tag" src="https://nap5k.com/tag.min.js" data-zone="12150496" strategy="afterInteractive" />;
+  return <script id="monetag-tag" dangerouslySetInnerHTML={{ __html: SNIPPET }} />;
 }
