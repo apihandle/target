@@ -2,8 +2,9 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * Full-screen realistic moving-water background: a night lake surface with
- * rippling crests and warm golden light glints (WebGL),
+ * Full-screen realistic moving-water background (venice.ai-like): dark teal
+ * night water with smooth glossy ripples, reflected sky, warm golden glints and
+ * a far edge that fades into darkness (WebGL),
  * with a dark cinematic tint/vignette and a bottom-right pause/play toggle.
  * Falls back to a static deep-water gradient when WebGL is unavailable.
  * Starts paused for users who prefer reduced motion.
@@ -27,52 +28,59 @@ float noise(vec2 p){
   return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
              mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
+// smooth, glossy ripples: a few directional waves, domain-warped so crests wander like real water
 float height(vec2 p, float t){
-  vec2 q = vec2(p.x * 0.55, p.y * 1.8);
-  float h = 0.0, a = 0.5;
-  for (int i = 0; i < 5; i++) {
-    float fi = float(i);
-    h += a * noise(q + vec2(t * 0.15 * (fi + 1.0), -t * (0.35 + 0.12 * fi)));
-    q = q * 2.07 + vec2(1.7, 9.2);
-    a *= 0.5;
-  }
-  h += 0.08 * sin(p.y * 2.6 - t * 0.9 + sin(p.x * 0.7) * 1.2);
+  vec2 w = vec2(noise(p * 0.35 + t * 0.05), noise(p * 0.35 + 7.3 - t * 0.04)) - 0.5;
+  p += w * 2.2;
+  float h = 0.0;
+  h += 0.50 * sin(dot(p, vec2(0.10, 1.00)) * 1.6 - t * 0.9);
+  h += 0.32 * sin(dot(p, vec2(0.55, 0.83)) * 2.3 - t * 1.1 + 1.3);
+  h += 0.28 * sin(dot(p, vec2(-0.62, 0.78)) * 2.0 - t * 0.8 + 4.1);
+  h += 0.16 * sin(dot(p, vec2(0.92, 0.38)) * 3.7 - t * 1.4 + 2.2);
+  h += 0.12 * sin(dot(p, vec2(-0.30, 0.95)) * 5.1 - t * 1.7 + 0.7);
+  h += 0.25 * (noise(p * 1.3 - vec2(0.0, t * 0.3)) - 0.5);
   return h;
 }
 
 void main(){
   vec2 uv = gl_FragCoord.xy / u_res;
   float aspect = u_res.x / u_res.y;
-  float horizon = 1.55;
+  // camera low over the water: rows near the top are far away
+  float horizon = 1.25;
   float depth = 1.0 / (horizon - uv.y);
-  vec2 p = vec2((uv.x - 0.5) * aspect * depth * 2.2, depth * 4.2);
+  vec2 p = vec2((uv.x - 0.5) * aspect * depth * 6.0, depth * 13.0);
   float t = u_time;
 
-  float e = 0.02 * depth;
+  float e = 0.015 * depth;
   float h  = height(p, t);
-  float hx = height(p + vec2(e, 0.0), t) - h;
-  float hy = height(p + vec2(0.0, e), t) - h;
-  vec2 g = vec2(hx, hy) / e;
+  float gx = (height(p + vec2(e, 0.0), t) - h) / e;
+  float gy = (height(p + vec2(0.0, e), t) - h) / e;
 
-  // facet facing viewer reflects the brighter sky; facing away reflects dark water
-  float tilt = g.y * 0.30 / depth;
-  float sky = clamp(0.5 + tilt * 1.1, 0.0, 1.0);
+  // foreshortening: far ripples look flatter and finer
+  float slope = 0.26 / depth;
+  vec3 n = normalize(vec3(-gx * slope, 1.0, -gy * slope));
+  vec3 v = normalize(vec3((uv.x - 0.5) * 0.6, -0.18 - (1.0 - uv.y) * 0.35, 1.0));
+  vec3 r = reflect(v, n);
 
-  vec3 dark = vec3(0.020, 0.032, 0.042);
-  vec3 lit  = vec3(0.17, 0.25, 0.31);
-  vec3 col = mix(dark, lit, smoothstep(0.15, 0.95, sky));
+  // dark night sky: faint teal glow low on the horizon
+  float sky = smoothstep(-0.05, 0.45, r.y);
+  float fres = 0.04 + 0.96 * pow(1.0 - max(dot(n, -v), 0.0), 5.0);
+  vec3 deep = vec3(0.012, 0.035, 0.042);
+  vec3 skyLow = vec3(0.19, 0.31, 0.34);
+  vec3 skyHigh = vec3(0.03, 0.06, 0.07);
+  vec3 refl = mix(skyLow, skyHigh, sky);
+  vec3 col = mix(deep, refl, smoothstep(0.0, 0.9, fres * 1.6));
 
-  // golden glints: distant lights reflected on crests, concentrated toward the top and right
-  float cols = smoothstep(0.25, 0.70, noise(vec2(uv.x * 6.0 + 3.0, 0.5)));
-  float lights = smoothstep(0.30, 0.90, uv.y) * cols * 1.2;
-  lights += 0.8 * smoothstep(0.6, 1.0, uv.x) * smoothstep(0.2, 0.65, uv.y) * smoothstep(0.3, 0.7, noise(vec2(uv.x * 9.0, uv.y * 4.0)));
-  float crest = smoothstep(0.70, 0.95, sky) * smoothstep(0.25, 0.65, noise(p * vec2(2.5, 9.0) + vec2(0.0, -t * 0.8)));
-  float glint = crest * clamp(lights, 0.0, 1.0);
-  col += vec3(0.95, 0.66, 0.30) * glint * 1.1;
+  // warm lights on a far shore -> glints stretched in vertical columns
+  float lx = uv.x + r.x * 0.25;
+  float colm = smoothstep(0.55, 0.85, noise(vec2(lx * 7.0, 1.7))) + 0.7 * smoothstep(0.6, 0.9, noise(vec2(lx * 13.0, 5.1)));
+  float spec = pow(clamp(1.0 - abs(r.y - 0.03) * 6.0, 0.0, 1.0), 3.0);
+  float glint = colm * spec * smoothstep(0.05, 0.45, uv.y);
+  col += vec3(1.0, 0.72, 0.32) * glint * 1.3;
 
-  // haze toward the horizon, darker foreground
-  col = mix(col, vec3(0.10, 0.13, 0.15), smoothstep(0.75, 1.0, uv.y) * 0.25);
-  col *= mix(0.65, 1.0, smoothstep(0.0, 0.6, uv.y));
+  // depth of field: far water sinks into darkness
+  col *= mix(1.0, 0.0, smoothstep(0.80, 1.0, uv.y));
+  col *= mix(0.75, 1.0, smoothstep(0.0, 0.4, uv.y));
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -206,11 +214,11 @@ export default function WaterBackground() {
   return (
     <>
       <WaterCanvas playing={playing} />
-      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 bg-black/30" />
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 bg-black/15" />
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 -z-10"
-        style={{ background: "radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.6) 100%)" }}
+        style={{ background: "radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.45) 100%)" }}
       />
       <button
         type="button"
