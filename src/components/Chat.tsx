@@ -298,7 +298,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
           <ModelPicker options={models} value={model} onChange={setModel} disabled={!aiConfigured || streaming} />
         </div>
         {/* One pill composer: + attaches files, mic on the right turns into a send arrow once there's something to send */}
-        <div className="flex items-end gap-1.5 rounded-[26px] border border-line-strong bg-surface/90 p-1.5 backdrop-blur-xl focus-within:border-accent/60">
+        <div className="flex items-end gap-1.5 rounded-[26px] border border-accent/60 bg-surface/90 p-1.5 backdrop-blur-xl focus-within:border-accent">
           <button type="button" data-testid="attach-btn" disabled={!aiConfigured || streaming} onClick={() => fileRef.current?.click()}
             title="Attach PDF, image, TXT or CSV (max 10 MB)" aria-label="Attach files"
             className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-muted transition hover:bg-surface-3 hover:text-ink disabled:opacity-40">
