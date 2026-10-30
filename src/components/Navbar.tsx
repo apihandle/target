@@ -1,15 +1,17 @@
 export default function Navbar() {
   return (
-    <header className="fixed inset-x-0 top-0 z-50">
-      <nav className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-        <a href="/" className="flex items-center gap-2" aria-label="TARGET home">
-          <span className="grid h-8 w-8 place-items-center rounded-full bg-gradient-to-br from-orange-400 to-rose-600 text-sm font-black">◎</span>
-          <span className="text-lg font-extrabold tracking-widest">TARGET</span>
+    <header className="relative z-30">
+      <nav className="flex items-center justify-between px-4 py-3 md:px-4">
+        <a href="/" aria-label="TARGET home" className="font-script text-3xl leading-none text-white [text-shadow:0_1px_8px_rgba(0,0,0,0.4)] md:text-4xl">
+          Target
         </a>
-        <div className="flex items-center gap-3">
-          <a href="#features" className="hidden text-sm text-white/70 hover:text-white sm:block">Features</a>
-          <a href="/login" data-testid="nav-signup" className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/90">Sign in</a>
-        </div>
+        <a
+          href="/login"
+          data-testid="nav-signup"
+          className="rounded-lg border border-white/20 bg-white/10 px-3.5 py-2 text-sm text-white/90 shadow-lg backdrop-blur-md transition-all duration-200 hover:bg-white/20"
+        >
+          Sign up
+        </a>
       </nav>
     </header>
   );

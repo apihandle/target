@@ -1,5 +1,6 @@
 import { render, screen, cleanup } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }) }));
 import Home from "@/app/page";
 
 describe("Feature 2: Sections + footer", () => {
@@ -10,7 +11,7 @@ describe("Feature 2: Sections + footer", () => {
   it("CTA and nav point to the right anchors", () => {
     render(<Home />);
     expect(screen.getByTestId("cta-signup")).toHaveAttribute("href", "#signup");
-    expect(screen.getByText("Features").closest("a")).toHaveAttribute("href", "#features");
+    expect(screen.getByTestId("learn-more")).toHaveAttribute("href", "#features");
     expect(document.getElementById("features")).not.toBeNull();
     expect(document.getElementById("signup")).not.toBeNull();
   });

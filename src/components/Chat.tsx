@@ -30,6 +30,8 @@ type Props = {
   aiConfigured?: boolean; webAvailable?: boolean;
   /** Pre-filled (not sent) text, e.g. from a quick action. */
   initialPrompt?: string;
+  /** Send initialPrompt once on open (a question asked on the landing page). */
+  autoSend?: boolean;
   taskId?: string; taskTitle?: string;
   /** Task paused for a connection that the user has just connected: continue it once on open. */
   resumeTaskId?: string;
@@ -37,7 +39,7 @@ type Props = {
   models?: ModelChoice[]; initialModel?: string;
 };
 
-export default function Chat({ conversationId: initialId, initialMessages = [], projectId, projectName, aiConfigured = true, webAvailable = true, initialPrompt = "", taskId, taskTitle, resumeTaskId, models = [], initialModel = "auto" }: Props) {
+export default function Chat({ conversationId: initialId, initialMessages = [], projectId, projectName, aiConfigured = true, webAvailable = true, initialPrompt = "", autoSend = false, taskId, taskTitle, resumeTaskId, models = [], initialModel = "auto" }: Props) {
   const router = useRouter();
   const [conversationId, setConversationId] = useState<string | undefined>(initialId);
   const [messages, setMessages] = useState<UIMsg[]>(initialMessages);
@@ -58,6 +60,12 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
 
   useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: "smooth" }); }, [messages]);
   useEffect(() => { if (initialPrompt) inputRef.current?.focus(); }, [initialPrompt]);
+  const autoSent = useRef(false);
+  useEffect(() => {
+    if (!autoSend || autoSent.current || !aiConfigured || !initialPrompt.trim()) return;
+    autoSent.current = true;
+    send(initialPrompt);
+  }, [autoSend]); // eslint-disable-line react-hooks/exhaustive-deps
   const resumed = useRef(false);
   useEffect(() => {
     if (!resumeTaskId || resumed.current || !aiConfigured) return;

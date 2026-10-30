@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { Great_Vibes, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 import AdTag from "@/components/AdTag";
 
@@ -13,6 +14,9 @@ const geistMono = localFont({
   variable: "--font-geist-mono",
   weight: "100 900",
 });
+
+const script = Great_Vibes({ subsets: ["latin"], weight: "400", variable: "--font-script", display: "swap" });
+const display = Instrument_Serif({ subsets: ["latin"], weight: "400", variable: "--font-display", display: "swap" });
 
 export const metadata: Metadata = {
   title: "TARGET",
@@ -30,7 +34,7 @@ export default function RootLayout({
         <AdTag />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${script.variable} ${display.variable} antialiased`}
       >
         {children}
       </body>
