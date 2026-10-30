@@ -31,6 +31,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="scroll-smooth">
       <head>
+        <link rel="preload" as="image" href="/water-poster.webp" type="image/webp" />
         <AdTag />
       </head>
       <body
