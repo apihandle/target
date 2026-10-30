@@ -1,0 +1,100 @@
+/* In-memory stand-in for the Supabase client, used to test route handlers end to end.
+ * It simulates row-level security (rows are only visible to their user_id owner) and
+ * the approval_requests guard trigger from migration 0006. */
+import { randomUUID } from "crypto";
+import { canMoveApproval, type ApprovalStatus } from "@/lib/approvals";
+
+type Row = Record<string, unknown>;
+type Filter = (r: Row) => boolean;
+
+export class FakeDb {
+  tables: Record<string, Row[]> = {};
+  uid: string | null = null;
+  constructor(seed: Record<string, Row[]> = {}) { for (const [k, v] of Object.entries(seed)) this.tables[k] = v.map((r) => ({ ...r })); }
+  as(uid: string | null) { this.uid = uid; return this; }
+  rows(t: string) { return (this.tables[t] ??= []); }
+  get auth() { return { getUser: async () => ({ data: { user: this.uid ? { id: this.uid, email: `${this.uid}@x.test`, user_metadata: {}, app_metadata: {} } : null } }) }; }
+  from(table: string) { return new Query(this, table); }
+}
+
+const DEFAULTS: Record<string, Row> = {
+  tasks: { status: "queued", notes: "", progress: "", error: null, origin: "user", project_id: null, conversation_id: null },
+  approval_requests: { status: "pending", decided_by: null, decided_at: null, executed_at: null, result: null, error: null, project_id: null, conversation_id: null, task_id: null, destination: "" },
+  projects: { instructions: "", description: "", status: "active", archived_at: null },
+  activity_events: { detail: "", status: null, project_id: null, task_id: null, approval_id: null },
+  panels: { description: "", items: [], data: null, error: null, refreshed_at: null, position: 0 },
+};
+
+class Query implements PromiseLike<{ data: unknown; error: { message: string } | null; count?: number }> {
+  private filters: Filter[] = [];
+  private op: "select" | "insert" | "update" | "delete" | "upsert" = "select";
+  private payload: Row | Row[] | null = null;
+  private returning = false;
+  private mode: "one" | "maybe" | null = null;
+  private countMode = false; private head = false;
+  private lim = Infinity;
+  constructor(private db: FakeDb, private table: string) {}
+  private visible(r: Row) { return !("user_id" in r) || r.user_id === this.db.uid || this.table === "__admin"; }
+  select(_cols?: string, opts?: { count?: string; head?: boolean }) { if (this.op === "select") { this.countMode = !!opts?.count; this.head = !!opts?.head; } else this.returning = true; return this; }
+  insert(p: Row | Row[]) { this.op = "insert"; this.payload = p; return this; }
+  upsert(p: Row | Row[]) { this.op = "upsert"; this.payload = p; return this; }
+  update(p: Row) { this.op = "update"; this.payload = p; return this; }
+  delete() { this.op = "delete"; return this; }
+  eq(k: string, v: unknown) { this.filters.push((r) => r[k] === v); return this; }
+  neq(k: string, v: unknown) { this.filters.push((r) => r[k] !== v); return this; }
+  in(k: string, v: unknown[]) { this.filters.push((r) => v.includes(r[k])); return this; }
+  not(k: string, _op: string, _v: unknown) { this.filters.push((r) => r[k] != null); return this; }
+  order() { return this; }
+  limit(n: number) { this.lim = n; return this; }
+  maybeSingle() { this.mode = "maybe"; return this; }
+  single() { this.mode = "one"; return this; }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  then<A = any, B = never>(ok?: ((v: any) => A | PromiseLike<A>) | null, bad?: ((e: unknown) => B | PromiseLike<B>) | null) { return Promise.resolve(this.run()).then(ok, bad); }
+  private run(): { data: unknown; error: { message: string } | null; count?: number } {
+    const all = this.db.rows(this.table);
+    const match = () => all.filter((r) => this.visible(r) && this.filters.every((f) => f(r)));
+    const finish = (rows: Row[]) => {
+      if (this.mode === "one") return rows.length === 1 ? { data: rows[0], error: null } : { data: null, error: { message: "not single" } };
+      if (this.mode === "maybe") return { data: rows[0] ?? null, error: null };
+      return { data: rows, error: null };
+    };
+    if (this.op === "select") {
+      const rows = match().slice(0, this.lim);
+      if (this.countMode) return { data: this.head ? null : rows, error: null, count: rows.length };
+      return finish(rows);
+    }
+    if (this.op === "insert" || this.op === "upsert") {
+      const list = Array.isArray(this.payload) ? this.payload : [this.payload!];
+      const out: Row[] = [];
+      for (const p of list) {
+        if ("user_id" in p && p.user_id !== this.db.uid) return { data: null, error: { message: "RLS: user_id mismatch" } };
+        if (this.table === "approval_requests" && p.status !== "pending") return { data: null, error: { message: "RLS: must start pending" } };
+        const key = this.table === "user_settings" ? "user_id" : "id";
+        const existing = this.op === "upsert" ? all.find((r) => r[key] === p[key]) : undefined;
+        if (existing) { Object.assign(existing, p); out.push(existing); continue; }
+        const row = { id: randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...(DEFAULTS[this.table] ?? {}), ...p };
+        all.push(row); out.push(row);
+      }
+      return this.returning ? finish(out) : { data: null, error: null };
+    }
+    if (this.op === "update") {
+      const rows = match();
+      const p = this.payload as Row;
+      for (const r of rows) {
+        if (this.table === "approval_requests") {
+          for (const k of ["user_id", "action_type", "payload", "summary", "destination"]) if (k in p && JSON.stringify(p[k]) !== JSON.stringify(r[k])) return { data: null, error: { message: "immutable" } };
+          if (p.status && p.status !== r.status) {
+            if (!canMoveApproval(r.status as ApprovalStatus, p.status as ApprovalStatus)) return { data: null, error: { message: `invalid transition ${r.status} -> ${p.status}` } };
+            if (["approved", "rejected", "cancelled"].includes(p.status as string)) { r.decided_by = this.db.uid; r.decided_at = new Date().toISOString(); }
+          }
+          const { decided_by: _a, decided_at: _b, ...rest } = p; void _a; void _b;
+          Object.assign(r, rest);
+        } else Object.assign(r, p);
+      }
+      return this.returning ? finish(rows) : { data: null, error: null };
+    }
+    const rows = match();
+    this.db.tables[this.table] = all.filter((r) => !rows.includes(r));
+    return this.returning ? finish(rows) : { data: null, error: null };
+  }
+}

@@ -17,7 +17,7 @@ export const ACTIVITY_FILTERS = {
 export type ActivityFilter = keyof typeof ACTIVITY_FILTERS;
 
 export function parseFilter(v: string | null | undefined): ActivityFilter {
-  return v && v in ACTIVITY_FILTERS ? (v as ActivityFilter) : "all";
+  return v && Object.prototype.hasOwnProperty.call(ACTIVITY_FILTERS, v) ? (v as ActivityFilter) : "all";
 }
 
 export function timeAgo(iso: string | null | undefined, now = Date.now()): string {

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { actionLabel, calendarUrl, mapUrl, type Action } from "@/lib/actions";
+import ApprovalCard from "@/components/ApprovalCard";
 
 type State = "idle" | "busy" | "done" | "error";
 
@@ -26,10 +27,14 @@ export default function ActionButtons({ actions }: { actions: Action[] }) {
     else set("error", j.error ?? "Failed");
   }
 
-  const cls = "inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/[0.05] px-3 py-1.5 text-xs text-white/80 transition hover:bg-white/10 disabled:opacity-50";
+  const cls = "inline-flex items-center gap-1 rounded-full border border-line-strong bg-surface px-3 py-1.5 text-xs text-ink-soft no-underline transition hover:bg-surface-2 disabled:opacity-50";
+  const approvals = actions.filter((a): a is Extract<Action, { type: "approval" }> => a.type === "approval");
+  const limits = actions.filter((a): a is Extract<Action, { type: "unavailable" }> => a.type === "unavailable");
+  const buttons = actions.filter((a) => a.type !== "approval" && a.type !== "unavailable");
   return (
-    <div data-testid="actions" className="mt-3 flex flex-wrap gap-2">
-      {actions.map((a, i) => {
+    <>
+    {buttons.length > 0 && <div data-testid="actions" className="mt-3 flex flex-wrap gap-2">
+      {buttons.map((a, i) => {
         const st = state[i] ?? "idle";
         const label = st === "done" || st === "error" ? (st === "done" ? "✓ " : "⚠ ") + msg[i] : st === "busy" ? "…" : actionLabel(a);
         if (a.type === "calendar" || a.type === "map" || a.type === "link") {
@@ -38,6 +43,14 @@ export default function ActionButtons({ actions }: { actions: Action[] }) {
         }
         return <button key={i} data-testid="action" data-type={a.type} disabled={st === "busy" || st === "done"} onClick={() => run(i, a)} className={cls}>{label}</button>;
       })}
-    </div>
+    </div>}
+    {limits.map((l, i) => (
+      <div key={`l${i}`} role="note" data-testid="action-unavailable" className="not-prose mt-3 rounded-xl border border-line-strong bg-surface px-4 py-3 text-xs text-muted">
+        <p className="font-medium text-ink-soft">{l.label}</p>
+        <p className="mt-0.5">{l.reason}</p>
+      </div>
+    ))}
+    {approvals.map((a) => <ApprovalCard key={a.id} id={a.id} />)}
+    </>
   );
 }

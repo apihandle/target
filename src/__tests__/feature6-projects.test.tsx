@@ -29,10 +29,11 @@ describe("Feature 6: projects", () => {
     vi.stubGlobal("fetch", f);
     render(<ProjectList initial={[{ id: "p0", name: "Old", instructions: "", chats: 2 }]} />);
     expect(screen.getByText("2 chats")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("project-new"));
     fireEvent.change(screen.getByTestId("project-name"), { target: { value: "Goa" } });
     fireEvent.click(screen.getByTestId("project-create"));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/app/projects/p1"));
-    expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ name: "Goa", instructions: "" });
+    expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ name: "Goa", description: "", instructions: "" });
   });
 
   it("edits instructions and links new chats to the project", async () => {
