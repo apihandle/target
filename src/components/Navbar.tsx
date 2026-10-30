@@ -20,7 +20,7 @@ export default function Navbar() {
           ))}
         </div>
         <div className="flex items-center gap-1">
-          <a href="/login" data-testid="nav-login" className="hidden px-3 text-sm font-medium text-sky-accent transition hover:text-stucco sm:block">
+          <a href="/login" data-testid="nav-login" className="hidden px-3 text-sm font-medium text-sun-glint transition hover:text-stucco sm:block">
             Log in
           </a>
           <a

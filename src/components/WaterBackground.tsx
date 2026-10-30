@@ -21,7 +21,6 @@ export default function WaterBackground() {
   useEffect(() => {
     const v = videoRef.current;
     if (!v || typeof v.play !== "function") return;
-    v.playbackRate = 0.6; // calmer, slower water
     if (playing) {
       const p = v.play();
       if (p && typeof p.catch === "function") p.catch(() => {});
@@ -53,7 +52,7 @@ export default function WaterBackground() {
         playsInline
         preload="auto"
         disablePictureInPicture
-        onLoadedMetadata={(e) => { e.currentTarget.playbackRate = 0.6; }}
+
         onPlaying={() => setReady(true)}
       />
       {/* far water sinks into darkness, plus a soft vignette */}

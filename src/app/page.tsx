@@ -18,7 +18,7 @@ export default function Home() {
           <Hero />
         </div>
         <div className="relative flex w-full flex-col items-center justify-center pb-14 text-center">
-          <a href="#features" data-testid="learn-more" className="cursor-pointer text-xs text-sky-accent transition-colors hover:text-white">
+          <a href="#features" data-testid="learn-more" className="cursor-pointer text-xs text-sun-glint transition-colors hover:text-white">
             Learn more about TARGET <span aria-hidden="true" className="ml-1.5">↓</span>
           </a>
         </div>
