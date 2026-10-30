@@ -114,10 +114,10 @@ export default function Features() {
             data-testid="feature-card"
             className="group relative grid items-center gap-8 overflow-hidden rounded-[24px] border border-white/[0.10] bg-white/[0.035] backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] p-6 transition duration-300 hover:border-white/[0.16] md:grid-cols-2 md:gap-12 md:p-10"
           >
-            <div aria-hidden="true" className="pointer-events-none absolute -top-24 left-1/2 h-48 w-2/3 -translate-x-1/2 rounded-full bg-sky-accent/10 opacity-0 blur-3xl transition duration-500 group-hover:opacity-100" />
+            <div aria-hidden="true" className="pointer-events-none absolute -top-24 left-1/2 h-48 w-2/3 -translate-x-1/2 rounded-full bg-sun-glint/10 opacity-0 blur-3xl transition duration-500 group-hover:opacity-100" />
             <div className={`relative flex flex-col justify-center ${i % 2 ? "md:order-2" : ""}`}>
               <div className="flex items-center gap-3">
-                <span className="grid h-9 w-9 place-items-center rounded-[10px] border border-sky-accent/20 bg-sky-accent/10 text-sky-accent">
+                <span className="grid h-9 w-9 place-items-center rounded-[10px] border border-sun-glint/20 bg-sun-glint/10 text-sun-glint">
                   <Glyph name={f.icon} />
                 </span>
                 <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-stucco/50">{f.eyebrow}</span>
