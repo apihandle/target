@@ -59,7 +59,7 @@ export default function ConnectorsGrid({ initial, focus, returnTo }: Props) {
             data-testid="connector-card" data-id={c.id} data-status={c.status} aria-label={c.name}
             className={`flex flex-col rounded-xl2 border bg-surface p-4 shadow-card sm:p-5 ${c.id === focus ? "border-accent/60" : "border-line"}`}>
             <div className="flex items-start gap-3">
-              <span aria-hidden className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-orange-500 to-rose-600 text-sm font-black text-white">{c.icon}</span>
+              <span aria-hidden className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-accent/30 bg-accent-subtle text-sm font-black text-accent">{c.icon}</span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="font-medium text-ink">{c.name}</h2>

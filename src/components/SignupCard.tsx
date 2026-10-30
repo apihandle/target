@@ -28,9 +28,9 @@ export default function SignupCard() {
           placeholder="you@example.com"
           value={email}
           onChange={(e) => { setEmail(e.target.value); setStatus("idle"); }}
-          className="w-full rounded-full border border-white/15 bg-black/30 px-4 py-3 text-sm outline-none placeholder:text-white/30 focus:border-orange-400"
+          className="w-full rounded-full border border-white/15 bg-black/30 px-4 py-3 text-sm outline-none placeholder:text-white/30 focus:border-sun-glint"
         />
-        <button data-testid="email-submit" type="submit" className="mt-3 w-full rounded-full bg-gradient-to-r from-orange-500 to-rose-600 py-3 text-sm font-semibold transition hover:opacity-90">
+        <button data-testid="email-submit" type="submit" className="mt-3 w-full rounded-full bg-sun-glint py-3 text-sm font-semibold text-deep-sea transition hover:bg-[#f0d6a4]">
           Continue
         </button>
       </form>
