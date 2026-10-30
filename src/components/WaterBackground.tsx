@@ -81,6 +81,7 @@ function WaterCanvas({ playing }: { playing: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const playingRef = useRef(playing);
   const [failed, setFailed] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => { playingRef.current = playing; }, [playing]);
 
@@ -150,6 +151,8 @@ function WaterCanvas({ playing }: { playing: boolean }) {
     ro?.observe(canvas);
     window.addEventListener("resize", resize);
     resize();
+    // first frame is on screen: fade the live water in over the poster
+    requestAnimationFrame(() => setReady(true));
 
     const loop = (now: number) => {
       const dt = Math.min((now - last) / 1000, 0.1);
@@ -171,10 +174,26 @@ function WaterCanvas({ playing }: { playing: boolean }) {
     };
   }, []);
 
-  if (failed) {
-    return <div data-testid="water-fallback" className="fixed inset-0 -z-20 bg-gradient-to-b from-[#1b252d] via-[#0d151b] to-[#05090c]" />;
-  }
-  return <canvas ref={canvasRef} aria-hidden="true" data-testid="water-canvas" className="fixed left-0 top-0 -z-20 block h-full w-full" />;
+  return (
+    <>
+      {/* Poster: a still frame of the water, server-rendered so it shows instantly (like venice.ai) */}
+      <div
+        aria-hidden="true"
+        data-testid={failed ? "water-fallback" : "water-poster"}
+        className="fixed inset-0 -z-30 bg-[#05090c] bg-cover bg-center"
+        style={{ backgroundImage: "url(/water-poster.webp)" }}
+      />
+      {!failed && (
+        <canvas
+          ref={canvasRef}
+          aria-hidden="true"
+          data-testid="water-canvas"
+          className="fixed left-0 top-0 -z-20 block h-full w-full transition-opacity duration-[1500ms] ease-in-out"
+          style={{ opacity: ready ? 1 : 0 }}
+        />
+      )}
+    </>
+  );
 }
 
 export default function WaterBackground() {

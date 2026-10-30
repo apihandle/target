@@ -10,7 +10,7 @@ describe("Feature 2: Sections + footer", () => {
   });
   it("CTA and nav point to the right anchors", () => {
     render(<Home />);
-    expect(screen.getByTestId("cta-signup")).toHaveAttribute("href", "#signup");
+    expect(screen.getByTestId("cta-signup")).toHaveAttribute("href", "/login?mode=signup");
     expect(screen.getByTestId("learn-more")).toHaveAttribute("href", "#features");
     expect(document.getElementById("features")).not.toBeNull();
     expect(document.getElementById("signup")).not.toBeNull();
@@ -19,6 +19,7 @@ describe("Feature 2: Sections + footer", () => {
     render(<Home />);
     expect(document.querySelectorAll("footer h4")).toHaveLength(4);
     expect(screen.getByTestId("copyright")).toHaveTextContent(`TARGET © ${new Date().getFullYear()}`);
+    expect(document.getElementById("privacy")).not.toBeNull();
   });
 });
 

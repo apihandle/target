@@ -63,7 +63,7 @@ describe("Feature 3: Auth", () => {
   it("prefills email and opens sign up from landing", () => {
     render(<AuthForm initialEmail="pre@example.com" />);
     expect(screen.getByTestId("auth-email")).toHaveValue("pre@example.com");
-    expect(screen.getByTestId("auth-submit")).toHaveTextContent("Create account");
+    expect(screen.getByText("Create your Target account")).toBeInTheDocument();
   });
 
   it("landing email Continue goes to /login with email", () => {

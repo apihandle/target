@@ -1,28 +1,42 @@
 const COLS = [
-  { title: "Company", links: ["About", "Careers", "News", "Security", "Pricing"] },
+  { title: "Product", links: ["Features", "Privacy", "Open TARGET"] },
+  { title: "Company", links: ["About", "Careers", "Contact"] },
   { title: "Resources", links: ["Using TARGET", "Help Center"] },
   { title: "Legal", links: ["Terms of Service", "Privacy Policy"] },
-  { title: "Social", links: ["Instagram", "X", "LinkedIn"] },
 ];
 
-const HREF: Record<string, string> = { "Terms of Service": "/terms", "Privacy Policy": "/privacy", Security: "/privacy", "Using TARGET": "/#features" };
+const HREF: Record<string, string> = {
+  Features: "/#features",
+  Privacy: "/#privacy",
+  "Open TARGET": "/app",
+  "Using TARGET": "/#features",
+  "Terms of Service": "/terms",
+  "Privacy Policy": "/privacy",
+};
 
+/** Venice-style footer: deep-sea background, logo + tagline, uppercase column titles, muted links. */
 export default function Footer() {
   return (
-    <footer className="border-t border-white/10">
-      <div className="mx-auto grid max-w-6xl grid-cols-2 gap-8 px-5 py-14 sm:grid-cols-4">
+    <footer className="relative bg-deep-sea px-6 py-16 text-stucco md:px-[5.9vw]">
+      <div className="mx-auto grid max-w-6xl gap-12 md:grid-cols-[1.4fr_repeat(4,1fr)]">
+        <div>
+          <a href="/" className="font-script text-4xl leading-none text-stucco">Target</a>
+          <p className="mt-3 text-[14px] leading-[21px] text-stucco/60">Your personal AI, for everything.</p>
+        </div>
         {COLS.map((c) => (
           <div key={c.title}>
-            <h4 className="text-sm font-semibold">{c.title}</h4>
-            <ul className="mt-3 space-y-2">
+            <h4 className="text-[12px] font-semibold uppercase leading-[18px] tracking-[0.05em]">{c.title}</h4>
+            <ul className="mt-4 space-y-2">
               {c.links.map((l) => (
-                <li key={l}><a href={HREF[l] ?? "#"} className="text-sm text-white/50 transition hover:text-white">{l}</a></li>
+                <li key={l}><a href={HREF[l] ?? "#"} className="text-[14px] leading-[21px] text-stucco/60 transition-colors hover:text-stucco">{l}</a></li>
               ))}
             </ul>
           </div>
         ))}
       </div>
-      <p data-testid="copyright" className="pb-8 text-center text-xs text-white/40">TARGET © {new Date().getFullYear()}</p>
+      <p data-testid="copyright" className="mx-auto mt-14 max-w-6xl border-t border-white/[0.06] pt-6 text-[13px] text-stucco/40">
+        TARGET © {new Date().getFullYear()}. All rights reserved.
+      </p>
     </footer>
   );
 }

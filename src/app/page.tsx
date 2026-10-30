@@ -2,7 +2,8 @@ import WaterBackground from "@/components/WaterBackground";
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import Features from "@/components/Features";
-import SignupCard from "@/components/SignupCard";
+import Privacy from "@/components/Privacy";
+import FinalCta from "@/components/FinalCta";
 import Footer from "@/components/Footer";
 
 export default function Home() {
@@ -17,18 +18,20 @@ export default function Home() {
           <Hero />
         </div>
         <div className="relative flex w-full flex-col items-center justify-center pb-14 text-center">
-          <a href="#features" data-testid="learn-more" className="cursor-pointer text-xs text-[#7f9fe0] transition-colors hover:text-white">
+          <a href="#features" data-testid="learn-more" className="cursor-pointer text-xs text-sky-accent transition-colors hover:text-white">
             Learn more about TARGET <span aria-hidden="true" className="ml-1.5">↓</span>
           </a>
         </div>
       </div>
 
+      {/* soft fade from the water into the sections */}
+      <div aria-hidden="true" className="pointer-events-none relative -mt-32 h-32 bg-gradient-to-b from-transparent to-deep-sea" />
+
       {/* Below the fold */}
-      <div className="bg-black/60 backdrop-blur-sm">
+      <div className="relative isolate bg-deep-sea text-stucco">
         <Features />
-        <section className="flex justify-center px-5 pb-24">
-          <SignupCard />
-        </section>
+        <Privacy />
+        <FinalCta />
         <Footer />
       </div>
     </main>
