@@ -15,7 +15,7 @@ export default function QuickActions({ actions, hidden: initialHidden }: { actio
     if (!r || !r.ok) setHidden(hidden);
   }
 
-  if (!visible.length) return <p className="text-xs text-muted">All quick actions are hidden. <Link href="/app/settings" className="underline">Manage them in Settings</Link>.</p>;
+  if (!visible.length) return <p className="text-xs text-muted">All quick actions are hidden. <Link href="/app/settings/quick-actions" className="underline">Manage them in Settings</Link>.</p>;
   return (
     <ul data-testid="quick-actions" className="flex flex-wrap gap-2">
       {visible.map((a) => (
