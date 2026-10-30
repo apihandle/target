@@ -23,6 +23,7 @@ const config: Config = {
         stucco: { DEFAULT: "#eeede4", mid: "#bea989" },
         sea: { DEFAULT: "#125da3", light: "#4898e6", dark: "#0e2942" },
         "sky-accent": "#4898e6",
+        "sun-glint": "#e6c487",
         foreground: "var(--foreground)",
         bg: "#0c0d10",
         surface: { DEFAULT: "#14161b", 2: "#1b1e24", 3: "#23262e" },
