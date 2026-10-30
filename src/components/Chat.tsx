@@ -17,7 +17,7 @@ const STARTERS = [
   "Give me a 20-minute home workout",
 ];
 
-export default function Chat({ conversationId: initialId, initialMessages = [], projectId, projectName }: { conversationId?: string; initialMessages?: UIMsg[]; projectId?: string; projectName?: string }) {
+export default function Chat({ conversationId: initialId, initialMessages = [], projectId, projectName, initialPrompt }: { conversationId?: string; initialMessages?: UIMsg[]; projectId?: string; projectName?: string; initialPrompt?: string }) {
   const router = useRouter();
   const [conversationId, setConversationId] = useState<string | undefined>(initialId);
   const [messages, setMessages] = useState<UIMsg[]>(initialMessages);
@@ -28,6 +28,15 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: "smooth" }); }, [messages]);
+
+  // A question typed on the landing page (/app?q=...) is sent once on arrival.
+  const sentInitial = useRef(false);
+  useEffect(() => {
+    if (sentInitial.current || !initialPrompt?.trim() || initialId) return;
+    sentInitial.current = true;
+    void send(initialPrompt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function send(textArg?: string) {
     const text = (textArg ?? input).trim();

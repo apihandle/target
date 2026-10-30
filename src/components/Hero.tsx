@@ -1,26 +1,111 @@
-import RotatingPrompts from "./RotatingPrompts";
-import SignupCard from "./SignupCard";
+"use client";
+import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+
+const Icon = {
+  globe: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 md:h-4 md:w-4" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </svg>
+  ),
+  sparkles: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 md:h-4 md:w-4" aria-hidden="true">
+      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" />
+    </svg>
+  ),
+  layout: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 md:h-4 md:w-4" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M9 21V9" />
+    </svg>
+  ),
+  dice: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 md:h-4 md:w-4" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1" fill="currentColor" /><circle cx="16" cy="16" r="1" fill="currentColor" /><circle cx="12" cy="12" r="1" fill="currentColor" />
+    </svg>
+  ),
+};
+
+export const CHIPS = [
+  { icon: Icon.globe, label: "Learn about the World", prompt: "Tell me something fascinating about the world today" },
+  { icon: Icon.sparkles, label: "Create Anything", prompt: "Help me create " },
+  { icon: Icon.layout, label: "Create Websites", prompt: "Build me a website for " },
+  { icon: Icon.dice, label: "Surprise Me", prompt: null },
+] as const;
+
+export const SURPRISES = [
+  "Why does the ocean glow at night?",
+  "Plan a weekend in Goa and find me the cheapest flights from Patna.",
+  "Write a haiku about rain on a tin roof",
+  "Explain black holes like I'm ten",
+  "Give me a 20-minute home workout",
+];
 
 export default function Hero() {
+  const router = useRouter();
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const q = query.trim();
+    if (!q) return;
+    router.push(`/app?q=${encodeURIComponent(q)}`);
+  }
+
+  function pick(prompt: string | null) {
+    const text = prompt ?? SURPRISES[Math.floor(Math.random() * SURPRISES.length)];
+    setQuery(text);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
   return (
-    <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-5 pb-16 pt-28">
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <div className="animate-blob absolute -left-24 top-10 h-80 w-80 rounded-full bg-orange-500/40 blur-3xl" />
-        <div className="animate-blob absolute right-[-6rem] top-40 h-96 w-96 rounded-full bg-rose-600/40 blur-3xl [animation-delay:-5s]" />
-        <div className="animate-blob absolute bottom-0 left-1/3 h-80 w-80 rounded-full bg-violet-600/30 blur-3xl [animation-delay:-9s]" />
-      </div>
-      <div className="animate-fade-up text-center">
-        <p className="mb-4 inline-block rounded-full border border-white/15 px-3 py-1 text-xs uppercase tracking-[0.25em] text-white/60">Personal AI</p>
-        <h1 className="text-balance text-5xl font-extrabold tracking-tight sm:text-7xl">
-          Aim it. <span className="bg-gradient-to-r from-orange-400 to-rose-500 bg-clip-text text-transparent">TARGET</span> handles it.
-        </h1>
-        <p className="mx-auto mt-5 max-w-lg text-balance text-base text-white/70 sm:text-lg">
-          One AI that plans, books, orders and organises your life, so you can get off the screen.
-        </p>
-      </div>
-      <RotatingPrompts />
-      <div className="mt-6 flex w-full justify-center">
-        <SignupCard />
+    <section className="flex min-h-[75vh] flex-col items-center justify-center px-4 text-center">
+      <h1 className="animate-fade-up mb-8 font-display text-4xl font-medium tracking-tight text-white md:text-5xl lg:text-6xl">
+        Ask anything
+      </h1>
+
+      <form
+        onSubmit={submit}
+        data-testid="hero-search"
+        className="flex w-full max-w-2xl items-center rounded-full border border-white/15 bg-white/10 px-5 py-3.5 shadow-2xl backdrop-blur-xl transition-all focus-within:border-white/30"
+      >
+        <label htmlFor="hero-q" className="sr-only">Ask me anything</label>
+        <input
+          id="hero-q"
+          ref={inputRef}
+          data-testid="hero-input"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Ask me anything privately..."
+          autoComplete="off"
+          className="w-full min-w-0 bg-transparent text-base text-white outline-none placeholder:text-gray-400"
+        />
+        <button
+          type="submit"
+          aria-label="Send"
+          data-testid="hero-submit"
+          disabled={!query.trim()}
+          className="ml-2 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-white/20 text-white transition-all hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+            <path d="M12 19V5" /><path d="M5 12l7-7 7 7" />
+          </svg>
+        </button>
+      </form>
+
+      <div className="mt-5 flex max-w-2xl flex-wrap items-center justify-center gap-2.5">
+        {CHIPS.map((c) => (
+          <button
+            key={c.label}
+            type="button"
+            data-testid="hero-chip"
+            onClick={() => pick(c.prompt)}
+            className="flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs text-gray-200 backdrop-blur-md transition-all hover:bg-white/20 md:text-sm"
+          >
+            {c.icon}
+            {c.label}
+          </button>
+        ))}
       </div>
     </section>
   );

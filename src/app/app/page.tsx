@@ -6,7 +6,7 @@ import Sidebar from "@/components/Sidebar";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "TARGET" };
 
-export default async function AppHome({ searchParams }: { searchParams: { c?: string; p?: string } }) {
+export default async function AppHome({ searchParams }: { searchParams: { c?: string; p?: string; q?: string } }) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=/app");
@@ -34,7 +34,7 @@ export default async function AppHome({ searchParams }: { searchParams: { c?: st
     <div className="flex h-[100dvh]">
       <Sidebar conversations={convs ?? []} activeId={activeId} email={user.email ?? ""} />
       <main className="flex-1 overflow-hidden">
-        <Chat key={activeId ?? `new-${projectId ?? ""}`} conversationId={activeId} initialMessages={initial} projectId={projectId} projectName={projectName} />
+        <Chat key={activeId ?? `new-${projectId ?? ""}`} conversationId={activeId} initialMessages={initial} projectId={projectId} projectName={projectName} initialPrompt={!activeId ? searchParams.q?.slice(0, 4000) : undefined} />
       </main>
     </div>
   );

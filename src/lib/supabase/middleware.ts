@@ -26,7 +26,8 @@ export async function updateSession(request: NextRequest) {
   if (!user && path.startsWith("/app")) {
     const to = request.nextUrl.clone();
     to.pathname = "/login";
-    to.searchParams.set("next", path);
+    to.search = "";
+    to.searchParams.set("next", path + request.nextUrl.search);
     return NextResponse.redirect(to);
   }
   if (user && path === "/login") {
