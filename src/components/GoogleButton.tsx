@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-export default function GoogleButton({ next = "/app", variant = "dark" }: { next?: string; variant?: "dark" | "light" }) {
+export default function GoogleButton({ next = "/app", variant = "dark" }: { next?: string; variant?: "dark" | "glass" }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -28,8 +28,8 @@ export default function GoogleButton({ next = "/app", variant = "dark" }: { next
         onClick={go}
         disabled={loading}
         className={
-          variant === "light"
-            ? "flex h-9 w-full items-center justify-center gap-2 rounded-[6px] border border-[#e2e0dc] bg-[#f2f0ec] text-[14px] font-medium text-[#1a1a1a] transition hover:bg-[#ebe8e2] disabled:opacity-60"
+          variant === "glass"
+            ? "flex h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-white/10 bg-white/[0.08] text-[14px] font-medium text-stucco transition hover:bg-white/[0.14] disabled:opacity-60"
             : "flex w-full items-center justify-center gap-2 rounded-full bg-white py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:opacity-60"
         }
       >
@@ -41,7 +41,7 @@ export default function GoogleButton({ next = "/app", variant = "dark" }: { next
         </svg>
         {loading ? "Opening Google…" : "Continue with Google"}
       </button>
-      {error && <p data-testid="google-error" className="mt-2 text-center text-xs text-rose-500">{error}</p>}
+      {error && <p data-testid="google-error" className="mt-2 text-center text-xs text-rose-400">{error}</p>}
     </>
   );
 }
