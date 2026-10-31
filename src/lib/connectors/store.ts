@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { Db } from "@/lib/server/auth";
 import { decryptWithAny, decryptionKeys, encryptSecret, primaryKey } from "@/lib/connectors/crypto";
 import { needsRefresh, refreshCreds } from "@/lib/connectors/oauth";
+import { ConnectorError } from "@/lib/connectors/http";
 import type { ConnectionInfo, ConnectionStatus, ConnectorDef, Credentials } from "@/lib/connectors/types";
 
 /**
@@ -68,20 +69,43 @@ export async function setStatus(userId: string, connectorId: string, status: Con
  * Valid credentials for one of the user's connections, refreshing OAuth tokens shortly before expiry.
  * If the refresh fails the connection is marked "expired" and NotConnectedError is thrown.
  */
-export async function getCredentials(userId: string, c: ConnectorDef, f: typeof fetch = fetch): Promise<{ creds: Credentials; info: ConnectionInfo }> {
+/** A refresh failure that may fix itself (provider down, timeout, rate limit): keep the connection. */
+export function isTransientRefreshError(e: unknown): boolean {
+  const status = (e as { status?: number })?.status;
+  return typeof status === "number" && (status >= 500 || status === 429 || status === 408);
+}
+
+/** One refresh per user+connector at a time, so parallel tool calls don't race each other. */
+const inflight = new Map<string, Promise<Credentials>>();
+export function refreshOnce(key: string, run: () => Promise<Credentials>): Promise<Credentials> {
+  const existing = inflight.get(key);
+  if (existing) return existing;
+  const p = run().finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
+
+export async function getCredentials(userId: string, c: ConnectorDef, f: typeof fetch = fetch, opts: { forceRefresh?: boolean } = {}): Promise<{ creds: Credentials; info: ConnectionInfo }> {
   const row = await loadRow(userId, c.id);
   if (!row || !row.encrypted_credentials) throw new NotConnectedError(c.id, "missing");
   if (row.status !== "connected") throw new NotConnectedError(c.id, row.status);
   let creds: Credentials;
   try { creds = JSON.parse(decryptWithAny(row.encrypted_credentials, decryptionKeys())) as Credentials; }
   catch { await setStatus(userId, c.id, "expired"); throw new NotConnectedError(c.id, "expired"); }
-  if (needsRefresh(creds)) {
+  if (needsRefresh(creds) || (opts.forceRefresh && creds.refresh_token)) {
+    const current = creds;
     try {
-      creds = await refreshCreds(c, process.env, creds, f);
-      await createAdminClient().from("connections")
-        .update({ encrypted_credentials: encryptSecret(JSON.stringify(creds), primaryKey()) })
-        .eq("id", row.id).eq("user_id", userId);
-    } catch {
+      creds = await refreshOnce(`${userId}:${c.id}`, async () => {
+        const next = await refreshCreds(c, process.env, current, f);
+        await createAdminClient().from("connections")
+          .update({ encrypted_credentials: encryptSecret(JSON.stringify(next), primaryKey()) })
+          .eq("id", row.id).eq("user_id", userId);
+        return next;
+      });
+    } catch (e) {
+      // Provider hiccup: keep the connection and let the caller retry later.
+      if (isTransientRefreshError(e)) throw new ConnectorError(`${c.name} is not responding right now. Try again in a minute.`, 503);
+      // Revoked or invalid refresh token (e.g. invalid_grant): the user must reconnect.
       await setStatus(userId, c.id, "expired");
       throw new NotConnectedError(c.id, "expired");
     }
