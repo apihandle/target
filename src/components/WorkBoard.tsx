@@ -121,6 +121,9 @@ export default function WorkBoard() {
         <p className="mt-3 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-accent-strong">
           There is no limit on how many ads you watch. But don&apos;t open the same link again and again: keep a gap of at least 3 minutes before opening the same link again.
         </p>
+        <p data-testid="work-multi" className="mt-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-stucco/85">
+          You can open multiple different links at once, and you can also use different browsers to open multiple links.
+        </p>
       </div>
 
       {pending && data?.signedIn && (

@@ -32,6 +32,7 @@ describe("Work page", () => {
     expect(screen.getByTestId("work-rules")).toHaveTextContent("no limit");
     expect(screen.getByTestId("work-rules")).toHaveTextContent("3 minutes");
     expect(screen.getByTestId("work-signin")).toBeInTheDocument();
+    expect(screen.getByTestId("work-multi")).toHaveTextContent("different browsers");
   });
 
   it("signed in: opening a link starts a view, locks it for 3 minutes, and coming back adds coins", async () => {
