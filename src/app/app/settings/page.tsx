@@ -1,6 +1,7 @@
 import AppShell, { getSessionOrRedirect } from "@/components/AppShell";
 import { Page } from "@/components/ui/Card";
 import { SettingsGroup, SettingsRow } from "@/components/SettingsList";
+import { isAdminEmail } from "@/lib/server/errors";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Settings · TARGET" };
@@ -39,11 +40,13 @@ export default async function SettingsPage() {
           <SettingsGroup title="Personalize">
             <SettingsRow href="/app/settings/quick-actions" icon="bolt" title="Quick actions" description="Shortcuts shown on Home" testId="settings-quick-actions" />
             <SettingsRow href="/app/scheduled" icon="clock" title="Scheduled prompts" description="Prompts that run on a schedule" />
+            <SettingsRow href="/app/settings/notifications" icon="bell" title="Notifications" description="Phone alerts when scheduled work is done" testId="settings-notifications" />
           </SettingsGroup>
 
           <SettingsGroup title="Privacy">
             <SettingsRow href="/app/settings/privacy" icon="shield" title="Privacy & memory" description="Review or clear memories" testId="settings-privacy" />
             <SettingsRow href="/app/activity" icon="activity" title="Activity" description="Everything TARGET did for you" />
+            {isAdminEmail(email) && <SettingsRow href="/app/settings/errors" icon="alert" title="Site errors" description="Errors from the live site (owner only)" testId="settings-errors" />}
           </SettingsGroup>
 
           <SettingsGroup title="About">

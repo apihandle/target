@@ -30,7 +30,7 @@ export async function runScheduledJob(db: Db, job: ScheduledJob & { user_id: str
     if (!project) projectId = null;
   }
 
-  const { data: conv, error: cErr } = await db.from("conversations").insert({ user_id: uid, title: titleFrom(`⏰ ${job.title}`), project_id: projectId }).select("id").single();
+  const { data: conv, error: cErr } = await db.from("conversations").insert({ user_id: uid, title: titleFrom(`Scheduled: ${job.title}`), project_id: projectId }).select("id").single();
   if (cErr || !conv) return { status: "failed", taskId: null, conversationId: null, error: "Could not create the chat for this run" };
   const convId = conv.id as string;
   await db.from("messages").insert({ conversation_id: convId, user_id: uid, role: "user", content: job.prompt });

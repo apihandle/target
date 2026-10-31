@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { Great_Vibes, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 import AdTag from "@/components/AdTag";
+import ErrorReporter from "@/components/ErrorReporter";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -47,6 +48,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${script.variable} ${display.variable} antialiased`}
       >
         {children}
+        <ErrorReporter />
       </body>
     </html>
   );
