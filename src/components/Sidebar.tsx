@@ -77,18 +77,86 @@ export default function Sidebar({ conversations, activeId, email, section = "cha
   const list = conversations.map((c) => ({ ...c, pinned: pinnedOverride[c.id] ?? !!c.pinned }));
   const pinned = list.filter((c) => c.pinned);
   const recent = list.filter((c) => !c.pinned);
-  const row = (c: ConvItem) => (
-    <div key={c.id} className="group flex items-center rounded-lg hover:bg-surface" data-testid="conv-item">
-      <Link href={`/app?c=${c.id}`} onClick={close} aria-current={c.id === activeId ? "page" : undefined}
-        className={`block min-w-0 flex-1 truncate rounded-lg px-3 py-1.5 text-sm ${c.id === activeId ? "bg-surface-2 text-ink" : "text-muted hover:text-ink"}`}>
-        {c.title}
-      </Link>
-      <button type="button" data-testid="pin-btn" onClick={() => togglePin(c)} aria-pressed={!!c.pinned} aria-label={c.pinned ? `Unpin ${c.title}` : `Pin ${c.title}`}
-        className={`mr-1 shrink-0 rounded px-1.5 py-1 text-xs focus:opacity-100 ${c.pinned ? "text-accent-strong" : "text-muted-soft opacity-0 hover:text-ink group-hover:opacity-100"}`}>
-        {c.pinned ? "★" : "☆"}
-      </button>
-    </div>
-  );
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [titleOverride, setTitleOverride] = useState<Record<string, string>>({});
+  const [hidden, setHidden] = useState<Record<string, true>>({});
+
+  async function saveTitle(c: ConvItem) {
+    const t = draft.trim();
+    setEditing(null);
+    if (!t || t === c.title) return;
+    setTitleOverride((o) => ({ ...o, [c.id]: t }));
+    try {
+      const r = await fetch(`/api/conversations/${c.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: t.slice(0, 80) }) });
+      if (!r.ok) throw new Error();
+      router.refresh();
+    } catch {
+      setTitleOverride((o) => { const n = { ...o }; delete n[c.id]; return n; });
+      setPinError("Couldn't rename the chat. Try again.");
+    }
+  }
+
+  async function removeChat(c: ConvItem) {
+    setMenuFor(null);
+    if (!window.confirm(`Delete "${c.title}"? This can't be undone.`)) return;
+    setHidden((h) => ({ ...h, [c.id]: true }));
+    try {
+      const r = await fetch(`/api/conversations/${c.id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error();
+      if (c.id === activeId) router.push("/app");
+      router.refresh();
+    } catch {
+      setHidden((h) => { const n = { ...h }; delete n[c.id]; return n; });
+      setPinError("Couldn't delete the chat. Try again.");
+    }
+  }
+
+  const menuItem = "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-ink-soft hover:bg-surface-3 hover:text-ink";
+  const row = (raw: ConvItem) => {
+    const c = { ...raw, title: titleOverride[raw.id] ?? raw.title };
+    if (hidden[c.id]) return null;
+    if (editing === c.id) {
+      return (
+        <form key={c.id} onSubmit={(e) => { e.preventDefault(); saveTitle(c); }} className="px-1 py-0.5">
+          <input autoFocus data-testid="rename-input" aria-label="Chat name" value={draft} maxLength={80}
+            onChange={(e) => setDraft(e.target.value)} onBlur={() => saveTitle(c)} onKeyDown={(e) => { if (e.key === "Escape") setEditing(null); }}
+            className="w-full rounded-lg border border-accent/50 bg-surface px-2.5 py-1.5 text-sm text-ink outline-none" />
+        </form>
+      );
+    }
+    return (
+      <div key={c.id} className="group relative flex items-center rounded-lg hover:bg-surface" data-testid="conv-item">
+        <Link href={`/app?c=${c.id}`} onClick={close} aria-current={c.id === activeId ? "page" : undefined}
+          className={`block min-w-0 flex-1 truncate rounded-lg px-3 py-1.5 text-sm ${c.id === activeId ? "bg-surface-2 text-ink" : "text-muted hover:text-ink"}`}>
+          {c.pinned && <svg aria-label="Pinned" viewBox="0 0 24 24" className="mr-1.5 inline h-3 w-3 -translate-y-px text-accent" fill="currentColor"><path d="M16 3H8v2l1 1v5l-3 3v2h5v5l1 1 1-1v-5h5v-2l-3-3V6l1-1z" /></svg>}
+          {c.title}
+        </Link>
+        <button type="button" data-testid="conv-menu" aria-label={`Options for ${c.title}`} aria-haspopup="menu" aria-expanded={menuFor === c.id}
+          onClick={() => setMenuFor(menuFor === c.id ? null : c.id)}
+          className={`mr-1 grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-soft hover:text-ink focus:opacity-100 ${menuFor === c.id ? "opacity-100" : "opacity-100 md:opacity-0 md:group-hover:opacity-100"}`}>
+          <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+        </button>
+        {menuFor === c.id && (
+          <>
+            <div aria-hidden className="fixed inset-0 z-40" onClick={() => setMenuFor(null)} />
+            <div role="menu" data-testid="conv-menu-list" className="absolute right-1 top-8 z-50 w-40 rounded-xl border border-line-strong bg-surface-2/95 p-1 shadow-card backdrop-blur-xl">
+              <button role="menuitem" type="button" data-testid="pin-btn" onClick={() => { setMenuFor(null); togglePin(c); }} className={menuItem}>
+                {c.pinned ? "Unpin" : "Pin"}
+              </button>
+              <button role="menuitem" type="button" data-testid="rename-btn" onClick={() => { setMenuFor(null); setDraft(c.title); setEditing(c.id); }} className={menuItem}>
+                Rename
+              </button>
+              <button role="menuitem" type="button" data-testid="delete-btn" onClick={() => removeChat(c)} className={`${menuItem} text-danger hover:text-danger`}>
+                Delete
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     <>

@@ -51,6 +51,12 @@ body {
 .prose-target a { color: #f0d6a4; text-decoration: underline; }
 .prose-target table { border-collapse: collapse; margin: 0.5em 0; }
 .prose-target th, .prose-target td { border: 1px solid rgba(255,255,255,0.15); padding: 0.3em 0.6em; }
+.prose-target .code-block pre { background: none; border-radius: 0; margin: 0; padding: 0.8em 1em; font-size: 13px; }
+.prose-target .table-wrap table { margin: 0; width: 100%; font-size: 13.5px; }
+.prose-target .table-wrap th { background: rgba(230,196,135,0.10); color: #f0d6a4; font-weight: 600; text-align: left; }
+.prose-target .table-wrap th, .prose-target .table-wrap td { border: 0; border-bottom: 1px solid rgba(255,255,255,0.08); padding: 0.5em 0.8em; }
+.prose-target .table-wrap tr:last-child td { border-bottom: 0; }
+.prose-target blockquote { border-left: 2px solid rgba(230,196,135,0.5); padding-left: 0.8em; color: #94a2a3; margin: 0.6em 0; }
 
 /* Chat typing indicator: three soft gold dots that bounce in turn. */
 .typing-dot { width: 7px; height: 7px; border-radius: 9999px; background: #e6c487; opacity: .5; animation: typing-bounce 1.1s infinite ease-in-out; }

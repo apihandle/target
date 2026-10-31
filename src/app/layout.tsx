@@ -19,8 +19,17 @@ const script = Great_Vibes({ subsets: ["latin"], weight: "400", variable: "--fon
 const display = Instrument_Serif({ subsets: ["latin"], weight: "400", variable: "--font-display", display: "swap" });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://gettarget.vercel.app"),
   title: "TARGET",
   description: "TARGET: your personal AI that gets things done.",
+  openGraph: {
+    title: "TARGET: Ask anything",
+    description: "Your personal AI that plans, researches and organizes, and asks before it acts.",
+    url: "https://gettarget.vercel.app",
+    siteName: "TARGET",
+    type: "website",
+  },
+  twitter: { card: "summary_large_image", title: "TARGET: Ask anything", description: "Your personal AI that gets things done." },
 };
 
 export default function RootLayout({
