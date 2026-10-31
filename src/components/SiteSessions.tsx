@@ -8,7 +8,7 @@ type Row = { id: string; domain: string; account_email: string; via: string; coo
 const VIA: Record<string, string> = { google: "Joined with Google", email: "Email sign-in", password: "Password sign-in", other: "Signed in" };
 const fmt = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
-export default function SiteSessions() {
+export default function SiteSessions({ google }: { google: { status: string; email: string } | null }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -21,10 +21,11 @@ export default function SiteSessions() {
   }
   useEffect(() => { load(); }, []);
 
-  async function signOut(id: string | "all") {
+  async function signOut(id: string | "all" | "expired") {
     if (id === "all" && !confirm("Sign TARGET out of every website?")) return;
     setBusy(id);
-    const r = await fetch(id === "all" ? "/api/site-sessions?all=1" : `/api/site-sessions?id=${id}`, { method: "DELETE" });
+    const url = id === "all" ? "/api/site-sessions?all=1" : id === "expired" ? "/api/site-sessions?expired=1" : `/api/site-sessions?id=${id}`;
+    const r = await fetch(url, { method: "DELETE" });
     setBusy("");
     if (!r.ok) { setError("Couldn't sign out. Try again."); return; }
     await load();
@@ -32,8 +33,20 @@ export default function SiteSessions() {
 
   if (rows === null) return <p className="px-1 text-sm text-muted">Loading…</p>;
   const now = Date.now();
+  const expiredCount = rows.filter((s) => s.status !== "active" || Date.parse(s.expires_at) <= now).length;
+  const gOk = google?.status === "connected";
   return (
     <div className="space-y-3" data-testid="site-sessions">
+      <article data-testid="google-health" className="flex flex-wrap items-center gap-3 rounded-2xl border border-accent/30 bg-surface/70 p-4 backdrop-blur">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-medium">Google account</h3>
+            <Badge tone={gOk ? "ok" : "warn"}>{gOk ? "Connected" : google ? "Needs reconnect" : "Not connected"}</Badge>
+          </div>
+          <p className="mt-1 truncate text-sm text-muted">{google?.email || "Link Google so TARGET can read sign-up codes from your Gmail."}</p>
+        </div>
+        {!gOk && <a href="/app/connectors" className="rounded-full border border-accent/60 px-3 py-1.5 text-sm text-accent" data-testid="google-reconnect">{google ? "Reconnect" : "Connect"}</a>}
+      </article>
       {error && <p className="rounded-2xl border border-danger/30 px-4 py-3 text-sm text-danger">{error}</p>}
       {!rows.length ? (
         <p className="rounded-2xl border border-line bg-surface/70 px-4 py-5 text-sm text-muted" data-testid="sessions-empty">
@@ -57,7 +70,8 @@ export default function SiteSessions() {
               </article>
             );
           })}
-          <div className="flex justify-end pt-1">
+          <div className="flex flex-wrap justify-end gap-2 pt-1">
+            {expiredCount > 0 && <Button size="sm" variant="ghost" disabled={busy === "expired"} onClick={() => signOut("expired")} data-testid="sessions-clear-expired">Clear expired ({expiredCount})</Button>}
             <Button size="sm" variant="danger" disabled={busy === "all"} onClick={() => signOut("all")} data-testid="sessions-signout-all">Sign out everywhere</Button>
           </div>
         </>

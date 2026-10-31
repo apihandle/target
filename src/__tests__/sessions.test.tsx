@@ -77,3 +77,24 @@ describe("google token refresh", () => {
     expect(a).toBe(b);
   });
 });
+
+describe("sealed session envelope", () => {
+  it("only opens for the same user and site, and upgrades old keys", async () => {
+    const { randomBytes } = await import("crypto");
+    const oldKey = randomBytes(32).toString("base64");
+    process.env.CONNECTOR_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+    const { sealCookies, openCookies } = await import("@/lib/server/siteSessions");
+    const { encryptSecret, parseKey } = await import("@/lib/connectors/crypto");
+    const ck = [{ name: "sid", value: "v", domain: "example.com", path: "/", expires: -1, httpOnly: true, secure: true, sameSite: "Lax" as const }];
+    const box = sealCookies("u1", "example.com", ck);
+    expect(box).not.toContain("sid");
+    expect(openCookies(box, "u1", "example.com")).toEqual({ cookies: ck, stale: false });
+    expect(openCookies(box, "u2", "example.com")).toBeNull();
+    expect(openCookies(box, "u1", "evil.com")).toBeNull();
+    expect(openCookies("garbage", "u1", "example.com")).toBeNull();
+    process.env.TOKEN_ENCRYPTION_KEY = oldKey;
+    const legacy = encryptSecret(JSON.stringify(ck), parseKey(oldKey, "TOKEN_ENCRYPTION_KEY"));
+    expect(openCookies(legacy, "u1", "example.com")?.stale).toBe(true);
+    delete process.env.TOKEN_ENCRYPTION_KEY;
+  });
+});

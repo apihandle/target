@@ -21,12 +21,14 @@ export async function DELETE(req: Request) {
   const u = new URL(req.url);
   const id = u.searchParams.get("id");
   const all = u.searchParams.get("all") === "1";
-  if (!all && !(id && UUID_RE.test(id))) return badRequest("Say which sign-in to remove");
+  const expired = u.searchParams.get("expired") === "1";
+  if (!all && !expired && !(id && UUID_RE.test(id))) return badRequest("Say which sign-in to remove");
   let q = a.db.from("site_sessions").delete().eq("user_id", a.user.id);
-  if (!all && id) q = q.eq("id", id);
+  if (expired) q = q.or(`status.neq.active,expires_at.lt.${new Date().toISOString()}`);
+  else if (!all && id) q = q.eq("id", id);
   const { data, error } = await q.select("domain");
   if (error) return dbError(error, "Could not sign out");
   const n = data?.length ?? 0;
-  if (n) await logActivity(a.db, a.user.id, { category: "connection", title: all ? `Signed out of ${n} website${n === 1 ? "" : "s"}` : `Signed out of ${data![0].domain}` });
+  if (n) await logActivity(a.db, a.user.id, { category: "connection", title: expired ? `Cleared ${n} expired sign-in${n === 1 ? "" : "s"}` : all ? `Signed out of ${n} website${n === 1 ? "" : "s"}` : `Signed out of ${data![0].domain}` });
   return json({ ok: true, removed: n });
 }
