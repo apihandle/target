@@ -34,3 +34,23 @@ language sql stable security definer set search_path = public as $$
   select coalesce(sum(coins), 0)::bigint from public.work_views where user_id = p_user and claimed_at is not null
 $$;
 revoke all on function public.work_balance(uuid) from public, anon, authenticated;
+
+-- Starting ad links (more can be added in Settings > Work links). Only inserted once, if the table is empty.
+insert into public.work_links (title, url, coins, sort)
+select * from (values
+  ('Ad link 1', 'https://ouo.io/rH7an2', 1, 1),
+  ('Ad link 2', 'https://ouo.io/jIluEug', 1, 2),
+  ('Ad link 3', 'https://ouo.io/p8TNO7M', 1, 3),
+  ('Ad link 4', 'https://ouo.io/RX9Xsoh', 1, 4),
+  ('Ad link 5', 'https://ouo.io/CjCXnT', 1, 5),
+  ('Ad link 6', 'https://ouo.io/Ofd7vGw', 1, 6),
+  ('Ad link 7', 'https://ouo.io/Z1DS8aV', 1, 7),
+  ('Ad link 8', 'https://uplcm.com/4/10987932', 1, 8),
+  ('Ad link 9', 'https://uplcm.com/4/10987931', 1, 9),
+  ('Ad link 10', 'https://uplcm.com/4/12150232', 1, 10),
+  ('Ad link 11', 'https://uplcm.com/4/10987933', 1, 11),
+  ('Ad link 12', 'https://uplcm.com/4/12158718', 1, 12),
+  ('Ad link 13', 'https://uplcm.com/4/12158719', 1, 13),
+  ('Ad link 14', 'https://uplcm.com/4/12158722', 1, 14)
+) as v(title, url, coins, sort)
+where not exists (select 1 from public.work_links);
