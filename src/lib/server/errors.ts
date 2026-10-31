@@ -1,3 +1,4 @@
+import { redact } from "@/lib/connectors/safety";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Db } from "@/lib/server/auth";
 import { sendPushToUser } from "@/lib/server/push";
@@ -41,9 +42,10 @@ export function resetErrorState() { lastAlert.clear(); adminId = undefined; }
  * Never throws: error reporting must not cause errors of its own.
  */
 export async function reportError(r: ErrorReport, dbIn?: Db): Promise<void> {
-  const message = clip(r.message, 500) || "Unknown error";
-  const stack = clip(r.stack, 4000) || null;
-  const url = clip(r.url, 500) || null;
+  // Never store or alert with a secret that slipped into an error message, stack or URL.
+  const message = redact(clip(r.message, 500)) || "Unknown error";
+  const stack = redact(clip(r.stack, 4000)) || null;
+  const url = redact(clip(r.url, 500)) || null;
   const fp = fingerprint({ source: r.source, message, stack });
   console.error(`[error:${r.source}] ${message}${url ? ` (${url})` : ""} fp=${fp}`);
   let db = dbIn;

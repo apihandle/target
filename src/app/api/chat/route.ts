@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { SYSTEM_PROMPT, titleFrom, type ChatMsg } from "@/lib/ai";
+import { detectTask, MAX_TOKENS, PLAYBOOKS, taskModel } from "@/lib/skills";
 import { llm, llmText, LLMError } from "@/lib/llm";
 import { ACTIONS_PROMPT, heuristicActions, mergeActions, sanitizeAction, type Action } from "@/lib/actions";
 import { projectBlock } from "@/lib/projects";
@@ -118,7 +119,11 @@ export async function POST(req: Request) {
   const files = await attachmentContext(db, allFiles, currentIds, vision.length > 0);
   const only: ModelRef[] | undefined = files.imageParts.length ? vision : undefined;
   // Model picker: validated against the configured allow-list; the rest stay as fallback.
-  const prefer = body.model !== undefined ? resolveModel(body.model) : resolveModel(await loadPreferredModel(supabase, user.id));
+  const kind = detectTask(text);
+  const picked = body.model !== undefined ? resolveModel(body.model) : resolveModel(await loadPreferredModel(supabase, user.id));
+  // The user's own model pick always wins; otherwise use a model that is strong at this kind of task.
+  const prefer = picked ?? (only ? null : taskModel(kind));
+  const maxTokens = MAX_TOKENS[kind];
 
   const settings = await loadSettings(supabase, user.id);
 
@@ -181,7 +186,7 @@ export async function POST(req: Request) {
   }
 
   const messages: LLMMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + files.block + connectorNote + resumeNote },
+    { role: "system", content: SYSTEM_PROMPT + PLAYBOOKS[kind] + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + files.block + connectorNote + resumeNote },
     ...history,
     files.imageParts.length ? { role: "user", content: [{ type: "text", text }, ...files.imageParts] as ContentPart[] } : { role: "user", content: text },
   ];
@@ -196,12 +201,12 @@ export async function POST(req: Request) {
   let toolsOff = false;
   try {
     try {
-      upstream = await llm({ messages, stream: true, timeoutMs: 30000, tools: toolSpecs.length ? toolSpecs : undefined, prefer, only });
+      upstream = await llm({ messages, stream: true, timeoutMs: 30000, maxTokens, tools: toolSpecs.length ? toolSpecs : undefined, prefer, only });
     } catch (e) {
       // The model/provider can't do tool calling: ordinary chat still works, without connector tools.
       if (!(e instanceof LLMError) || !e.toolsRejected) throw e;
       toolsOff = true;
-      upstream = await llm({ messages: messages.map((m) => (m.role === "system" ? { ...m, content: String(m.content).replace(connectorNote, "") } : m)), stream: true, timeoutMs: 30000, prefer, only });
+      upstream = await llm({ messages: messages.map((m) => (m.role === "system" ? { ...m, content: String(m.content).replace(connectorNote, "") } : m)), stream: true, timeoutMs: 30000, maxTokens, prefer, only });
     }
   } catch (e) {
     const err = e instanceof LLMError ? e : new LLMError("AI error", 502);
@@ -222,7 +227,7 @@ export async function POST(req: Request) {
         if (toolsOff && loaded.connected.size) { const n = "_(Connector tools aren't available with the AI model answering right now, so this reply can't use your connected apps.)_\n\n"; full += n; send(n); }
         const result = await runAgent({
           messages, first: upstream,
-          next: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 30000, tools: toolSpecs, prefer, only }),
+          next: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 30000, maxTokens, tools: toolSpecs, prefer, only }),
           onText: (d) => { full += d; send(d); },
           label: (call: ToolCall) => toolLabel(call.function.name),
           onTool: (call: ToolCall) => executeToolCall({ db, userId: user.id, projectId, conversationId: convId, taskId: task?.id ?? null }, call.function.name, call.function.arguments, loaded),

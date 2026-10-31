@@ -7,6 +7,17 @@ const nextConfig = {
   async headers() {
     return [
       {
+        // Baseline security headers on every page and API route.
+        source: "/:path*",
+        headers: [
+          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), geolocation=(), microphone=(self)" },
+        ],
+      },
+      {
         // Public read-only share links: never indexed or cached, and the token never leaks via Referer.
         source: "/share/:path*",
         headers: [
