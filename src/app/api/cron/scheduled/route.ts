@@ -3,6 +3,8 @@ import { cronAuth } from "@/lib/server/cron";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { claimJob, runScheduledJob } from "@/lib/server/scheduledRun";
 import { JOB_COLS, type ScheduledJob } from "@/lib/schedule";
+import { sendPushToUser } from "@/lib/server/push";
+import { reportError } from "@/lib/server/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,7 +30,7 @@ async function handle(req: Request) {
   const start = Date.now();
   const now = new Date(start);
   const { data, error } = await db.from("scheduled_jobs").select(`${JOB_COLS}, user_id`).eq("status", "active").lte("next_run_at", now.toISOString()).order("next_run_at", { ascending: true }).limit(BATCH);
-  if (error) { console.error("[cron] could not load jobs:", error.message); return json({ error: "Could not load jobs" }, 500); }
+  if (error) { await reportError({ source: "cron", message: `Could not load scheduled jobs: ${error.message}` }, db); return json({ error: "Could not load jobs" }, 500); }
   const due = (data ?? []) as (ScheduledJob & { user_id: string })[];
 
   const results = await Promise.all(due.map(async (job) => {
@@ -38,6 +40,16 @@ async function handle(req: Request) {
       last_status: out.status, last_error: out.error ? out.error.slice(0, 400) : null, last_task_id: out.taskId,
       run_count: (job.run_count ?? 0) + 1, updated_at: new Date().toISOString(),
     }).eq("id", job.id).eq("user_id", job.user_id);
+    // Tell the owner's phone. Push is optional: failures here never fail the job.
+    const failed = !!out.error;
+    try {
+      await sendPushToUser(db, job.user_id, {
+        title: failed ? "Scheduled prompt failed" : out.status === "waiting_approval" ? "Needs your approval" : out.status === "needs_connection" ? "Needs a connection" : "Scheduled prompt done",
+        body: failed ? `${job.title}: ${out.error!.slice(0, 120)}` : job.title,
+        url: out.status === "waiting_approval" ? "/app/activity" : out.conversationId ? `/app?c=${out.conversationId}` : "/app/activity", tag: `job-${job.id}`,
+      });
+    } catch (e) { console.error("[cron] push failed:", e instanceof Error ? e.message : e); }
+    if (failed) await reportError({ source: "cron", message: `Scheduled job failed: ${out.error!.slice(0, 300)}`, userId: job.user_id }, db);
     return { id: job.id, status: out.status };
   }));
   return json({ ran: results.filter((r) => r.status !== "skipped").length, results });

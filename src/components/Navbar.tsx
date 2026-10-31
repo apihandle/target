@@ -1,7 +1,8 @@
 const LINKS = [
-  { label: "Features", href: "#features" },
-  { label: "Privacy", href: "#privacy" },
-  { label: "Get started", href: "#signup" },
+  { label: "Features", href: "/#features" },
+  { label: "Work", href: "/work" },
+  { label: "Privacy", href: "/#privacy" },
+  { label: "Get started", href: "/#signup" },
 ];
 
 /** Venice-style top bar: script logo, quiet centre links, blue "Log in" text + glass "Sign up" button. */
@@ -20,6 +21,9 @@ export default function Navbar() {
           ))}
         </div>
         <div className="flex items-center gap-1">
+          <a href="/work" data-testid="nav-work-mobile" className="px-2 text-sm font-medium text-stucco/80 transition hover:text-stucco md:hidden">
+            Work
+          </a>
           <a href="/login" data-testid="nav-login" className="hidden px-3 text-sm font-medium text-sun-glint transition hover:text-stucco sm:block">
             Log in
           </a>

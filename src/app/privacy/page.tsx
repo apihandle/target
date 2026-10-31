@@ -9,6 +9,7 @@ export default function Privacy() {
         { h: "How we use it", p: "Only to run TARGET for you: signing you in, answering your requests, and remembering what you ask us to remember. We never sell your data." },
         { h: "Where it lives", p: "Data is stored with our infrastructure providers (Supabase for accounts and data, Vercel for hosting). AI requests are sent to model providers only to generate your answers." },
         { h: "Ads", p: "Our public pages (like the homepage) show ads from a third-party ad network (Monetag), which may use cookies or similar technology to show and measure ads. Ads are not shown inside your signed-in TARGET workspace, and your chats, memories and projects are never shared with advertisers." },
+        { h: "Work page and coins", p: "The Work page links to ads from our ad network. When you're signed in, we record which link you opened and when, so we can add coins to your account and keep a 3-minute gap between opens of the same link. Coins are a reward balance inside TARGET." },
         { h: "Your control", p: "You can view, change or delete your data and your account at any time. Contact shadowxpov@gmail.com for any privacy request." },
       ]}
     />
