@@ -44,13 +44,18 @@ export function isTransient(fact: string): boolean {
   return /\b(today|tomorrow|tonight|yesterday|this (week|weekend|evening|morning)|next (week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|aaj|kal|parso|\d{1,2}(:\d{2})?\s?(am|pm))\b/i.test(fact);
 }
 
+/** Never store anything that looks like a password, key or card number as a memory. */
+export function looksSecret(fact: string): boolean {
+  return /\b(password|passwd|pin|otp|cvv|api[ _-]?key|secret|token)\b|\b(?:\d[ -]?){13,19}\b|sk-[A-Za-z0-9]{10,}/i.test(fact);
+}
+
 export function parseFacts(raw: string): string[] {
   const m = raw.match(/\[[\s\S]*\]/);
   if (!m) return [];
   try {
     const arr = JSON.parse(m[0]);
     if (!Array.isArray(arr)) return [];
-    return arr.filter((x) => typeof x === "string").map(cleanFact).filter((x) => x.length >= 3 && !isTransient(x)).slice(0, 3);
+    return arr.filter((x) => typeof x === "string").map(cleanFact).filter((x) => x.length >= 3 && !isTransient(x) && !looksSecret(x)).slice(0, 5);
   } catch {
     return [];
   }
@@ -59,16 +64,18 @@ export function parseFacts(raw: string): string[] {
 export function memoryBlock(memories: string[]): string {
   if (!memories.length) return "";
   return (
-    "\n\nWhat you remember about this user (use quietly to personalize; don't recite unless asked; " +
-    "if they ask what you remember, summarize it):\n" +
+    "\n\nWhat you remember about this user (use quietly to personalize every answer: their language, level, city, goals, tools; " +
+    "don't recite unless asked; if they ask what you remember, summarize it; if a newer message contradicts a memory, trust the newer message):\n" +
     memories.map((m) => `- ${m}`).join("\n")
   );
 }
 
 export const EXTRACT_PROMPT =
-  "You extract long-term memories about a user from their latest chat message. " +
-  "Keep only durable personal facts or preferences worth remembering for future chats " +
-  "(name, location, job, projects, people in their life, likes/dislikes, diet, goals, how they like answers). " +
-  "Ignore questions, one-off tasks and plans (a meeting on some date, a single trip), greetings and anything about the assistant. " +
-  "Write each fact as a short third-person sentence in English, e.g. \"Lives in Patna\". " +
-  "Do not repeat facts already known. Reply with ONLY a JSON array of strings, [] if nothing.";
+  "You extract long-term memories about a user from their latest chat message (it may be in Hindi, Hinglish or English). " +
+  "Keep only durable personal facts or preferences worth remembering for future chats: name and what to call them, city, language, " +
+  "job or studies (class, exam, college, skills), projects and businesses they run, tools and tech stack they use, people in their life " +
+  "(relation and name), health conditions or diet they mention, goals, budget level, likes and dislikes, and how they like answers (short, Hinglish, detailed). " +
+  "Ignore questions, one-off tasks and plans (a meeting on some date, a single trip), greetings, passwords or keys, and anything about the assistant. " +
+  "If the message updates a known fact (moved city, new job), write the new fact. " +
+  "Write each fact as a short third-person sentence in English, e.g. \"Lives in Patna\", \"Is preparing for the NEET exam\". " +
+  "Do not repeat facts already known. Reply with ONLY a JSON array of strings (at most 5), [] if nothing.";

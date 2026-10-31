@@ -1,3 +1,4 @@
+import { validateJob, describeSchedule } from "@/lib/schedule";
 import { cleanMultiline, cleanText } from "@/lib/ids";
 
 export const APPROVAL_STATUSES = ["pending", "approved", "rejected", "cancelled", "executing", "executed", "failed"] as const;
@@ -65,6 +66,19 @@ export const ACTION_DEFS: Record<string, Def> = {
       return { ok: true, params: { name, description: cleanMultiline(r.description, 1000) } };
     },
     describe: (p) => ({ summary: `Create the project “${p.name}”`, destination: "TARGET · Projects" }),
+  },
+  create_schedule: {
+    label: "Schedule a prompt", provider: null,
+    validate(r) {
+      const v = validateJob({ title: r.title, prompt: r.prompt, cadence: r.cadence, weekday: r.cadence === "weekly" ? r.weekday : null, time_of_day: r.time_of_day, timezone: r.timezone || "Asia/Kolkata" });
+      if (!v.ok) return { ok: false, error: v.error };
+      const j = v.value;
+      return { ok: true, params: { title: j.title!, prompt: j.prompt!, cadence: j.cadence!, weekday: j.weekday === null || j.weekday === undefined ? "" : String(j.weekday), time_of_day: j.time_of_day!, timezone: j.timezone! } };
+    },
+    describe: (p) => ({
+      summary: `Run “${p.title}” ${describeSchedule({ cadence: p.cadence as "daily" | "weekly", weekday: p.weekday === "" ? null : Number(p.weekday), time_of_day: p.time_of_day, timezone: p.timezone })}`,
+      destination: "TARGET · Scheduled",
+    }),
   },
   calendar_event: {
     label: "Add to Google Calendar", provider: "google",
