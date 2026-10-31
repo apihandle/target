@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import Markdown from "@/components/Markdown";
 import type { Metadata } from "next";
 import { loadSharedConversation, publicContent } from "@/lib/shares";
 import { splitSources } from "@/lib/search";
@@ -58,7 +57,7 @@ export default async function SharedChatPage({ params }: { params: { token: stri
                 const { text, sources } = splitSources(publicContent(m.content));
                 return (
                   <div className="prose-target text-sm leading-relaxed text-ink-soft">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+                    <Markdown>{text}</Markdown>
                     <SourceList sources={sources} />
                   </div>
                 );

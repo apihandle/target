@@ -40,9 +40,26 @@ describe("sidebar pin + search", () => {
     render(<Sidebar email="a@x.test" conversations={[{ id: "c1", title: "Recent one" }, { id: "c2", title: "Pinned one", pinned: true }]} />);
     expect(screen.getByTestId("pinned-list")).toHaveTextContent("Pinned one");
     expect(screen.getByTestId("pinned-list")).not.toHaveTextContent("Recent one");
-    fireEvent.click(screen.getByLabelText("Pin Recent one"));
+    fireEvent.click(screen.getByLabelText("Options for Recent one"));
+    fireEvent.click(screen.getByTestId("pin-btn"));
     await waitFor(() => expect(f).toHaveBeenCalledWith("/api/conversations/c1", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ pinned: true }) })));
     expect(screen.getByTestId("pinned-list")).toHaveTextContent("Recent one");
+  });
+  it("renames and deletes a chat from its menu", async () => {
+    const f = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", f);
+    vi.stubGlobal("confirm", () => true);
+    render(<Sidebar email="a@x.test" conversations={[{ id: "c1", title: "Old name" }, { id: "c3", title: "Bye" }]} />);
+    fireEvent.click(screen.getByLabelText("Options for Old name"));
+    fireEvent.click(screen.getByTestId("rename-btn"));
+    fireEvent.change(screen.getByTestId("rename-input"), { target: { value: "New name" } });
+    fireEvent.submit(screen.getByTestId("rename-input"));
+    await waitFor(() => expect(f).toHaveBeenCalledWith("/api/conversations/c1", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ title: "New name" }) })));
+    expect(screen.getByText("New name")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Options for Bye"));
+    fireEvent.click(screen.getByTestId("delete-btn"));
+    await waitFor(() => expect(f).toHaveBeenCalledWith("/api/conversations/c3", { method: "DELETE" }));
+    expect(screen.queryByText("Bye")).toBeNull();
   });
   it("searches chats as you type", async () => {
     const f = vi.fn().mockResolvedValue(new Response(JSON.stringify({ results: [{ id: "c9", title: "Goa trip", pinned: false, snippet: "…beach in Goa…" }] }), { status: 200 }));

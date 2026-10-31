@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import Sidebar, { type Section } from "@/components/Sidebar";
+import WelcomeTour from "@/components/WelcomeTour";
 
 /** Authenticated workspace frame: resolves the user, loads nav data, renders sidebar + main. */
 export async function getSessionOrRedirect(next: string) {
@@ -31,6 +32,7 @@ export default async function AppShell({ user, section, activeId, children }: { 
       <a href="#main" className="sr-only-focusable fixed left-2 top-2 z-50 rounded bg-accent px-3 py-2 text-sm text-accent-ink">Skip to content</a>
       <Sidebar conversations={convs ?? []} activeId={activeId} email={user.email ?? ""} section={section} pendingApprovals={pending ?? 0} />
       <main id="main" className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+      <WelcomeTour />
     </div>
   );
 }

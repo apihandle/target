@@ -13,6 +13,13 @@ export default function WaterBackground() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(true);
   const [ready, setReady] = useState(false);
+  // Phones and data-saver get a 960px, ~2.8 MB cut instead of the full 1080p (~10 MB) loop.
+  const [src, setSrc] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const nav = navigator as Navigator & { connection?: { saveData?: boolean } };
+    const small = window.matchMedia?.("(max-width: 900px)").matches || nav.connection?.saveData;
+    setSrc(small ? "/water-loop-sm.mp4" : "/water-loop.mp4");
+  }, []);
 
   useEffect(() => {
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) setPlaying(false);
@@ -27,7 +34,7 @@ export default function WaterBackground() {
     } else {
       v.pause();
     }
-  }, [playing]);
+  }, [playing, src]);
 
   return (
     <>
@@ -44,7 +51,7 @@ export default function WaterBackground() {
         data-testid="water-video"
         className="fixed left-0 top-0 -z-20 h-full w-full object-cover transition-opacity duration-[1500ms] ease-in-out"
         style={{ opacity: ready ? 1 : 0 }}
-        src="/water-loop.mp4"
+        src={src}
         poster="/water-poster.webp"
         autoPlay
         muted

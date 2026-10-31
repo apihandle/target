@@ -5,8 +5,7 @@ import ActionButtons from "@/components/ActionButtons";
 import { splitActions } from "@/lib/actions";
 import SourceList from "@/components/SourceList";
 import { splitSources } from "@/lib/search";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import Markdown from "@/components/Markdown";
 import { ErrorNote } from "@/components/ui/EmptyState";
 import AttachmentChips, { type Chip } from "@/components/AttachmentChips";
 import ModelPicker, { type ModelChoice } from "@/components/ModelPicker";
@@ -71,6 +70,20 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
   async function copyMessage(i: number, text: string) {
     try { await navigator.clipboard.writeText(text); setCopied(i); setTimeout(() => setCopied((c) => (c === i ? null : c)), 1500); } catch { /* clipboard blocked */ }
   }
+  const [speaking, setSpeaking] = useState<number | null>(null);
+  const canSpeak = typeof window !== "undefined" && "speechSynthesis" in window;
+  function speak(i: number, text: string) {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    if (speaking === i) { setSpeaking(null); return; }
+    const plain = text.replace(/```[\s\S]*?```/g, " code block. ").replace(/[*_`#>|]/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+    const u = new SpeechSynthesisUtterance(plain);
+    u.onend = () => setSpeaking((s) => (s === i ? null : s));
+    u.onerror = () => setSpeaking((s) => (s === i ? null : s));
+    setSpeaking(i);
+    synth.speak(u);
+  }
+  useEffect(() => () => { if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel(); }, []);
   function regenerate() {
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     if (!lastUser || streaming) return;
@@ -284,7 +297,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
               return (
                 <div key={i} data-testid="msg-assistant" className="group flex flex-col items-start">
                   <div className="prose-target max-w-[92%] rounded-[22px] rounded-bl-md border border-line bg-surface/85 px-4 py-3 text-[15px] leading-relaxed text-ink-soft backdrop-blur-xl">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+                    <Markdown>{text}</Markdown>
                     {!isLive && <SourceList sources={sources} />}
                     {!isLive && <ActionButtons actions={actions} />}
                   </div>
@@ -297,6 +310,15 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
                           <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></svg>
                         )}
                       </button>
+                      {canSpeak && (
+                        <button type="button" data-testid="read-aloud" aria-label={speaking === i ? "Stop reading" : "Read aloud"} title={speaking === i ? "Stop" : "Read aloud"} onClick={() => speak(i, text)} className={iconBtn}>
+                          {speaking === i ? (
+                            <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4 text-accent" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="1.5" /></svg>
+                          ) : (
+                            <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z" /><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /></svg>
+                          )}
+                        </button>
+                      )}
                       {i === lastAssistant && conversationId && aiConfigured && (
                         <button type="button" data-testid="regenerate-reply" aria-label="Regenerate reply" title="Regenerate" onClick={regenerate} disabled={streaming} className={iconBtn}>
                           <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 5v6h-6" /></svg>
