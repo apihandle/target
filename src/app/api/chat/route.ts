@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   if (!user) return Response.json({ error: "Not signed in" }, { status: 401 });
   if (!(await checkLimit(LIMITS.chat(user.id)))) return tooMany();
 
-  let body: { conversationId?: unknown; projectId?: unknown; message?: unknown; web?: unknown; retry?: unknown; taskId?: unknown; resume?: unknown; attachmentIds?: unknown; model?: unknown };
+  let body: { conversationId?: unknown; projectId?: unknown; message?: unknown; web?: unknown; retry?: unknown; regenerate?: unknown; taskId?: unknown; resume?: unknown; attachmentIds?: unknown; model?: unknown };
   try { body = await req.json(); } catch { return Response.json({ error: "Bad JSON" }, { status: 400 }); }
   const att = parseAttachmentIds(body.attachmentIds);
   if (!att.ok) return Response.json({ error: att.error }, { status: 400 });
@@ -86,6 +86,16 @@ export async function POST(req: Request) {
   if (hErr) return Response.json({ error: "Could not load chat" }, { status: 500 });
   const historyRows = (historyRaw ?? []) as (ChatMsg & { id?: string })[];
   let history: ChatMsg[] = historyRows.map((m) => ({ role: m.role, content: m.content }));
+
+  // Regenerate: drop the last assistant reply to this same user message, then answer it again like a retry.
+  if (body.regenerate === true && history[history.length - 1]?.role === "assistant") {
+    const prev = history[history.length - 2];
+    const lastRow = historyRows[historyRows.length - 1];
+    if (prev?.role === "user" && prev.content === text && lastRow?.id) {
+      const { error: delErr } = await supabase.from("messages").delete().eq("id", lastRow.id).eq("conversation_id", convId);
+      if (!delErr) { historyRows.pop(); history = history.slice(0, -1); body.retry = true; }
+    }
+  }
 
   // Retry: the user message is already stored (the reply failed or was stopped) — don't store it twice.
   const last = history[history.length - 1];

@@ -1,3 +1,4 @@
+import { SettingsBack } from "@/components/SettingsList";
 import AppShell, { getSessionOrRedirect } from "@/components/AppShell";
 import { Page, PageHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -12,7 +13,7 @@ export default async function ConnectionsPage() {
   return (
     <AppShell user={user} section="settings">
       <Page>
-        <a href="/app/settings" className="text-xs text-muted hover:text-ink">← Settings</a>
+        <SettingsBack />
         <div className="mt-3">
           <PageHeader title="Connected apps" description="Your own accounts (Supabase, Vercel, GitHub, Google and more) are managed on the Connectors page. Below are the services this TARGET server uses for everyone."
             actions={<LinkButton href="/app/connectors" variant="primary" data-testid="open-connectors">Manage connectors</LinkButton>} />

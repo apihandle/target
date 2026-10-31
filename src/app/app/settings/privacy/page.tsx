@@ -1,3 +1,4 @@
+import { SettingsBack } from "@/components/SettingsList";
 import AppShell, { getSessionOrRedirect } from "@/components/AppShell";
 import MemoryManager from "@/components/MemoryManager";
 import ClearActivity from "@/components/ClearActivity";
@@ -17,7 +18,7 @@ export default async function PrivacyPage() {
   return (
     <AppShell user={user} section="settings">
       <Page>
-        <a href="/app/settings" className="text-xs text-muted hover:text-ink">← Settings</a>
+        <SettingsBack />
         <div className="mt-3"><PageHeader title="Privacy & memory" description="What TARGET stores, who can see it, and how to change or delete it." /></div>
 
         <section aria-labelledby="what" className="mt-8">
