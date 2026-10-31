@@ -26,6 +26,7 @@ async function handle(req: Request) {
 
   let db: Db;
   try { db = createAdminClient() as unknown as Db; } catch { return json({ error: "Server is missing SUPABASE_SERVICE_ROLE_KEY" }, 503); }
+  try { const { purgeExpiredSessions } = await import("@/lib/server/siteSessions"); await purgeExpiredSessions(); } catch { /* housekeeping only */ }
 
   const start = Date.now();
   const now = new Date(start);

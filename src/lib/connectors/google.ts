@@ -31,6 +31,31 @@ function textOf(p: Part | undefined): string {
   if (p.mimeType === "text/html" && p.body?.data) return unb64(p.body.data).replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
   return "";
 }
+/** "https://www.Example.com/x" -> "example.com"; null for anything that isn't a plain domain. */
+export function siteDomain(site: string): string | null {
+  let h = site.trim().toLowerCase();
+  try { if (/^https?:\/\//.test(h)) h = new URL(h).hostname; } catch { return null; }
+  h = h.replace(/^www\./, "").replace(/\/.*$/, "");
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(h) ? h : null;
+}
+
+/** Pull an OTP code and/or a verification link (on the sender's own domain) out of an email. */
+export function extractVerification(text: string, domain: string): { code?: string; link?: string } {
+  const out: { code?: string; link?: string } = {};
+  const kw = /(?:code|otp|pin|passcode|verification|verify|one[- ]time|confirm)(?:\W+(?:is|code|:|=|your|the)){0,3}\W{0,10}(\d{3}[- ]\d{3}|(?=[A-Z0-9]*\d)[A-Z0-9]{4,8})\b/i;
+  const near = text.match(kw) ?? text.match(/\b(\d{6})\b/);
+  if (near) out.code = near[1].replace(/[- ]/g, "");
+  const links = text.match(/https:\/\/[^\s"'<>)]+/g) ?? [];
+  const link = links.find((l) => {
+    try {
+      const h = new URL(l).hostname.toLowerCase();
+      return (h === domain || h.endsWith("." + domain)) && /verif|confirm|activate|magic|token|login|auth/i.test(l);
+    } catch { return false; }
+  });
+  if (link) out.link = link.slice(0, 1000);
+  return out;
+}
+
 /** Header injection guard for drafted mail. */
 const oneLine = (s: string) => s.replace(/[\r\n]+/g, " ").trim();
 
@@ -56,6 +81,25 @@ const ALL_TOOLS: (ToolDef & { scope: string })[] = [
     async execute(a, ctx) {
       const m = await get<Record<string, unknown>>(ctx, `https://gmail.googleapis.com/gmail/v1/users/me/messages/${a.message_id}?format=full`);
       return { id: a.message_id, from: header(m, "From"), to: header(m, "To"), subject: header(m, "Subject"), date: header(m, "Date"), body: clip(textOf(m.payload as Part), 15000) };
+    },
+  }) },
+  { scope: SCOPES.gmailRead, ...tool({
+    name: "gmail_find_verification",
+    description: "Find the newest sign-up/login verification email (OTP code or confirm link) from a website, for example after the user registered on it with their Gmail. Returns only the code or link, never the full email.",
+    input: z.object({ site: z.string().min(2).max(100).describe("Website or sender domain, e.g. github.com"), minutes: z.number().int().min(1).max(1440).default(30) }),
+    async execute(a, ctx) {
+      const domain = siteDomain(a.site);
+      if (!domain) return { found: false, note: "Give a website domain like example.com." };
+      const q = `from:${domain} newer_than:${Math.max(1, Math.ceil(a.minutes / 60))}h`;
+      const list = await get<{ messages?: { id: string }[] }>(ctx, `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5&q=${encodeURIComponent(q)}`);
+      for (const m of list.messages ?? []) {
+        const full = await get<Record<string, unknown>>(ctx, `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`);
+        const sentAt = Number(full.internalDate ?? 0);
+        if (sentAt && Date.now() - sentAt > a.minutes * 60000) continue;
+        const v = extractVerification(header(full, "Subject") + "\n" + textOf(full.payload as Part), domain);
+        if (v.code || v.link) return { found: true, from: header(full, "From"), subject: header(full, "Subject"), received: header(full, "Date"), ...v };
+      }
+      return { found: false, note: `No verification email from ${domain} in the last ${a.minutes} minutes.` };
     },
   }) },
   { scope: SCOPES.gmailCompose, ...tool({

@@ -142,7 +142,16 @@ async function runTool(userId: string, c: ConnectorDef, def: ToolDef, args: unkn
   try {
     const { creds, info } = await getCredentials(userId, c, f);
     token = creds.access_token;
-    const out = await def.execute(args as never, { token, fetch: f, meta: info.meta ?? {} });
+    let out: unknown;
+    try {
+      out = await def.execute(args as never, { token, fetch: f, meta: info.meta ?? {} });
+    } catch (e) {
+      // The provider rejected a token we thought was valid (revoked early, clock skew): refresh once and retry.
+      if (!(e instanceof ConnectorError && e.status === 401 && creds.refresh_token)) throw e;
+      const fresh = await getCredentials(userId, c, f, { forceRefresh: true });
+      token = fresh.creds.access_token;
+      out = await def.execute(args as never, { token, fetch: f, meta: fresh.info.meta ?? {} });
+    }
     await touchLastUsed(userId, c.id);
     return { kind: "result", connector: c.id, tool: def.name, content: untrusted(c.id, def.name, safeJson(out, [token])) };
   } catch (e) {

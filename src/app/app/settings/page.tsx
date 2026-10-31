@@ -39,6 +39,7 @@ export default async function SettingsPage() {
           <SettingsGroup title="Apps & accounts">
             <SettingsRow href="/app/connectors" icon="plug" title="Connectors" description="Connect GitHub, Google and more" />
             <SettingsRow href="/app/settings/connections" icon="apps" title="Connected apps" description="See access and disconnect" testId="settings-connections" />
+            <SettingsRow href="/app/settings/sessions" icon="lock" title="Website sign-ins" description="Sites TARGET is signed in to, sign out any time" testId="settings-sessions" />
           </SettingsGroup>
 
           <SettingsGroup title="Personalize">
