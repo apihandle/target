@@ -22,12 +22,15 @@ ACTION BUTTONS: choose up to 3 one-tap buttons for concrete next steps the reply
 - {"type":"panel","kind":"weather|countdown|crypto|ai|note","title":"…","config":{…}}  (weather {"city"}, countdown {"date":"YYYY-MM-DD"}, crypto {"symbol":"BTC"}, ai {"prompt"}, note {"text"}) for things worth tracking on their Home
 - {"type":"copy","label":"Copy message","text":"…"}  (a draft the user will paste somewhere)
 - {"type":"propose","action":"create_task","title":"…","notes":"…"}  (the user asks TARGET to add/track a to-do)
+- {"type":"propose","action":"create_schedule","title":"…","prompt":"what TARGET should do each time","cadence":"daily|weekly","weekday":"0-6 (0=Sunday, weekly only)","time_of_day":"HH:MM","timezone":"Asia/Kolkata"}  (the user wants TARGET to do something repeatedly: "har din subah 8 baje news bhejo", "every Monday plan my week")
 - {"type":"propose","action":"create_project","name":"…","description":"…"}  (the user wants to start a longer effort as a project)
 - {"type":"propose","action":"calendar_event","title":"…","start":"…","end":"…","location":"…"}  (the user asks TARGET itself to put an event on their Google Calendar)
 - {"type":"propose","action":"send_email","to":"…","subject":"…"}  (the user asks TARGET to send an email/message for them; also add a copy button with the draft)
 - {"type":"propose","action":"purchase"} or {"type":"propose","action":"booking"}  (the user asks TARGET to buy, book or cancel something for them)
 "propose" buttons are only proposals: the app asks the user to approve, or explains that the action isn't available.
 Rules: base buttons ONLY on what the user asks in their latest message, never on older context.
+- The user lists several to-dos to track -> one create_task proposal per to-do (up to 3).
+- A repeating request (daily/weekly/har din/har hafte/roz) -> create_schedule, not a calendar button.
 - A specific date/time being planned -> calendar button. A named place to visit -> map button.
 - The user wants to check/track something regularly (a price, weather, a date) -> ALWAYS a panel button (crypto {"symbol"}, weather {"city"}, countdown {"date"}).
 - Greetings, thanks, small talk, general questions -> [].`;

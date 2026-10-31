@@ -25,7 +25,7 @@ describe("Feature 5: memory", () => {
     expect(parseFacts('```json\n["Lives in Patna", "Likes tea"]\n```')).toEqual(["Lives in Patna", "Likes tea"]);
     expect(parseFacts("[]")).toEqual([]);
     expect(parseFacts("nothing here")).toEqual([]);
-    expect(parseFacts('["a","b","c","d","e"]'.replace(/"(\w)"/g, '"fact $1"')).length).toBe(3);
+    expect(parseFacts('["a","b","c","d","e","f","g"]'.replace(/"(\w)"/g, '"fact $1"')).length).toBe(5);
     expect(cleanFact('  "- Likes tea"  ')).toBe("Likes tea");
   });
 

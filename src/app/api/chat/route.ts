@@ -1,11 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { SYSTEM_PROMPT, titleFrom, type ChatMsg } from "@/lib/ai";
-import { detectTask, MAX_TOKENS, PLAYBOOKS, taskModel } from "@/lib/skills";
+import { CAPABILITIES, MULTI_PLAYBOOK, detectTask, isMultiTask, MAX_TOKENS, PLAYBOOKS, taskModel } from "@/lib/skills";
 import { llm, llmText, LLMError } from "@/lib/llm";
 import { ACTIONS_PROMPT, heuristicActions, mergeActions, sanitizeAction, type Action } from "@/lib/actions";
 import { projectBlock } from "@/lib/projects";
 import { needsSearch, searchBlock, searchQuery, sourcesFence, tavilySearch, type SearchResult } from "@/lib/search";
-import { EXTRACT_PROMPT, MAX_MEMORIES, explicitRemember, isDuplicate, memoryBlock, parseFacts } from "@/lib/memory";
+import { EXTRACT_PROMPT, MAX_MEMORIES, explicitRemember, isDuplicate, looksSecret, memoryBlock, parseFacts } from "@/lib/memory";
 import { isUuid } from "@/lib/ids";
 import { loadSettings } from "@/lib/settings";
 import { tasksBlock, type TaskStatus } from "@/lib/tasks";
@@ -123,7 +123,7 @@ export async function POST(req: Request) {
   const picked = body.model !== undefined ? resolveModel(body.model) : resolveModel(await loadPreferredModel(supabase, user.id));
   // The user's own model pick always wins; otherwise use a model that is strong at this kind of task.
   const prefer = picked ?? (only ? null : taskModel(kind));
-  const maxTokens = MAX_TOKENS[kind];
+  const maxTokens = isMultiTask(text) ? Math.max(MAX_TOKENS[kind], 6144) : MAX_TOKENS[kind];
 
   const settings = await loadSettings(supabase, user.id);
 
@@ -135,6 +135,7 @@ export async function POST(req: Request) {
     const { data: memRows } = await supabase.from("memories").select("content").eq("user_id", user.id).order("created_at", { ascending: true }).limit(MAX_MEMORIES);
     known = (memRows ?? []).map((m) => m.content as string);
     explicit = explicitRemember(text);
+    if (explicit && looksSecret(explicit)) explicit = null; // never keep passwords, keys or card numbers
     if (explicit && !isDuplicate(explicit, known)) {
       const { error } = await supabase.from("memories").insert({ user_id: user.id, content: explicit, source: "explicit" });
       if (!error) { known.push(explicit); savedExplicit = true; }
@@ -186,7 +187,7 @@ export async function POST(req: Request) {
   }
 
   const messages: LLMMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT + PLAYBOOKS[kind] + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + files.block + connectorNote + resumeNote },
+    { role: "system", content: SYSTEM_PROMPT + PLAYBOOKS[kind] + (isMultiTask(text) ? MULTI_PLAYBOOK : "") + CAPABILITIES + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + files.block + connectorNote + resumeNote },
     ...history,
     files.imageParts.length ? { role: "user", content: [{ type: "text", text }, ...files.imageParts] as ContentPart[] } : { role: "user", content: text },
   ];
@@ -269,7 +270,7 @@ export async function POST(req: Request) {
             const extra: Action[] = [];
             if (proposals.length) {
               const connected = await connectedProviders(db, user.id);
-              for (const pr of proposals.slice(0, 1)) {
+              for (const pr of proposals.slice(0, 3)) {
                 if (!pr.ok) {
                   const def = pr.action ? ACTION_DEFS[pr.action] : undefined;
                   if (def?.unavailable) extra.push({ type: "unavailable", label: `Can't ${def.label.toLowerCase()}`, reason: def.unavailable });
@@ -279,7 +280,7 @@ export async function POST(req: Request) {
                 extra.push(r.ok ? { type: "approval", id: r.approval.id as string } : { type: "unavailable", label: `Can't ${(ACTION_DEFS[pr.value.action]?.label ?? "do that").toLowerCase()}`, reason: r.reason });
               }
             }
-            const acts = [...mergeActions(heuristicActions(text), actions), ...extra].slice(0, 4);
+            const acts = [...extra, ...mergeActions(heuristicActions(text), actions)].slice(0, 5);
             if (acts.length) {
               const blockText = "\n\n```actions\n" + JSON.stringify(acts) + "\n```";
               full += blockText; send(blockText);
