@@ -3,6 +3,7 @@ import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import Sidebar, { type Section } from "@/components/Sidebar";
 import WelcomeTour from "@/components/WelcomeTour";
+import SessionKeeper from "@/components/SessionKeeper";
 
 /** Authenticated workspace frame: resolves the user, loads nav data, renders sidebar + main. */
 export async function getSessionOrRedirect(next: string) {
@@ -23,6 +24,7 @@ export default async function AppShell({ user, section, activeId, children }: { 
   if (convRes.error) convs = (await supabase.from("conversations").select("id, title").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(40)).data;
   return (
     <div className="relative isolate flex h-[100dvh] bg-bg text-ink">
+      <SessionKeeper />
       {/* Night-water backdrop, same footage as the landing page, kept still and dim so text stays readable */}
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10">
         {/* eslint-disable-next-line @next/next/no-img-element */}
