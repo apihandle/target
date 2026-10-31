@@ -86,6 +86,9 @@ export function orderCandidates(ps: Provider[], prefer?: ModelRef | null, only?:
   if (prefer) {
     const i = list.findIndex((c) => c.p.name === prefer.provider && c.model === prefer.model);
     if (i > 0) list = [list[i], ...list.slice(0, i), ...list.slice(i + 1)];
+    // A task model (e.g. the coding model) may not be in the picker list: try it first on its provider.
+    const p = ps.find((x) => x.name === prefer.provider);
+    if (i < 0 && p && !only) list = [{ p, model: prefer.model }, ...list];
   }
   return list;
 }

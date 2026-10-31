@@ -250,7 +250,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
       {!aiConfigured && (
         <div role="status" data-testid="ai-setup" className="mx-auto mt-4 w-full max-w-2xl px-4">
           <div className="rounded-xl border border-warn/30 bg-warn-subtle px-4 py-3 text-sm text-warn">
-            <strong className="font-semibold">AI isn&apos;t set up on this server yet.</strong> Add <code>NVIDIA_API_KEY</code> or <code>OPENROUTER_API_KEY</code> to the server environment to enable replies. Your chats, projects, tasks and panels still work.
+            <strong className="font-semibold">AI isn&apos;t set up on this server yet.</strong> Replies will work once the site owner finishes setup. Your chats, projects, tasks and panels still work.
           </div>
         </div>
       )}
