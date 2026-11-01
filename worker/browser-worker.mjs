@@ -10,6 +10,10 @@
  *   TARGET_URL=https://gettarget.vercel.app SESSION_WORKER_SECRET=... node worker/browser-worker.mjs
  * Code and video jobs run only when ENABLE_CODE=1 (set by the Docker image, which isolates them).
  *
+ * Captchas: the worker never breaks them. It sends a screenshot to the owner's phone, they tap or type on it,
+ * and the worker repeats those taps on the real page. Sign-ins are remembered: cookies for sites where the
+ * task logged in (or the owner helped) are saved encrypted in TARGET and loaded next time.
+ *
  * Secrets: vault values are fetched one field at a time, only for a running job that lists that item,
  * typed straight into the page and never logged or sent to the AI.
  */
@@ -23,6 +27,7 @@ import { createServer } from "node:http";
 const BASE = (process.env.TARGET_URL || "https://gettarget.vercel.app").replace(/\/$/, "");
 const SECRET = process.env.SESSION_WORKER_SECRET || "";
 const POLL_MS = Number(process.env.POLL_MS || 5000);
+const WORKER_ID = (process.env.WORKER_ID || process.env.SPACE_ID || process.env.RENDER_SERVICE_NAME || "default").replace(/[^\w.-]/g, "-").slice(0, 60);
 // Code runs as the unprivileged "nobody" user so it can't read this process's secret (/proc/<pid>/environ).
 const ROOT = typeof process.getuid === "function" && process.getuid() === 0;
 const CODE = process.env.ENABLE_CODE === "1" && (ROOT || process.env.ALLOW_UNSAFE_CODE === "1");
@@ -46,20 +51,53 @@ function safeUrl(u) {
   return url.href;
 }
 
-const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36";
+const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** A short, slightly random pause between actions, the way a person moves through a page. */
+const human = (min = 350, max = 1100) => sleep(min + Math.floor(Math.random() * (max - min)));
+const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
 
-async function openBrowser() {
-  const browser = await chromium.launch({ headless: true });
-  const ctx = await browser.newContext({ userAgent: UA, viewport: { width: 1280, height: 900 }, locale: "en-IN" });
+// ------------------------------------------------------------------ remembered sign-ins
+async function sessionApi(method, query, body) {
+  const r = await fetch(`${BASE}/api/site-sessions/worker${query ? `?${new URLSearchParams(query)}` : ""}`, {
+    method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${SECRET}` }, ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  return r.ok ? r.json().catch(() => ({})) : null;
+}
+async function loadCookies(ctx, userId, host) {
+  if (!userId || !host) return false;
+  const j = await sessionApi("GET", { user_id: userId, site: host }).catch(() => null);
+  if (!j?.cookies?.length) return false;
+  await ctx.addCookies(j.cookies.map((c) => ({ ...c, expires: c.expires > 0 ? c.expires : -1 }))).catch(() => {});
+  return true;
+}
+async function saveCookies(ctx, userId, hosts) {
+  if (!userId) return;
+  const all = await ctx.cookies().catch(() => []);
+  for (const host of [...hosts].slice(0, 5)) {
+    const mine = all.filter((c) => host === c.domain.replace(/^\./, "") || host.endsWith(`.${c.domain.replace(/^\./, "")}`) || c.domain.replace(/^\./, "").endsWith(`.${host}`));
+    if (mine.length) await sessionApi("POST", null, { user_id: userId, site: host, via: "other", cookies: mine.slice(0, 150) }).catch(() => {});
+  }
+}
+
+async function openBrowser(job) {
+  // Plain Chromium that looks like a normal Chrome window (no "controlled by automation" flag).
+  const browser = await chromium.launch({ headless: true, args: ["--disable-blink-features=AutomationControlled", "--no-default-browser-check"] });
+  const ctx = await browser.newContext({ userAgent: UA, viewport: { width: 1280, height: 900 }, locale: "en-IN", timezoneId: "Asia/Kolkata" });
+  await ctx.addInitScript(() => { Object.defineProperty(navigator, "webdriver", { get: () => undefined }); });
   // Never let a page reach the worker's own network.
   await ctx.route("**/*", (route) => { try { safeUrl(route.request().url()); return route.continue(); } catch { return route.abort(); } });
+  // Sites to remember: ones we already had a sign-in for, plus any we log in to or get help on during this task.
+  const remember = new Set();
+  const start = hostOf(job.start_url);
+  if (await loadCookies(ctx, job.user_id, start)) remember.add(start);
   const page = await ctx.newPage();
   page.setDefaultTimeout(15000);
-  return { browser, page };
+  return { browser, ctx, page, remember };
 }
 
 // ------------------------------------------------------------------ fixed steps
-async function runSteps(job, page) {
+async function runSteps(job, page, remember) {
   const out = [];
   await page.goto(safeUrl(job.start_url), { waitUntil: "domcontentloaded" });
   for (const s of job.steps || []) {
@@ -69,6 +107,7 @@ async function runSteps(job, page) {
     else if (s.action === "fill_secret") {
       const { value } = await api({ action: "secret", job_id: job.id, secret_id: s.secret_id, field: s.field });
       await page.fill(s.selector, value);
+      remember.add(hostOf(page.url()));
     } else if (s.action === "press") await page.keyboard.press(s.key);
     else if (s.action === "wait") await page.waitForTimeout(s.ms);
     else if (s.action === "extract") out.push((s.selector ? await page.innerText(s.selector) : await page.innerText("body")).slice(0, 8000));
@@ -101,26 +140,85 @@ async function snapshot(page) {
   return { url: page.url().slice(0, 2000), title: (await page.title()).slice(0, 290), text: data.text, elements: data.els, ...(shot && shot.length < 390000 ? { screenshot: shot } : {}) };
 }
 
-async function runAuto(job, page) {
+/** A captcha that is actually showing: a visible challenge frame, or a "verify you're human" page. */
+const CAPTCHA_FRAME = /recaptcha|hcaptcha|challenges\.cloudflare\.com|turnstile|arkoselabs|funcaptcha|geo\.captcha-delivery/i;
+const CAPTCHA_TEXT = /(verify (that )?you('| a)re (a )?human|i'?m not a robot|are you a robot|complete the security check|press (&|and) hold|unusual traffic from your computer|type the (characters|text) (you see|in the image))/i;
+async function captchaShowing(page) {
+  const frames = await page.evaluate(() => [...document.querySelectorAll("iframe")].filter((f) => {
+    const r = f.getBoundingClientRect(); const st = getComputedStyle(f);
+    return r.width >= 100 && r.height >= 60 && st.visibility !== "hidden" && st.display !== "none" && r.bottom > 0 && r.top < innerHeight;
+  }).map((f) => f.src || "")).catch(() => []);
+  const text = await page.evaluate(() => (document.body ? document.body.innerText.slice(0, 4000) : "")).catch(() => "");
+  return frames.some((u) => CAPTCHA_FRAME.test(u)) || CAPTCHA_TEXT.test(text);
+}
+
+const HELP_MS = 5 * 60 * 1000;
+/** Show the page to the owner and repeat their taps until they press Done (or 5 minutes pass). */
+async function askUser(job, page, reason) {
+  const vp = page.viewportSize() || { width: 1280, height: 900 };
+  const shoot = async () => {
+    for (const quality of [55, 30, 15]) {
+      const b = (await page.screenshot({ type: "jpeg", quality }).catch(() => null))?.toString("base64");
+      if (b && b.length < 390000) return b;
+    }
+    return null;
+  };
+  await api({ action: "help", job_id: job.id, reason, screenshot: await shoot(), w: vp.width, h: vp.height });
+  console.log(`waiting for the owner: ${reason.slice(0, 80)}`);
+  let after = 0, fresh = null, lastShot = Date.now();
+  const end = Date.now() + HELP_MS;
+  while (Date.now() < end) {
+    await sleep(1500);
+    if (!fresh && Date.now() - lastShot > 6000) { fresh = await shoot(); lastShot = Date.now(); } // the page may change by itself
+    const r = await api({ action: "help_poll", job_id: job.id, after, ...(fresh ? { screenshot: fresh } : {}) });
+    fresh = null;
+    if (!r.waiting) return;
+    for (const i of r.inputs || []) {
+      after = i.seq;
+      try {
+        if (i.t === "done") { await api({ action: "help_end", job_id: job.id }); return; }
+        if (i.t === "tap") await page.mouse.click(Math.round(i.x * vp.width), Math.round(i.y * vp.height), { delay: 60 + Math.floor(Math.random() * 80) });
+        else if (i.t === "type") await page.keyboard.type(String(i.text).slice(0, 200), { delay: 70 });
+        else if (i.t === "key") await page.keyboard.press(i.key);
+      } catch (e) { console.log(`help input failed: ${String(e.message).slice(0, 80)}`); }
+    }
+    if (r.inputs?.length) { await sleep(1200); fresh = await shoot(); lastShot = Date.now(); }
+  }
+  await api({ action: "help_end", job_id: job.id }).catch(() => {});
+  throw Object.assign(new Error("The check on the page wasn't solved within 5 minutes"), { final: true });
+}
+
+async function runAuto(job, page, remember) {
   await page.goto(safeUrl(job.start_url), { waitUntil: "domcontentloaded" });
+  let asks = 0;
+  const help = async (reason) => {
+    if (++asks > 3) throw Object.assign(new Error("The site kept asking for a human check"), { final: true });
+    remember.add(hostOf(page.url()));
+    await askUser(job, page, reason);
+    await human(800, 1500);
+  };
   for (let n = 0; n < (job.max_steps || 20) + 2; n++) {
     await page.waitForLoadState("domcontentloaded").catch(() => {});
-    await page.waitForTimeout(800);
+    await human(700, 1400);
+    if (await captchaShowing(page)) { await help("Solve the \"I'm not a robot\" check on this page"); continue; }
     const { action: a } = await api({ action: "next", job_id: job.id, snapshot: await snapshot(page) });
     const el = (i) => page.locator(`[data-target-i="${i}"]`).first();
+    const type = async (loc, v) => { if (String(v).length <= 60) { await loc.fill(""); await loc.pressSequentially(String(v), { delay: 45 + Math.floor(Math.random() * 40) }); } else await loc.fill(v); };
     try {
       if (a.do === "done") return `${a.result}\n\nFinal page: ${await page.title()} (${page.url()})`;
       if (a.do === "fail") throw Object.assign(new Error(a.reason), { final: true });
+      if (a.do === "ask_user") { await help(a.reason || "Finish the check on this page"); continue; }
       if (a.do === "click") await el(a.i).click();
-      else if (a.do === "fill") await el(a.i).fill(a.value);
+      else if (a.do === "fill") await type(el(a.i), a.value);
       else if (a.do === "select") await el(a.i).selectOption({ label: a.value }).catch(() => el(a.i).selectOption(a.value));
       else if (a.do === "fill_secret") {
         const { value } = await api({ action: "secret", job_id: job.id, secret_id: a.secret_id, field: a.field });
-        await el(a.i).fill(value);
+        await type(el(a.i), value);
+        remember.add(hostOf(page.url())); // logged in here: keep the sign-in for next time
       } else if (a.do === "press") await page.keyboard.press(a.key);
       else if (a.do === "goto") await page.goto(safeUrl(a.url), { waitUntil: "domcontentloaded" });
-      else if (a.do === "scroll") await page.mouse.wheel(0, 800);
-      else if (a.do === "wait") await page.waitForTimeout(2500);
+      else if (a.do === "scroll") await page.mouse.wheel(0, 600 + Math.floor(Math.random() * 300));
+      else if (a.do === "wait") await sleep(2500);
     } catch (e) {
       if (e.final) throw e;
       console.log(`step failed (${a.do}): ${String(e.message).slice(0, 100)}`); // the AI sees the unchanged page and tries again
@@ -209,9 +307,10 @@ async function run(job) {
       const v = await runVideo(job);
       await api({ action: "finish", job_id: job.id, status: "done", ...v });
     } else {
-      const { browser, page } = await openBrowser();
+      const { browser, ctx, page, remember } = await openBrowser(job);
       try {
-        const result = job.mode === "auto" ? await runAuto(job, page) : await runSteps(job, page);
+        const result = job.mode === "auto" ? await runAuto(job, page, remember) : await runSteps(job, page, remember);
+        await saveCookies(ctx, job.user_id, remember);
         await api({ action: "finish", job_id: job.id, status: "done", result });
       } finally { await browser.close(); }
     }
@@ -225,7 +324,7 @@ async function run(job) {
 console.log(`TARGET worker polling ${BASE} every ${POLL_MS / 1000}s for: ${MODES.join(", ")}`);
 for (;;) {
   try {
-    const { job } = await api({ action: "claim", modes: MODES });
+    const { job } = await api({ action: "claim", modes: MODES, worker_id: WORKER_ID });
     if (job) { await run(job); continue; }
   } catch (e) { console.log(`poll error: ${e.message}`); }
   await new Promise((r) => setTimeout(r, POLL_MS));

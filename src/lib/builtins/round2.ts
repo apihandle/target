@@ -2,6 +2,8 @@ import { z } from "zod";
 import { ATTACHMENT_BUCKET } from "@/lib/attachments";
 import { SITE, slugFor } from "@/lib/builtins/helpers";
 import type { BuiltinCtx, BuiltinTool } from "@/lib/builtins/tools";
+import { workerOnline } from "@/lib/server/workerStatus";
+import { cleanQuery, likePattern, snippet } from "@/lib/chatSearch";
 
 const tool = <S extends z.ZodTypeAny>(t: BuiltinTool<S>): BuiltinTool => t as unknown as BuiltinTool;
 
@@ -34,6 +36,20 @@ export async function chatInputs(ctx: BuiltinCtx, names: string[]): Promise<{ na
     if (s.error || !s.data?.signedUrl) throw new Error("Couldn't prepare the file");
     return { name: r.name.replace(/[^\w.\- ]/g, "_").slice(0, 100), url: s.data.signedUrl };
   }));
+}
+
+/**
+ * Queue a code run. With a worker online it runs there (full Python, ffmpeg); without one it runs in the
+ * user's own browser (Pyodide / plain JS in a sandboxed frame), which the open chat picks up straight away.
+ */
+export async function queueCode(ctx: BuiltinCtx, job: { goal: string; language: "python" | "javascript"; code: string; inputs: { name: string; url: string }[] }) {
+  const mode = (await workerOnline("code")) ? "code" : "browser_code";
+  const { data, error } = await ctx.db.from("browser_jobs").insert({
+    user_id: ctx.userId, mode, goal: job.goal.slice(0, 200), language: job.language, code: job.code, inputs: job.inputs, status: "queued", conversation_id: ctx.conversationId,
+  }).select("id").single();
+  if (error || !data) throw new Error("Couldn't start the code run");
+  const reply = jobReply(await waitForJob(ctx, data.id as string, 50000), data.id as string);
+  return mode === "browser_code" ? { ...reply, ran_in: "the user's browser (no worker online: no ffmpeg or internet inside the code)" } : reply;
 }
 
 function jobReply(j: JobView | null, id: string) {
@@ -101,16 +117,33 @@ export const SITE_HEADERS: Record<string, string> = {
 
 export const ROUND2_TOOLS: BuiltinTool[] = [
   tool({
+    name: "search_chats", label: "Searching your old chats",
+    description: "Search the user's earlier chats with TARGET for a word or phrase (for 'what did we talk about…', 'that recipe from last week', 'the link you gave me before'). Returns matching chats with a short snippet and date.",
+    input: z.object({ query: z.string().min(2).max(100) }),
+    async execute(a, ctx) {
+      const q = cleanQuery(a.query);
+      if (!q) throw new Error("Use at least 2 characters");
+      let req = ctx.db.from("messages").select("conversation_id, content, created_at").eq("user_id", ctx.userId).ilike("content", likePattern(q)).order("created_at", { ascending: false }).limit(40);
+      if (ctx.conversationId) req = req.neq("conversation_id", ctx.conversationId);
+      const { data, error } = await req;
+      if (error) throw new Error("Couldn't search chats");
+      const rows = (data ?? []) as { conversation_id: string; content: string; created_at: string }[];
+      const firstPer = new Map<string, (typeof rows)[number]>();
+      for (const r of rows) if (!firstPer.has(r.conversation_id)) firstPer.set(r.conversation_id, r);
+      const ids = Array.from(firstPer.keys()).slice(0, 8);
+      if (!ids.length) return { results: [], note: "Nothing in earlier chats matches." };
+      const { data: convs } = await ctx.db.from("conversations").select("id, title").eq("user_id", ctx.userId).in("id", ids);
+      const title = new Map(((convs ?? []) as { id: string; title: string }[]).map((c) => [c.id, c.title]));
+      return { results: ids.map((id) => ({ title: title.get(id) ?? "Chat", date: firstPer.get(id)!.created_at.slice(0, 10), snippet: snippet(firstPer.get(id)!.content, q, 240), link: `${SITE}/app?c=${id}` })) };
+    },
+  }),
+  tool({
     name: "run_code", label: "Running code",
-    description: "Run Python 3 or JavaScript (Node) in TARGET's sandbox to calculate, analyse data, convert or process files (pandas, Pillow, matplotlib, ffmpeg are available on the worker). Name files the user attached in this chat in `files`; they are in the working folder. Save files to make downloadable into the folder `out/` (max 5). Print the answer. 60 second limit, no secrets. Needs TARGET's worker to be running.",
+    description: "Run Python 3 or JavaScript (Node) in TARGET's sandbox to calculate, analyse data, convert or process files (pandas, Pillow, matplotlib, ffmpeg are available on the worker). Name files the user attached in this chat in `files`; they are in the working folder. Save files to make downloadable into the folder `out/` (max 5). Print the answer. 60 second limit, no secrets. Runs on TARGET's worker when it is online, otherwise in the user's browser (Python via Pyodide with numpy, pandas, matplotlib, Pillow; no ffmpeg or network there). In the browser, JavaScript makes a file with save(name, text).",
     input: z.object({ language: z.enum(["python", "javascript"]).default("python"), code: z.string().min(1).max(50000), purpose: z.string().min(3).max(200), files: z.array(z.string().min(1).max(200)).max(5).default([]) }),
     async execute(a, ctx) {
       const inputs = await chatInputs(ctx, a.files);
-      const { data, error } = await ctx.db.from("browser_jobs").insert({
-        user_id: ctx.userId, mode: "code", goal: a.purpose, language: a.language, code: a.code, inputs, status: "queued", conversation_id: ctx.conversationId,
-      }).select("id").single();
-      if (error || !data) throw new Error("Couldn't start the code run");
-      return jobReply(await waitForJob(ctx, data.id as string), data.id as string);
+      return queueCode(ctx, { goal: a.purpose, language: a.language, code: a.code, inputs });
     },
   }),
   tool({
@@ -131,12 +164,7 @@ export const ROUND2_TOOLS: BuiltinTool[] = [
       const isUrl = /^https:\/\//.test(a.image);
       const src = isUrl ? { name: "input-image", url: a.image } : (await chatInputs(ctx, [a.image]))[0];
       if (a.ops && Object.keys(a.ops).length) {
-        const { data, error } = await ctx.db.from("browser_jobs").insert({
-          user_id: ctx.userId, mode: "code", goal: `Edit photo ${isUrl ? "" : a.image}`.trim().slice(0, 200), language: "python",
-          code: pillowScript(src.name, a.ops), inputs: [src], status: "queued", conversation_id: ctx.conversationId,
-        }).select("id").single();
-        if (error || !data) throw new Error("Couldn't start the edit");
-        return jobReply(await waitForJob(ctx, data.id as string), data.id as string);
+        return queueCode(ctx, { goal: `Edit photo ${isUrl ? "" : a.image}`.trim(), language: "python", code: pillowScript(src.name, a.ops), inputs: [src] });
       }
       if (!a.instruction.trim()) throw new Error("Say what to change, or give ops");
       const key = process.env.POLLINATIONS_KEY;

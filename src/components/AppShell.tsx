@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import Sidebar, { type Section } from "@/components/Sidebar";
 import WelcomeTour from "@/components/WelcomeTour";
 import SessionKeeper from "@/components/SessionKeeper";
+import HelpNeededBanner from "@/components/HelpNeededBanner";
 
 /** Authenticated workspace frame: resolves the user, loads nav data, renders sidebar + main. */
 export async function getSessionOrRedirect(next: string) {
@@ -25,6 +26,7 @@ export default async function AppShell({ user, section, activeId, children }: { 
   return (
     <div className="relative isolate flex h-[100dvh] bg-bg text-ink">
       <SessionKeeper />
+      <HelpNeededBanner />
       {/* Night-water backdrop, same footage as the landing page, kept still and dim so text stays readable */}
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10">
         {/* eslint-disable-next-line @next/next/no-img-element */}

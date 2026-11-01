@@ -12,6 +12,8 @@ import ModelPicker, { type ModelChoice } from "@/components/ModelPicker";
 import VoiceButton from "@/components/VoiceButton";
 import TemplatesMenu from "@/components/TemplatesMenu";
 import ShareButton from "@/components/ShareButton";
+import BrowserCodeRunner from "@/components/BrowserCodeRunner";
+import { friendlyError, friendlyStatus } from "@/lib/friendlyError";
 import { ACCEPT_ATTR, ATTACHMENT_BUCKET, MAX_ATTACHMENTS_PER_MESSAGE, MAX_ATTACHMENT_BYTES, safeFileName, storageKeyName, typeFor } from "@/lib/attachments";
 
 export type UIMsg = { role: "user" | "assistant"; content: string; attachments?: { name: string; kind: string }[] };
@@ -181,7 +183,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
       if (!res.ok || !res.body) {
         const j = await res.json().catch(() => ({}));
         if (j.conversationId && !conversationId) setConversationId(j.conversationId);
-        throw new Error(j.error || `Request failed (${res.status})`);
+        throw new Error(friendlyStatus(res.status, j.error));
       }
       newId = res.headers.get("X-Conversation-Id") ?? undefined;
       if (newId && newId !== conversationId) setConversationId(newId);
@@ -211,7 +213,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
         });
         if (newId && newId !== initialId) router.replace(`/app?c=${newId}`);
       } else {
-        setError(e instanceof Error ? e.message : "Something went wrong");
+        setError(friendlyError(e));
         setFailedText(shown);
         setMessages((m) => (m[m.length - 1]?.role === "assistant" && !m[m.length - 1].content ? m.slice(0, -1) : m));
       }
@@ -237,6 +239,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
 
   return (
     <div className="relative flex h-full flex-col">
+      <BrowserCodeRunner active={streaming} />
       <div className="relative flex min-h-12 items-center justify-center gap-2 px-14 py-2 pr-20 md:pl-4 md:pr-24">
         {projectId && projectName && (
           <a href={`/app/projects/${projectId}`} data-testid="chat-project" className="inline-flex max-w-full items-center gap-1.5 truncate rounded-full border border-line-strong bg-surface/80 px-3 py-1 text-xs text-ink-soft backdrop-blur hover:bg-surface-2">
