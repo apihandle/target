@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const a = await requireUser();
   if (!a) return unauthorized();
-  return json({ settings: { ...(await loadSettings(a.db, a.user.id)), preferred_model: await loadPreferredModel(a.db, a.user.id) } });
+  const { data: pro } = await a.db.from("user_settings").select("proactive_enabled").eq("user_id", a.user.id).maybeSingle();
+  return json({ settings: { ...(await loadSettings(a.db, a.user.id)), preferred_model: await loadPreferredModel(a.db, a.user.id), proactive_enabled: pro?.proactive_enabled !== false } });
 }
 
 export async function PATCH(req: Request) {
@@ -20,6 +21,10 @@ export async function PATCH(req: Request) {
   if (body.memory_enabled !== undefined) {
     if (typeof body.memory_enabled !== "boolean") return badRequest("memory_enabled must be true or false");
     row.memory_enabled = body.memory_enabled;
+  }
+  if (body.proactive_enabled !== undefined) {
+    if (typeof body.proactive_enabled !== "boolean") return badRequest("proactive_enabled must be true or false");
+    row.proactive_enabled = body.proactive_enabled;
   }
   if (body.quick_actions !== undefined) {
     if (body.quick_actions === null) row.quick_actions = null; // reset to defaults

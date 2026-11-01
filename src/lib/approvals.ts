@@ -110,11 +110,15 @@ export const ACTION_DEFS: Record<string, Def> = {
     validate: () => ({ ok: true, params: {} }),
     describe: () => ({ summary: "Send an email", destination: "Email" }),
   },
+  /** Created only by the checkout tool: approving it hands the prepared order to the browser worker. */
   purchase: {
-    label: "Make a purchase", provider: null,
-    unavailable: "TARGET can't buy anything in this version. It can help you compare options; you complete the purchase yourself.",
-    validate: () => ({ ok: true, params: {} }),
-    describe: () => ({ summary: "Make a purchase", destination: "External store" }),
+    label: "Order", provider: null, internal: true,
+    validate(r) {
+      const id = typeof r.browser_job_id === "string" ? r.browser_job_id : "";
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, error: "Bad order" };
+      return { ok: true, params: { browser_job_id: id } };
+    },
+    describe: () => ({ summary: "Place an order", destination: "Store" }),
   },
   booking: {
     label: "Book or cancel something", provider: null,

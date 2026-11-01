@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/Button";
 import { Badge, type Tone } from "@/components/ui/Badge";
 
 type Step = { action: string; url?: string; selector?: string; value?: string; key?: string; ms?: number; field?: string };
-type Job = { id: string; goal: string; start_url: string; steps: Step[]; status: string; result: string | null; error: string | null; created_at: string };
+type Job = { id: string; goal: string; start_url: string | null; steps: Step[]; status: string; result: string | null; error: string | null; created_at: string; mode?: string; log?: string[]; files?: { name: string; url: string }[]; language?: string | null };
+const MODE: Record<string, string> = { auto: "Smart browser", steps: "Browser steps", code: "Code", video: "Video" };
 const STATUS: Record<string, [string, Tone]> = {
   needs_approval: ["Needs your approval", "warn"], queued: ["Waiting for the browser", "info"], running: ["Running", "accent"],
   done: ["Done", "ok"], failed: ["Failed", "danger"], cancelled: ["Cancelled", "neutral"],
@@ -35,7 +36,7 @@ export default function BrowserJobs() {
             <div className="flex flex-wrap items-start gap-3">
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2 font-medium"><span className="truncate">{j.goal}</span><Badge tone={tone}>{label}</Badge></p>
-                <p className="mt-1 truncate text-xs text-muted-soft">{j.start_url}</p>
+                <p className="mt-1 truncate text-xs text-muted-soft">{MODE[j.mode ?? "steps"]}{j.mode === "code" && j.language ? ` · ${j.language}` : ""}{j.start_url ? ` · ${j.start_url}` : ""}</p>
               </div>
               <div className="flex gap-2">
                 {j.status === "needs_approval" && <Button size="sm" variant="approve" onClick={() => act(j.id, "approve")}>Approve</Button>}
@@ -43,6 +44,8 @@ export default function BrowserJobs() {
               </div>
             </div>
             {!!j.steps?.length && <ol className="mt-3 list-decimal space-y-0.5 pl-5 text-xs text-ink-soft">{j.steps.map((s, i) => <li key={i} className="break-all">{stepText(s)}</li>)}</ol>}
+            {!!j.log?.length && <ol className="mt-3 list-decimal space-y-0.5 pl-5 text-xs text-ink-soft">{j.log.map((l, i) => <li key={i} className="break-words">{l}</li>)}</ol>}
+            {!!j.files?.length && <p className="mt-3 flex flex-wrap gap-3 text-xs">{j.files.map((f) => <a key={f.url} href={f.url} className="text-accent-strong underline">{f.name}</a>)}</p>}
             {j.result && <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg bg-bg/70 p-3 text-xs text-ink-soft">{j.result}</pre>}
             {j.error && <p className="mt-2 text-xs text-danger">{j.error}</p>}
           </article>

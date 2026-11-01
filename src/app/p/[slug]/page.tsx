@@ -1,17 +1,19 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import Markdown from "@/components/Markdown";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
-type PageRow = { title: string; markdown: string; created_at: string };
+type PageRow = { title: string; markdown: string; created_at: string; format?: string };
 
 async function load(slug: string): Promise<PageRow | null> {
   if (!/^[a-z0-9-]{6,80}$/.test(slug)) return null;
   try {
     const db = createAdminClient();
-    const { data } = await db.from("pages").select("title, markdown, created_at").eq("slug", slug).eq("published", true).maybeSingle();
+    const first = await db.from("pages").select("title, markdown, created_at, format").eq("slug", slug).eq("published", true).maybeSingle();
+    // Before migration 0014 there is no format column: every Page is Markdown.
+    const data: unknown = first.error ? (await db.from("pages").select("title, markdown, created_at").eq("slug", slug).eq("published", true).maybeSingle()).data : first.data;
     return (data as PageRow | null) ?? null;
   } catch { return null; }
 }
@@ -25,6 +27,7 @@ export async function generateMetadata({ params }: { params: { slug: string } })
 export default async function PublicPage({ params }: { params: { slug: string } }) {
   const p = await load(params.slug);
   if (!p) notFound();
+  if (p.format === "html") redirect(`/site/${params.slug}`);
   return (
     <div className="min-h-[100dvh] bg-bg text-ink">
       <header className="border-b border-line">

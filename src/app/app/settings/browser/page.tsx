@@ -12,7 +12,7 @@ export default async function BrowsertasksPage() {
     <AppShell user={user} section="settings">
       <Page>
         <SettingsBack />
-        <div className="mt-3"><PageHeader title="Browser tasks" description="Website tasks TARGET planned. Approve anything that clicks or types." /></div>
+        <div className="mt-3"><PageHeader title="Browser tasks" description="Website, code and video tasks TARGET runs on its worker. Approve anything that clicks or types." /></div>
         <div className="mx-auto mt-6 max-w-2xl"><BrowserJobs /></div>
       </Page>
     </AppShell>

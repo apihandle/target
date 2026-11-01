@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 
-type PageItem = { id: string; slug: string; title: string; published: boolean; created_at: string };
+type PageItem = { id: string; slug: string; title: string; published: boolean; format?: string; created_at: string };
+const pagePath = (p: { slug: string; format?: string }) => `/${p.format === "html" ? "site" : "p"}/${p.slug}`;
 type FileItem = { id: string; name: string; mime: string; size_bytes: number; created_at: string };
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 const card = "flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface/70 p-4 backdrop-blur";
@@ -26,12 +27,12 @@ export function PagesList() {
       {items.map((p) => (
         <article key={p.id} className={card}>
           <div className="min-w-0 flex-1">
-            <p className="flex items-center gap-2 font-medium"><span className="truncate">{p.title}</span><Badge tone={p.published ? "accent" : "neutral"}>{p.published ? "Public" : "Hidden"}</Badge></p>
-            <a href={`/p/${p.slug}`} target="_blank" rel="noreferrer" className="mt-1 block truncate text-xs text-accent-strong underline">gettarget.vercel.app/p/{p.slug}</a>
+            <p className="flex items-center gap-2 font-medium"><span className="truncate">{p.title}</span><Badge tone={p.published ? "accent" : "neutral"}>{p.published ? "Public" : "Hidden"}</Badge>{p.format === "html" && <Badge tone="neutral">Website</Badge>}</p>
+            <a href={pagePath(p)} target="_blank" rel="noreferrer" className="mt-1 block truncate text-xs text-accent-strong underline">gettarget.vercel.app{pagePath(p)}</a>
             <p className="mt-1 text-xs text-muted-soft">{day(p.created_at)}</p>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => navigator.clipboard?.writeText(`https://gettarget.vercel.app/p/${p.slug}`)}>Copy link</Button>
+            <Button size="sm" onClick={() => navigator.clipboard?.writeText(`https://gettarget.vercel.app${pagePath(p)}`)}>Copy link</Button>
             <Button size="sm" onClick={() => act(p.id, p.published ? "hide" : "show")}>{p.published ? "Hide" : "Show"}</Button>
             <Button size="sm" variant="danger" onClick={() => act(p.id, "delete")}>Delete</Button>
           </div>

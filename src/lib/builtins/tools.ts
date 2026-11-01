@@ -4,6 +4,7 @@ import { ATTACHMENT_BUCKET } from "@/lib/attachments";
 import { llmText } from "@/lib/llm";
 import { searchBlock, tavilySearch } from "@/lib/search";
 import { readUrl } from "@/lib/urlReader";
+import { ROUND2_TOOLS } from "@/lib/builtins/round2";
 import {
   FILE_FORMATS, SITE, browserStep, captionsToText, chartInput, chartUrl, fileName, imageUrl, makePdf, slugFor, stepsNeedApproval, youtubeId, type FileFormat,
 } from "@/lib/builtins/helpers";
@@ -134,18 +135,20 @@ export const BUILTIN_TOOLS: BuiltinTool[] = [
   }),
   tool({
     name: "browser_task", label: "Planning a browser task",
-    description: "Do something on a website in a real browser: read a page that needs JavaScript, fill a form, sign up, check out. Give the start URL and exact steps (goto, click, fill, fill_secret with a vault id, press, wait, extract). Steps that click or type wait for the user's approval in Settings, Browser tasks. Needs TARGET's browser worker to be running.",
-    input: z.object({ goal: z.string().min(3).max(500), start_url: z.string().url().max(2000), steps: z.array(browserStep).max(30).default([]) }),
+    description: "Do something on a website in a real browser. Smart mode (auto: true, the usual choice): give only the goal and start URL; the browser looks at the screen itself and decides each click and keystroke, signing in with vault items you list in secret_ids. Fixed mode: give exact steps (goto, click, fill, fill_secret, press, wait, extract). Read-only fixed steps run at once; anything that can click or type waits for the user's approval. For buying or booking use checkout instead. Needs TARGET's browser worker to be running.",
+    input: z.object({ goal: z.string().min(3).max(500), start_url: z.string().url().max(2000), auto: z.boolean().default(true), secret_ids: z.array(z.string().uuid()).max(4).default([]), steps: z.array(browserStep).max(30).default([]) }),
     async execute(a, ctx) {
       if (!/^https?:\/\//.test(a.start_url)) throw new Error("Only http(s) sites");
-      const ids = a.steps.flatMap((s) => (s.action === "fill_secret" ? [s.secret_id] : []));
+      const smart = a.auto && !a.steps.length;
+      const ids = smart ? a.secret_ids : a.steps.flatMap((s) => (s.action === "fill_secret" ? [s.secret_id] : []));
       if (ids.length) {
         const { data } = await ctx.db.from("vault_secrets").select("id").eq("user_id", ctx.userId).in("id", ids);
         if ((data ?? []).length !== new Set(ids).size) throw new Error("A vault item in the steps doesn't exist");
       }
-      const needs = stepsNeedApproval(a.steps);
+      const needs = smart || stepsNeedApproval(a.steps);
       const { data, error } = await ctx.db.from("browser_jobs").insert({
-        user_id: ctx.userId, goal: a.goal, start_url: a.start_url, steps: a.steps, status: needs ? "needs_approval" : "queued", conversation_id: ctx.conversationId,
+        user_id: ctx.userId, goal: a.goal, start_url: a.start_url, steps: smart ? [] : a.steps, mode: smart ? "auto" : "steps", allowed_secrets: smart ? a.secret_ids : [],
+        status: needs ? "needs_approval" : "queued", conversation_id: ctx.conversationId,
       }).select("id").single();
       if (error || !data) throw new Error("Couldn't create the browser task");
       return {
@@ -154,6 +157,7 @@ export const BUILTIN_TOOLS: BuiltinTool[] = [
       };
     },
   }),
+  ...ROUND2_TOOLS,
 ];
 
 export const BUILTIN_ID = "target";

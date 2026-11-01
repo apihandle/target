@@ -35,6 +35,12 @@ export const EXECUTORS: Record<string, Executor> = {
     const { creds } = await getCredentials(userId, google);
     return await createEvent(creds.access_token, { title: p.title, start: p.start, end: p.end, location: p.location, details: p.details });
   },
+  /** An order prepared by the checkout tool: the user's tap queues its browser job (needs_approval -> queued). */
+  async purchase(p, { db, userId }) {
+    const { data } = await db.from("browser_jobs").update({ status: "queued" }).eq("id", p.browser_job_id).eq("user_id", userId).in("status", ["needs_approval", "failed"]).select("id");
+    if (!data?.length) throw new Error("This order can't be started again.");
+    return { browser_job_id: p.browser_job_id, note: "The browser is placing the order now. You'll get a notification when it's done." };
+  },
   /** A connector tool marked requiresApproval, proposed by the agent loop. Payload is immutable after creation. */
   async connector_tool(p, { userId }) {
     const { runApprovedTool } = await import("@/lib/connectors/loadTools");

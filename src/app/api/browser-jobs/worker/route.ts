@@ -4,12 +4,19 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { openVault } from "@/lib/builtins/vault";
 import { checkLimit } from "@/lib/connectors/rateLimit";
 import { sendPushToUser } from "@/lib/server/push";
+import { ATTACHMENT_BUCKET } from "@/lib/attachments";
+import { decideNext, describeVideo, snapshotSchema } from "@/lib/server/autoBrowser";
+import { SITE } from "@/lib/builtins/helpers";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+const OUT_MIME: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", csv: "text/csv", txt: "text/plain", md: "text/markdown", json: "application/json", html: "text/html", pdf: "application/pdf", mp3: "audio/mpeg", mp4: "video/mp4", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
 
 /**
  * Trusted browser worker only (Bearer SESSION_WORKER_SECRET). Actions:
- *  claim  -> the oldest queued job (atomically moved to running)
+ *  claim  -> the oldest queued job (atomically moved to running) of a mode this worker supports
+ *  next   -> smart mode: given the page snapshot, the AI's next action
  *  secret -> one vault field for a fill_secret step of a RUNNING job that lists that secret
  *  finish -> store the result (done/failed) and notify the owner
  */
@@ -26,23 +33,25 @@ export async function POST(req: Request) {
     // Jobs stuck in running for 10+ minutes are failed so they never block the queue.
     await db.from("browser_jobs").update({ status: "failed", error: "The browser worker stopped responding", finished_at: new Date().toISOString() })
       .eq("status", "running").lt("claimed_at", new Date(Date.now() - 600000).toISOString());
-    const { data: next } = await db.from("browser_jobs").select("id").eq("status", "queued").order("created_at", { ascending: true }).limit(1);
+    const modes = Array.isArray(b.modes) ? (b.modes as unknown[]).filter((m): m is string => typeof m === "string") : ["steps"];
+    const { data: next } = await db.from("browser_jobs").select("id").eq("status", "queued").in("mode", modes).order("created_at", { ascending: true }).limit(1);
     if (!next?.length) return json({ job: null });
     const { data } = await db.from("browser_jobs").update({ status: "running", claimed_at: new Date().toISOString() })
-      .eq("id", next[0].id).eq("status", "queued").select("id, user_id, goal, start_url, steps");
+      .eq("id", next[0].id).eq("status", "queued").select("id, user_id, goal, start_url, steps, mode, max_steps, language, code, inputs");
     return json({ job: data?.[0] ?? null });
   }
 
   const id = typeof b.job_id === "string" && UUID_RE.test(b.job_id) ? b.job_id : null;
   if (!id) return badRequest("job_id required");
-  const { data: job } = await db.from("browser_jobs").select("id, user_id, goal, status, steps").eq("id", id).maybeSingle();
+  const { data: job } = await db.from("browser_jobs").select("id, user_id, goal, status, steps, mode, allowed_secrets, max_steps, log").eq("id", id).maybeSingle();
   if (!job || job.status !== "running") return json({ error: "Job is not running" }, 409);
 
   if (b.action === "secret") {
     const sid = typeof b.secret_id === "string" ? b.secret_id : "";
     const field = typeof b.field === "string" ? b.field : "";
     const steps = (job.steps ?? []) as { action?: string; secret_id?: string; field?: string }[];
-    if (!steps.some((s) => s.action === "fill_secret" && s.secret_id === sid && s.field === field)) return json({ error: "That secret isn't part of this job" }, 403);
+    const allowed = job.mode === "auto" ? ((job.allowed_secrets ?? []) as string[]).includes(sid) : steps.some((s) => s.action === "fill_secret" && s.secret_id === sid && s.field === field);
+    if (!allowed) return json({ error: "That secret isn't part of this job" }, 403);
     if (!(await checkLimit({ key: `vault-read:${job.user_id}`, limit: 20, windowSec: 600 }))) return json({ error: "Too many requests" }, 429);
     const { data: row } = await db.from("vault_secrets").select("secret_box").eq("id", sid).eq("user_id", job.user_id).maybeSingle();
     if (!row) return json({ error: "Secret not found" }, 404);
@@ -52,10 +61,48 @@ export async function POST(req: Request) {
     return new Response(JSON.stringify({ value: fields[field] }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
   }
 
+  if (b.action === "next") {
+    if (job.mode !== "auto") return badRequest("Not a smart job");
+    const snap = snapshotSchema.safeParse(b.snapshot);
+    if (!snap.success) return badRequest("Bad snapshot");
+    const log = ((job.log ?? []) as string[]).slice(-40);
+    const left = (job.max_steps as number) - log.length;
+    if (left <= 0) return json({ action: { do: "fail", reason: "Ran out of steps before finishing" } });
+    const ids = (job.allowed_secrets ?? []) as string[];
+    const { data: secrets } = ids.length ? await db.from("vault_secrets").select("id, kind, label, site").eq("user_id", job.user_id).in("id", ids) : { data: [] };
+    const action = await decideNext(job.goal as string, snap.data, (secrets ?? []) as { id: string; kind: string; label: string; site: string | null }[], log, left);
+    const line = action.do === "done" || action.do === "fail" ? action.do : `${action.do}${"i" in action ? ` [${action.i}]` : ""}${"why" in action && action.why ? `: ${action.why}` : ""}`.slice(0, 200);
+    await db.from("browser_jobs").update({ log: [...log, line] }).eq("id", id);
+    return json({ action });
+  }
+
   if (b.action === "finish") {
     const ok = b.status === "done";
+    let result = typeof b.result === "string" ? b.result : null;
+    // Video jobs: the worker sends frames + captions; TARGET turns them into a description.
+    if (ok && job.mode === "video") {
+      const frames = Array.isArray(b.frames) ? (b.frames as unknown[]).filter((f): f is string => typeof f === "string" && f.length < 400000).slice(0, 8) : [];
+      result = await describeVideo(job.goal as string, typeof b.title === "string" ? b.title.slice(0, 300) : "", typeof b.captions === "string" ? b.captions : "", frames);
+    }
+    // Code jobs: files the program saved into out/ become downloads for the owner.
+    const files: { name: string; url: string }[] = [];
+    if (Array.isArray(b.files)) {
+      for (const f of (b.files as { name?: unknown; base64?: unknown }[]).slice(0, 5)) {
+        if (typeof f?.name !== "string" || typeof f.base64 !== "string") continue;
+        const name = f.name.replace(/[^\w.\- ]/g, "_").slice(0, 100) || "file";
+        const bytes = Buffer.from(f.base64, "base64");
+        if (!bytes.byteLength || bytes.byteLength > 10 * 1024 * 1024) continue;
+        const mime = OUT_MIME[name.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream";
+        const fid = crypto.randomUUID();
+        const path = `${job.user_id}/generated/${fid}-${name}`;
+        const up = await db.storage.from(ATTACHMENT_BUCKET).upload(path, bytes, { contentType: mime, upsert: false });
+        if (up.error) continue;
+        const { error } = await db.from("generated_files").insert({ id: fid, user_id: job.user_id, name, mime, size_bytes: bytes.byteLength, storage_path: path });
+        if (!error) files.push({ name, url: `${SITE}/api/files/${fid}` });
+      }
+    }
     await db.from("browser_jobs").update({
-      status: ok ? "done" : "failed", result: typeof b.result === "string" ? b.result.slice(0, 20000) : null,
+      status: ok ? "done" : "failed", result: result ? result.slice(0, 20000) : null, files,
       error: ok ? null : String(b.error ?? "The browser task failed").slice(0, 500), finished_at: new Date().toISOString(),
     }).eq("id", id).eq("status", "running");
     try { await sendPushToUser(db, job.user_id as string, { title: ok ? "Browser task done" : "Browser task failed", body: String(job.goal).slice(0, 120), url: "/app/settings/browser", tag: `browser-${id}` }); } catch { /* optional */ }

@@ -4,11 +4,13 @@ import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { ACTION_DEFS, STATUS_TEXT, type Approval } from "@/lib/approvals";
 
-const FIELD_LABEL: Record<string, string> = { connector: "App", tool: "Action", args: "Details", title: "Title", notes: "Notes", name: "Name", description: "Purpose", start: "Starts", end: "Ends", location: "Location", details: "Details" };
+const FIELD_LABEL: Record<string, string> = { connector: "App", tool: "Action", args: "Details", title: "Title", notes: "Notes", name: "Name", description: "Purpose", start: "Starts", end: "Ends", location: "Location", details: "Details", items: "Items", total: "Total", payment: "Pay with", deliver_to: "Deliver to" };
+const HIDDEN = new Set(["browser_job_id"]);
 
 function fmt(k: string, v: unknown) {
   if ((k === "start" || k === "end") && typeof v === "string" && !isNaN(Date.parse(v)))
     return new Date(v).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) + " IST";
+  if (k === "items" && Array.isArray(v)) return v.map((i: { name?: string; qty?: number; price?: string }) => `${i.qty ?? 1} x ${i.name ?? ""}${i.price ? `  ${i.price}` : ""}`).join("\n");
   if (v && typeof v === "object") return JSON.stringify(v, null, 2);
   return String(v);
 }
@@ -49,7 +51,7 @@ export default function ApprovalCard({ id, initial, onChange }: { id: string; in
   if (!a) return <div data-testid="approval-loading" className="mt-3 h-24 animate-pulse rounded-xl border border-line bg-surface" aria-label="Loading approval request" />;
 
   const def = ACTION_DEFS[a.action_type];
-  const details = Object.entries(a.payload ?? {}).filter(([, v]) => v !== "" && v != null);
+  const details = Object.entries(a.payload ?? {}).filter(([k, v]) => v !== "" && v != null && !HIDDEN.has(k));
   const canDecide = a.status === "pending" || a.status === "failed";
   const link = typeof a.result?.link === "string" && /^https:\/\//.test(a.result.link) ? a.result.link : null;
 
@@ -75,7 +77,7 @@ export default function ApprovalCard({ id, initial, onChange }: { id: string; in
       {canDecide && (
         <div className="mt-3 flex flex-wrap gap-2">
           <Button size="sm" variant="approve" data-testid="approve-btn" disabled={!!busy} onClick={() => decide("approve")}>
-            {busy === "approve" ? "Running…" : a.status === "failed" ? "Approve & retry" : "Approve"}
+            {busy === "approve" ? "Running…" : a.status === "failed" ? "Approve & retry" : a.action_type === "purchase" ? "Place order" : "Approve"}
           </Button>
           <Button size="sm" variant="secondary" data-testid="reject-btn" disabled={!!busy} onClick={() => decide("reject")}>
             {busy === "reject" ? "…" : a.status === "failed" ? "Cancel" : "Reject"}
