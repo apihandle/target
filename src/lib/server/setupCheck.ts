@@ -31,6 +31,7 @@ export const MIGRATION_CHECKS: { file: string; table: string; column?: string }[
   { file: "0013_capabilities", table: "browser_jobs" },
   { file: "0014_round2", table: "suggestions" },
   { file: "0015_round3", table: "worker_heartbeats" },
+  { file: "0016_browser_help", table: "browser_jobs", column: "help_inputs" },
 ];
 
 export function envChecks(env: Record<string, string | undefined> = process.env): Check[] {

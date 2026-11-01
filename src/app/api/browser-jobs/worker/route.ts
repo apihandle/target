@@ -6,6 +6,7 @@ import { checkLimit } from "@/lib/connectors/rateLimit";
 import { sendPushToUser } from "@/lib/server/push";
 import { decideNext, describeVideo, snapshotSchema } from "@/lib/server/autoBrowser";
 import { storeOutFiles } from "@/lib/server/jobFiles";
+import { inputsAfter } from "@/lib/browserHelp";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -17,6 +18,7 @@ export const maxDuration = 60;
  *  next   -> smart mode: given the page snapshot, the AI's next action
  *  secret -> one vault field for a fill_secret step of a RUNNING job that lists that secret
  *  finish -> store the result (done/failed) and notify the owner
+ *  help / help_poll / help_end -> captcha hand-off: show the owner a screenshot, read back their taps in order
  */
 export async function POST(req: Request) {
   const auth = workerAuth(req);
@@ -77,6 +79,33 @@ export async function POST(req: Request) {
     return json({ action });
   }
 
+  // Captcha hand-off. The worker never solves a captcha; the owner taps on the screenshot from their phone.
+  const shot = (v: unknown) => (typeof v === "string" && v.length < 400000 && /^[A-Za-z0-9+/=]+$/.test(v) ? v : null);
+  const dim = (v: unknown, d: number) => (typeof v === "number" && v > 0 && v < 5000 ? Math.round(v) : d);
+  if (b.action === "help") {
+    const screenshot = shot(b.screenshot);
+    if (!screenshot) return badRequest("screenshot required");
+    const reason = String(b.reason ?? "Solve the check on this page").slice(0, 200);
+    const now = new Date().toISOString();
+    await db.from("browser_jobs").update({ help: { reason, screenshot, w: dim(b.w, 1280), h: dim(b.h, 900), at: now }, help_inputs: [], claimed_at: now }).eq("id", id).eq("status", "running");
+    try { await sendPushToUser(db, job.user_id as string, { title: "TARGET needs you for a moment", body: `${reason.slice(0, 80)}. Tap to help.`, url: `/app/settings/browser?help=${id}`, tag: `browser-help-${id}` }); } catch { /* optional */ }
+    return json({ ok: true });
+  }
+  if (b.action === "help_poll") {
+    const { data: row } = await db.from("browser_jobs").select("help, help_inputs").eq("id", id).maybeSingle();
+    const help = (row?.help ?? null) as Record<string, unknown> | null;
+    if (!help) return json({ inputs: [], waiting: false });
+    const screenshot = shot(b.screenshot);
+    // A fresh screenshot after each tap so the owner sees what changed; claimed_at keeps the job from looking stuck.
+    if (screenshot) await db.from("browser_jobs").update({ help: { ...help, screenshot, at: new Date().toISOString() }, claimed_at: new Date().toISOString() }).eq("id", id).eq("status", "running");
+    const after = typeof b.after === "number" ? b.after : 0;
+    return json({ inputs: inputsAfter(row?.help_inputs, after), waiting: true });
+  }
+  if (b.action === "help_end") {
+    await db.from("browser_jobs").update({ help: null, help_inputs: [], claimed_at: new Date().toISOString() }).eq("id", id);
+    return json({ ok: true });
+  }
+
   if (b.action === "finish") {
     const ok = b.status === "done";
     let result = typeof b.result === "string" ? b.result : null;
@@ -91,6 +120,7 @@ export async function POST(req: Request) {
       status: ok ? "done" : "failed", result: result ? result.slice(0, 20000) : null, files,
       error: ok ? null : String(b.error ?? "The browser task failed").slice(0, 500), finished_at: new Date().toISOString(),
     }).eq("id", id).eq("status", "running");
+    try { await db.from("browser_jobs").update({ help: null, help_inputs: [] }).eq("id", id); } catch { /* columns added in 0016 */ }
     try { await sendPushToUser(db, job.user_id as string, { title: ok ? "Browser task done" : "Browser task failed", body: String(job.goal).slice(0, 120), url: "/app/settings/browser", tag: `browser-${id}` }); } catch { /* optional */ }
     return json({ ok: true });
   }

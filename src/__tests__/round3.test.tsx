@@ -38,8 +38,8 @@ describe("setup check", () => {
     const vapid = envChecks({ NEXT_PUBLIC_VAPID_PUBLIC_KEY: "pub" }).find((c) => c.label === "Phone notifications")!;
     expect(vapid.ok).toBe(false);
   });
-  it("lists every migration from 0006 to 0015", () => {
-    expect(MIGRATION_CHECKS.map((m) => m.file.slice(0, 4))).toEqual(["0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015"]);
+  it("lists every migration from 0006 to 0016", () => {
+    expect(MIGRATION_CHECKS.map((m) => m.file.slice(0, 4))).toEqual(["0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016"]);
   });
   it("is owner-only once ADMIN_EMAIL is set", () => {
     expect(canSeeSetup("a@b.com", {})).toBe(true);
@@ -83,5 +83,65 @@ describe("browser code runner", () => {
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/Stopped/);
     expect(document.querySelector("iframe")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------- captcha hand-off + remembered sign-ins
+import { appendInput, helpInput, inputsAfter, looksLikeCaptcha, tapToPixels, MAX_HELP_INPUTS } from "@/lib/browserHelp";
+import { parseAction as parseAutoAction, autoPrompt as autoPromptText } from "@/lib/server/autoBrowser";
+import { readFileSync as readSrc } from "node:fs";
+
+describe("captcha hand-off", () => {
+  it("accepts taps, text, keys and done, and rejects anything else", () => {
+    expect(helpInput.safeParse({ t: "tap", x: 0.5, y: 0.2 }).success).toBe(true);
+    expect(helpInput.safeParse({ t: "tap", x: 1.5, y: 0.2 }).success).toBe(false);
+    expect(helpInput.safeParse({ t: "type", text: "x7Kp2" }).success).toBe(true);
+    expect(helpInput.safeParse({ t: "type", text: "" }).success).toBe(false);
+    expect(helpInput.safeParse({ t: "key", key: "Enter" }).success).toBe(true);
+    expect(helpInput.safeParse({ t: "key", key: "F12" }).success).toBe(false);
+    expect(helpInput.safeParse({ t: "done" }).success).toBe(true);
+    expect(helpInput.safeParse({ t: "eval", code: "1" }).success).toBe(false);
+  });
+  it("numbers inputs in order and the worker reads only new ones", () => {
+    let list = appendInput([], { t: "tap", x: 0.1, y: 0.1 });
+    list = appendInput(list, { t: "type", text: "abc" });
+    list = appendInput(list, { t: "done" });
+    expect(list.map((i) => i.seq)).toEqual([1, 2, 3]);
+    expect(inputsAfter(list, 1).map((i) => i.t)).toEqual(["type", "done"]);
+    expect(inputsAfter(null, 0)).toEqual([]);
+  });
+  it("keeps the list bounded", () => {
+    let list = appendInput([], { t: "done" });
+    for (let k = 0; k < MAX_HELP_INPUTS + 10; k++) list = appendInput(list, { t: "tap", x: 0, y: 0 });
+    expect(list.length).toBe(MAX_HELP_INPUTS);
+    expect(list[list.length - 1].seq).toBe(MAX_HELP_INPUTS + 11);
+  });
+  it("spots a showing captcha but not the invisible reCAPTCHA notice", () => {
+    expect(looksLikeCaptcha(["https://www.google.com/recaptcha/api2/bframe?k=1"], "")).toBe(true);
+    expect(looksLikeCaptcha([], "Verify you are human by completing the action below")).toBe(true);
+    expect(looksLikeCaptcha([], "I'm not a robot")).toBe(true);
+    expect(looksLikeCaptcha([], "This site is protected by reCAPTCHA and the Google Privacy Policy")).toBe(false);
+    expect(looksLikeCaptcha(["https://www.youtube.com/embed/x"], "Welcome back")).toBe(false);
+  });
+  it("maps a tap on the picture to page pixels", () => {
+    expect(tapToPixels(0.5, 0.5, 1280, 900)).toEqual({ px: 640, py: 450 });
+    expect(tapToPixels(2, -1, 1280, 900)).toEqual({ px: 1280, py: 0 });
+  });
+  it("lets the smart browser ask the user instead of failing on a captcha", () => {
+    expect(parseAutoAction('{"do":"ask_user","reason":"Tick the robot box"}')).toEqual({ do: "ask_user", reason: "Tick the robot box" });
+    const p = autoPromptText("log in", [], [], 10);
+    expect(p).toContain("ask_user");
+    expect(p).toContain("Never try to solve a captcha yourself");
+  });
+  it("worker repeats owner taps, remembers sign-ins, and never uses a captcha-solving service", () => {
+    const w = readSrc("worker/browser-worker.mjs", "utf8");
+    expect(w).toContain('action: "help_poll"');
+    expect(w).toContain("saveCookies(ctx, job.user_id, remember)");
+    expect(w).toContain("AutomationControlled");
+    expect(w).not.toMatch(/2captcha|anti-captcha|capsolver|deathbycaptcha/i);
+  });
+  it("migration 0016 is in the setup check", () => {
+    expect(readSrc("src/lib/server/setupCheck.ts", "utf8")).toContain("0016_browser_help");
+    expect(readSrc("supabase/migrations/0016_browser_help.sql", "utf8")).toContain("help_inputs");
   });
 });

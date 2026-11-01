@@ -2,9 +2,10 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Badge, type Tone } from "@/components/ui/Badge";
+import BrowserHelp from "@/components/BrowserHelp";
 
 type Step = { action: string; url?: string; selector?: string; value?: string; key?: string; ms?: number; field?: string };
-type Job = { id: string; goal: string; start_url: string | null; steps: Step[]; status: string; result: string | null; error: string | null; created_at: string; mode?: string; log?: string[]; files?: { name: string; url: string }[]; language?: string | null };
+type Job = { id: string; goal: string; start_url: string | null; steps: Step[]; status: string; result: string | null; error: string | null; created_at: string; mode?: string; log?: string[]; files?: { name: string; url: string }[]; language?: string | null; help_reason?: string | null };
 const MODE: Record<string, string> = { auto: "Smart browser", steps: "Browser steps", code: "Code", video: "Video" };
 const STATUS: Record<string, [string, Tone]> = {
   needs_approval: ["Needs your approval", "warn"], queued: ["Waiting for the browser", "info"], running: ["Running", "accent"],
@@ -18,7 +19,9 @@ export default function BrowserJobs() {
   const [worker, setWorker] = useState(true);
   const [error, setError] = useState("");
   const load = async () => { const r = await fetch("/api/browser-jobs", { cache: "no-store" }); const j = await r.json().catch(() => ({})); if (!r.ok) setError(j.error ?? "Couldn't load"); setJobs(j.jobs ?? []); setWorker(!!j.worker); };
-  useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, []);
+  const busy = !!jobs?.some((j) => j.status === "running" || j.status === "queued");
+  // Check often while something runs, so a captcha shows up here within seconds.
+  useEffect(() => { load(); const t = setInterval(load, busy ? 4000 : 15000); return () => clearInterval(t); }, [busy]);
   async function act(id: string, action: "approve" | "cancel") {
     const r = await fetch(`/api/browser-jobs/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
     if (!r.ok) setError("Couldn't update this task."); load();
@@ -30,7 +33,8 @@ export default function BrowserJobs() {
       {error && <p className="text-sm text-danger">{error}</p>}
       {!jobs.length && <p className="rounded-2xl border border-line bg-surface/60 p-5 text-sm text-muted">No browser tasks yet. Ask TARGET to do something on a website.</p>}
       {jobs.map((j) => {
-        const [label, tone] = STATUS[j.status] ?? [j.status, "neutral" as Tone];
+        const needsYou = j.status === "running" && !!j.help_reason;
+        const [label, tone] = needsYou ? ["Needs you", "warn" as Tone] : STATUS[j.status] ?? [j.status, "neutral" as Tone];
         return (
           <article key={j.id} className="rounded-2xl border border-line bg-surface/70 p-4 backdrop-blur">
             <div className="flex flex-wrap items-start gap-3">
@@ -40,9 +44,10 @@ export default function BrowserJobs() {
               </div>
               <div className="flex gap-2">
                 {j.status === "needs_approval" && <Button size="sm" variant="approve" onClick={() => act(j.id, "approve")}>Approve</Button>}
-                {(j.status === "needs_approval" || j.status === "queued") && <Button size="sm" onClick={() => act(j.id, "cancel")}>Cancel</Button>}
+                {(j.status === "needs_approval" || j.status === "queued" || j.status === "running") && <Button size="sm" onClick={() => act(j.id, "cancel")}>{j.status === "running" ? "Stop" : "Cancel"}</Button>}
               </div>
             </div>
+            {needsYou && <BrowserHelp id={j.id} onFinished={load} />}
             {!!j.steps?.length && <ol className="mt-3 list-decimal space-y-0.5 pl-5 text-xs text-ink-soft">{j.steps.map((s, i) => <li key={i} className="break-all">{stepText(s)}</li>)}</ol>}
             {!!j.log?.length && <ol className="mt-3 list-decimal space-y-0.5 pl-5 text-xs text-ink-soft">{j.log.map((l, i) => <li key={i} className="break-words">{l}</li>)}</ol>}
             {!!j.files?.length && <p className="mt-3 flex flex-wrap gap-3 text-xs">{j.files.map((f) => <a key={f.url} href={f.url} className="text-accent-strong underline">{f.name}</a>)}</p>}
