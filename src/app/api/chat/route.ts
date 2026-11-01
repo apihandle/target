@@ -5,6 +5,7 @@ import { llm, llmText, LLMError } from "@/lib/llm";
 import { ACTIONS_PROMPT, heuristicActions, mergeActions, sanitizeAction, type Action } from "@/lib/actions";
 import { projectBlock } from "@/lib/projects";
 import { extractUrls, pagesBlock, readUrl } from "@/lib/urlReader";
+import { BUILTIN_ID, getBuiltin } from "@/lib/builtins/tools";
 import { needsSearch, searchBlock, searchQuery, sourcesFence, tavilySearch, type SearchResult } from "@/lib/search";
 import { EXTRACT_PROMPT, MAX_MEMORIES, explicitRemember, isDuplicate, looksSecret, memoryBlock, parseFacts } from "@/lib/memory";
 import { isUuid } from "@/lib/ids";
@@ -346,6 +347,7 @@ async function extractFacts(text: string, known: string[]): Promise<string[]> {
 function toolLabel(name: string): string {
   if (name === META_TOOL) return "Checking which account is needed";
   const [cid, t] = name.split(SEP);
+  if (cid === BUILTIN_ID) return getBuiltin(t ?? "")?.label ?? "Working";
   const c = getConnector(cid ?? "");
   return c && t ? `${c.name} · ${t.replace(/_/g, " ")}` : "Tool";
 }

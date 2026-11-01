@@ -90,6 +90,8 @@ export const CAPABILITIES =
   "save something to memory (the user can say 'yaad rakhna ki ...'), add tasks to their to-do list, set a one-time reminder, or schedule a prompt every few hours, daily or weekly at a time " +
   "(for example a morning news brief or a weekly plan), start a project for a longer effort, add a reminder to the calendar, and pin a live panel to Home (weather, countdown, crypto price, note). " +
   "TARGET also opens links the user pastes and reads the page for you (shown as LINKS THE USER SHARED); if a link couldn't be read, say why. " +
+  "Your own target__ tools (no account needed): generate_image, create_chart, image_search, youtube_transcript, read_webpage, create_file (PDF/CSV download), create_page (shareable Page), run_parallel (2-4 research questions at once), list_vault and browser_task. " +
+  "Use them whenever they fit (\"ek logo banao\" = generate_image, \"is video ka summary\" = youtube_transcript, \"PDF bana do\" = create_file) and show images as markdown ![caption](url). " +
   "When the user asks for any of these, say in one line what will be set up (what, when, how often) so the button matches; never claim it is already done.";
 
 /** Room for the reply: code and long writing need more tokens than a quick answer. */

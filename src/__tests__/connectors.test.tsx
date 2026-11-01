@@ -106,7 +106,7 @@ describe("registry", () => {
     const tools = CONNECTORS.flatMap((c) => c.getTools({ connector_id: c.id, status: "connected", scopes: c.scopes, account_label: "" })
       .map((def) => ({ name: `${c.id}__${def.name}`, connector: c, def, connection: { connector_id: c.id, status: "connected" as const, scopes: [], account_label: "" } })));
     const specs = toOpenAITools(tools, new Set(CONNECTORS.map((c) => c.id)));
-    expect(specs).toHaveLength(tools.length); // no request_connector when everything is connected
+    expect(specs.filter((s) => !s.function.name.startsWith("target__"))).toHaveLength(tools.length); // no request_connector when everything is connected
     for (const s of specs) { expect(s.function.parameters).toMatchObject({ type: "object" }); expect(s.function.name.length).toBeLessThanOrEqual(64); }
   });
   it("marks destructive / outward-facing tools as requiring approval", () => {
@@ -428,7 +428,7 @@ describe("connector routes", () => {
     expect((await disconnectRoute.POST(post("http://t/x"), { params: { id: "supabase" } })).status).toBe(200);
     t = await loadToolsForUser(A, h.db as unknown as Db);
     expect(t.tools).toEqual([]);
-    expect(toOpenAITools(t.tools, t.connected).map((s) => s.function.name)).toEqual([META_TOOL]);
+    expect(toOpenAITools(t.tools, t.connected).map((s) => s.function.name).filter((n) => !n.startsWith("target__"))).toEqual([META_TOOL]);
     const r = await executeToolCall(ctxOf(), "supabase__list_tables", JSON.stringify({ project_ref: REF }));
     expect(JSON.parse(r.content)).toEqual({ error: "connector_not_connected", connector: "supabase" });
   });
@@ -508,7 +508,7 @@ describe("chat route with connectors", () => {
     const f = vi.fn(async (_u: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
       if (!body.stream) return jsonRes({ choices: [{ message: { content: "[]" } }] });
-      expect(body.tools.map((t: { function: { name: string } }) => t.function.name)).toEqual([META_TOOL]);
+      expect(body.tools.map((t: { function: { name: string } }) => t.function.name).filter((n: string) => !n.startsWith("target__"))).toEqual([META_TOOL]);
       return sse(toolCallChunks(META_TOOL, JSON.stringify({ connector: "supabase", reason: "query the db" })));
     });
     vi.stubGlobal("fetch", f);
