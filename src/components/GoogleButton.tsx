@@ -1,12 +1,22 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { detectInApp, openInBrowserUrl, type InApp } from "@/lib/browser";
 
 export default function GoogleButton({ next = "/app", variant = "dark" }: { next?: string; variant?: "dark" | "glass" }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [inApp, setInApp] = useState<InApp>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { setInApp(detectInApp(navigator.userAgent)); }, []);
+
+  async function copyLink() {
+    try { await navigator.clipboard.writeText(window.location.href); setCopied(true); } catch { setCopied(false); }
+  }
 
   async function go() {
+    // Google refuses sign-in inside app browsers, so send the user to their real browser first.
+    if (inApp?.android) { window.location.href = openInBrowserUrl(window.location.href); return; }
     setError(null);
     setLoading(true);
     const supabase = createClient();
@@ -41,6 +51,12 @@ export default function GoogleButton({ next = "/app", variant = "dark" }: { next
         </svg>
         {loading ? "Opening Google…" : "Continue with Google"}
       </button>
+      {inApp && (
+        <div data-testid="inapp-warning" className="mt-2 rounded-xl border border-accent/30 bg-black/30 px-3 py-2 text-center text-xs text-stucco/80">
+          Google sign-in doesn&apos;t work inside {inApp.app}. {inApp.android ? "Tapping the button opens TARGET in your browser." : "Open this page in Safari: tap the menu, then Open in browser."}
+          {!inApp.android && <button type="button" onClick={copyLink} className="ml-1 underline" data-testid="inapp-copy">{copied ? "Link copied" : "Copy link"}</button>}
+        </div>
+      )}
       {error && <p data-testid="google-error" className="mt-2 text-center text-xs text-rose-400">{error}</p>}
     </>
   );

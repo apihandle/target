@@ -20,8 +20,10 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  const { data: { user } } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
+  // getUser() also refreshes an expired access token with the refresh token and writes the new cookies.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (path.startsWith("/api/")) return response; // APIs answer 401 themselves; never redirect them
 
   if (!user && path.startsWith("/app")) {
     const to = request.nextUrl.clone();
