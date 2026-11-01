@@ -46,7 +46,7 @@ describe("approval catalogue", () => {
   it("marks unavailable actions honestly", () => {
     expect(availability("create_task", ctx()).available).toBe(true);
     expect(availability("send_email", ctx(["gmail"], true))).toMatchObject({ available: false });
-    expect(availability("purchase", ctx()).available).toBe(false);
+    expect(availability("booking", ctx()).available).toBe(false);
     expect(availability("calendar_event", ctx([], false))).toMatchObject({ available: false, reason: expect.stringMatching(/isn't set up/) });
     expect(availability("calendar_event", ctx([], true))).toMatchObject({ available: false, reason: expect.stringMatching(/Connect/) });
     expect(availability("calendar_event", ctx(["google"], true)).available).toBe(true);

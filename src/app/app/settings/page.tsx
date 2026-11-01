@@ -40,9 +40,13 @@ export default async function SettingsPage() {
             <SettingsRow href="/app/connectors" icon="plug" title="Connectors" description="Connect GitHub, Google and more" />
             <SettingsRow href="/app/settings/connections" icon="apps" title="Connected apps" description="See access and disconnect" testId="settings-connections" />
             <SettingsRow href="/app/settings/sessions" icon="lock" title="Website sign-ins" description="Sites TARGET is signed in to, sign out any time" testId="settings-sessions" />
+            <SettingsRow href="/app/settings/vault" icon="lock" title="Vault" description="Logins, cards and keys, encrypted" testId="settings-vault" />
+            <SettingsRow href="/app/settings/browser" icon="apps" title="Browser tasks" description="Approve website tasks and see results" testId="settings-browser" />
           </SettingsGroup>
 
           <SettingsGroup title="Personalize">
+            <SettingsRow href="/app/settings/pages" icon="doc" title="Pages" description="Shareable Pages TARGET made" testId="settings-pages" />
+            <SettingsRow href="/app/settings/files" icon="doc" title="Files" description="PDFs and files TARGET made" testId="settings-files" />
             <SettingsRow href="/app/settings/quick-actions" icon="bolt" title="Quick actions" description="Shortcuts shown on Home" testId="settings-quick-actions" />
             <SettingsRow href="/app/scheduled" icon="clock" title="Scheduled prompts" description="Prompts that run on a schedule" />
             <SettingsRow href="/app/settings/notifications" icon="bell" title="Notifications" description="Phone alerts when scheduled work is done" testId="settings-notifications" />

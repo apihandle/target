@@ -22,8 +22,10 @@ export const EXECUTORS: Record<string, Executor> = {
     const { MAX_JOBS_PER_USER, nextRunAt, JOB_COLS } = await import("@/lib/schedule");
     const { count } = await db.from("scheduled_jobs").select("id", { count: "exact", head: true }).eq("user_id", userId);
     if ((count ?? 0) >= MAX_JOBS_PER_USER) throw new Error(`You can keep up to ${MAX_JOBS_PER_USER} scheduled prompts. Delete one first.`);
-    const job = { title: p.title, prompt: p.prompt, cadence: p.cadence as "daily" | "weekly", weekday: p.weekday === "" ? null : Number(p.weekday), time_of_day: p.time_of_day, timezone: p.timezone, project_id: projectId };
-    const { data, error } = await db.from("scheduled_jobs").insert({ user_id: userId, ...job, status: "active", next_run_at: nextRunAt(job).toISOString() }).select(JOB_COLS).single();
+    const job = { title: p.title, prompt: p.prompt, cadence: p.cadence as "daily" | "weekly" | "once" | "interval", weekday: p.weekday === "" ? null : Number(p.weekday), run_on: p.run_on || null, interval_hours: p.interval_hours ? Number(p.interval_hours) : null, time_of_day: p.time_of_day, timezone: p.timezone, project_id: projectId };
+    const first = nextRunAt(job);
+    if (!first) throw new Error("That reminder time has already passed. Ask again with a new time.");
+    const { data, error } = await db.from("scheduled_jobs").insert({ user_id: userId, ...job, status: "active", next_run_at: first.toISOString() }).select(JOB_COLS).single();
     if (error || !data) throw new Error("Couldn't save the scheduled prompt");
     return { job_id: (data as { id: string }).id };
   },
@@ -32,6 +34,12 @@ export const EXECUTORS: Record<string, Executor> = {
     const { createEvent, google } = await import("@/lib/connectors/google");
     const { creds } = await getCredentials(userId, google);
     return await createEvent(creds.access_token, { title: p.title, start: p.start, end: p.end, location: p.location, details: p.details });
+  },
+  /** An order prepared by the checkout tool: the user's tap queues its browser job (needs_approval -> queued). */
+  async purchase(p, { db, userId }) {
+    const { data } = await db.from("browser_jobs").update({ status: "queued" }).eq("id", p.browser_job_id).eq("user_id", userId).in("status", ["needs_approval", "failed"]).select("id");
+    if (!data?.length) throw new Error("This order can't be started again.");
+    return { browser_job_id: p.browser_job_id, note: "The browser is placing the order now. You'll get a notification when it's done." };
   },
   /** A connector tool marked requiresApproval, proposed by the agent loop. Payload is immutable after creation. */
   async connector_tool(p, { userId }) {

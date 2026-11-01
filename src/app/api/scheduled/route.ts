@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   if (!body) return badRequest("Bad JSON");
   const v = validateJob(body);
   if (!v.ok) return json({ error: v.error, field: v.field }, 400);
-  const job = v.value as Required<Pick<ScheduledJob, "title" | "prompt" | "cadence" | "weekday" | "time_of_day" | "timezone" | "project_id">>;
+  const job = v.value as Required<Pick<ScheduledJob, "title" | "prompt" | "cadence" | "weekday" | "run_on" | "interval_hours" | "time_of_day" | "timezone" | "project_id">>;
   if (job.project_id) {
     const { data: p } = await a.db.from("projects").select("id").eq("id", job.project_id).eq("user_id", a.user.id).maybeSingle();
     if (!p) return json({ error: "Project not found", field: "project_id" }, 404);
@@ -27,8 +27,11 @@ export async function POST(req: Request) {
   const { count } = await a.db.from("scheduled_jobs").select("id", { count: "exact", head: true }).eq("user_id", a.user.id);
   if ((count ?? 0) >= MAX_JOBS_PER_USER) return badRequest(`You can keep up to ${MAX_JOBS_PER_USER} scheduled prompts. Delete one first.`);
   const status = v.value.status ?? "active";
+  if (status === "done") return badRequest("Bad status");
+  const first = nextRunAt(job);
+  if (status === "active" && !first) return json({ error: "That time has already passed", field: "run_on" }, 400);
   const { data, error } = await a.db.from("scheduled_jobs").insert({
-    user_id: a.user.id, ...job, status, next_run_at: status === "active" ? nextRunAt(job).toISOString() : null,
+    user_id: a.user.id, ...job, status, next_run_at: status === "active" && first ? first.toISOString() : null,
   }).select(JOB_COLS).single();
   if (error || !data) return dbError(error, "Could not save the scheduled prompt");
   await logActivity(a.db, a.user.id, { category: "task", title: `Scheduled prompt added: “${job.title}”`, project_id: job.project_id });

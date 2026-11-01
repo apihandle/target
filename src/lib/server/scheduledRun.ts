@@ -117,9 +117,11 @@ export async function runScheduledJob(db: Db, job: ScheduledJob & { user_id: str
 }
 
 /** Claim one due job atomically (moves next_run_at forward only if nobody else did). Returns false if already claimed. */
-export async function claimJob(db: Db, job: Pick<ScheduledJob, "id" | "next_run_at" | "cadence" | "weekday" | "time_of_day" | "timezone">, now: Date): Promise<boolean> {
+export async function claimJob(db: Db, job: Pick<ScheduledJob, "id" | "next_run_at" | "cadence" | "weekday" | "time_of_day" | "timezone" | "run_on" | "interval_hours">, now: Date): Promise<boolean> {
+  // A one-time reminder finishes after this run (status "done"); repeating jobs move to their next slot.
+  const next = job.cadence === "once" ? null : nextRunAt(job, now);
   const { data, error } = await db.from("scheduled_jobs")
-    .update({ next_run_at: nextRunAt(job, now).toISOString(), last_run_at: now.toISOString(), last_status: "running", updated_at: now.toISOString() })
+    .update({ next_run_at: next ? next.toISOString() : null, ...(next ? {} : { status: "done" }), last_run_at: now.toISOString(), last_status: "running", updated_at: now.toISOString() })
     .eq("id", job.id).eq("status", "active").eq("next_run_at", job.next_run_at as string).select("id");
   return !error && !!data?.length;
 }

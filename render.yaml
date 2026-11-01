@@ -1,0 +1,13 @@
+# TARGET worker on Render: New > Blueprint > pick this repo. Then add SESSION_WORKER_SECRET (same as Vercel).
+services:
+  - type: worker
+    name: target-worker
+    runtime: docker
+    dockerfilePath: ./worker/Dockerfile
+    dockerContext: ./worker
+    plan: starter
+    envVars:
+      - key: SESSION_WORKER_SECRET
+        sync: false
+      - key: TARGET_URL
+        value: https://gettarget.vercel.app

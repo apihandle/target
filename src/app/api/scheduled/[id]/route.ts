@@ -20,13 +20,20 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (!v.ok) return json({ error: v.error, field: v.field }, 400);
   const merged = { ...(cur as ScheduledJob), ...v.value } as ScheduledJob;
   if (merged.cadence === "weekly" && (merged.weekday === null || merged.weekday === undefined)) return json({ error: "Pick a day of the week", field: "weekday" }, 400);
-  if (merged.cadence === "daily") merged.weekday = null;
+  if (merged.cadence !== "weekly") merged.weekday = null;
+  if (merged.cadence === "once" && !merged.run_on) return json({ error: "Pick a date", field: "run_on" }, 400);
+  if (merged.cadence === "interval" && !merged.interval_hours) return json({ error: "Every 1 to 168 hours", field: "interval_hours" }, 400);
+  if (merged.cadence !== "once") merged.run_on = null;
+  if (merged.cadence !== "interval") merged.interval_hours = null;
+  if (merged.status === "done" && v.value.status === undefined) merged.status = "paused";
   if (v.value.project_id) {
     const { data: p } = await a.db.from("projects").select("id").eq("id", v.value.project_id).eq("user_id", a.user.id).maybeSingle();
     if (!p) return json({ error: "Project not found", field: "project_id" }, 404);
   }
-  const patch: Record<string, unknown> = { ...v.value, weekday: merged.weekday, updated_at: new Date().toISOString() };
-  patch.next_run_at = merged.status === "active" ? nextRunAt(merged).toISOString() : null;
+  const patch: Record<string, unknown> = { ...v.value, weekday: merged.weekday, run_on: merged.run_on ?? null, interval_hours: merged.interval_hours ?? null, status: merged.status, updated_at: new Date().toISOString() };
+  const next = merged.status === "active" ? nextRunAt(merged) : null;
+  if (merged.status === "active" && !next) return json({ error: "That time has already passed. Pick a new date or time.", field: "run_on" }, 400);
+  patch.next_run_at = next ? next.toISOString() : null;
   const { data, error } = await a.db.from("scheduled_jobs").update(patch).eq("id", params.id).eq("user_id", a.user.id).select(JOB_COLS);
   if (error) return dbError(error, "Could not update the scheduled prompt");
   if (!data?.length) return notFound();

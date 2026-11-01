@@ -393,13 +393,13 @@ describe("scheduled prompt timing and validation", () => {
   });
   it("computes the next run in the job's timezone, including DST", () => {
     const from = new Date("2026-10-30T05:00:00Z"); // 10:30 IST
-    expect(nextRunAt({ cadence: "daily", weekday: null, time_of_day: "09:00", timezone: "Asia/Kolkata" }, from).toISOString()).toBe("2026-10-31T03:30:00.000Z");
-    expect(nextRunAt({ cadence: "daily", weekday: null, time_of_day: "11:00", timezone: "Asia/Kolkata" }, from).toISOString()).toBe("2026-10-30T05:30:00.000Z");
+    expect(nextRunAt({ cadence: "daily", weekday: null, time_of_day: "09:00", timezone: "Asia/Kolkata" }, from)!.toISOString()).toBe("2026-10-31T03:30:00.000Z");
+    expect(nextRunAt({ cadence: "daily", weekday: null, time_of_day: "11:00", timezone: "Asia/Kolkata" }, from)!.toISOString()).toBe("2026-10-30T05:30:00.000Z");
     // 2026-10-30 is a Friday; next Monday 08:00 IST.
-    expect(nextRunAt({ cadence: "weekly", weekday: 1, time_of_day: "08:00", timezone: "Asia/Kolkata" }, from).toISOString()).toBe("2026-11-02T02:30:00.000Z");
+    expect(nextRunAt({ cadence: "weekly", weekday: 1, time_of_day: "08:00", timezone: "Asia/Kolkata" }, from)!.toISOString()).toBe("2026-11-02T02:30:00.000Z");
     // US DST ends 2026-11-01: 09:00 New York is 13:00Z before, 14:00Z after.
-    expect(nextRunAt({ cadence: "daily", weekday: null, time_of_day: "09:00", timezone: "America/New_York" }, new Date("2026-10-31T12:00:00Z")).toISOString()).toBe("2026-10-31T13:00:00.000Z");
-    expect(nextRunAt({ cadence: "daily", weekday: null, time_of_day: "09:00", timezone: "America/New_York" }, new Date("2026-11-01T12:00:00Z")).toISOString()).toBe("2026-11-01T14:00:00.000Z");
+    expect(nextRunAt({ cadence: "daily", weekday: null, time_of_day: "09:00", timezone: "America/New_York" }, new Date("2026-10-31T12:00:00Z"))!.toISOString()).toBe("2026-10-31T13:00:00.000Z");
+    expect(nextRunAt({ cadence: "daily", weekday: null, time_of_day: "09:00", timezone: "America/New_York" }, new Date("2026-11-01T12:00:00Z"))!.toISOString()).toBe("2026-11-01T14:00:00.000Z");
     expect(zonedTimeToUtc(2026, 3, 8, 2, 30, "America/New_York")).toBeGreaterThan(Date.UTC(2026, 2, 8, 6, 0));
     expect(describeSchedule({ cadence: "weekly", weekday: 1, time_of_day: "18:05", timezone: "Asia/Kolkata" })).toBe("Every Monday at 6:05 PM (Asia/Kolkata)");
   });

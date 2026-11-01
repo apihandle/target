@@ -13,18 +13,21 @@ import { TASK_COLS, type Task } from "@/lib/tasks";
 import { APPROVAL_COLS, type Approval } from "@/lib/approvals";
 import { ACTIVITY_COLS, type ActivityEvent } from "@/lib/activity";
 import { loadSettings } from "@/lib/settings";
+import ForYou, { type ForYouItem } from "@/components/ForYou";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Home · TARGET" };
 
 export default async function HomePage() {
   const { supabase, user } = await getSessionOrRedirect("/app/home");
-  const [{ data: panels }, { data: tasks, error: tErr }, { data: approvals }, { data: events }, settings] = await Promise.all([
+  const [{ data: panels }, { data: tasks, error: tErr }, { data: approvals }, { data: events }, settings, { data: forYou }] = await Promise.all([
     supabase.from("panels").select(PANEL_COLS).eq("user_id", user.id).order("position").order("created_at").limit(6),
     supabase.from("tasks").select(TASK_COLS).eq("user_id", user.id).in("status", ["queued", "planning", "in_progress", "failed"]).order("updated_at", { ascending: false }).limit(6),
     supabase.from("approval_requests").select(APPROVAL_COLS).eq("user_id", user.id).eq("status", "pending").order("created_at", { ascending: false }).limit(5),
     supabase.from("activity_events").select(ACTIVITY_COLS).eq("user_id", user.id).order("created_at", { ascending: false }).limit(5),
     loadSettings(supabase, user.id),
+    // Before migration 0014 the table doesn't exist; the section simply stays hidden.
+    supabase.from("suggestions").select("id, kind, title, detail, prompt, due_at").eq("user_id", user.id).eq("status", "open").order("created_at", { ascending: false }).limit(4),
   ]);
   const meta = user.user_metadata as { full_name?: string; name?: string } | undefined;
   const name = (meta?.full_name || meta?.name || "").split(" ")[0] || undefined;
@@ -53,6 +56,12 @@ export default async function HomePage() {
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
           <div className="space-y-6">
+            {!!forYou?.length && (
+              <section aria-labelledby="fy-title">
+                <SectionTitle id="fy-title">For you</SectionTitle>
+                <ForYou initial={forYou as ForYouItem[]} />
+              </section>
+            )}
             <section aria-labelledby="attn-title">
               <SectionTitle id="attn-title" action={pending.length ? <Link href="/app/activity?filter=approvals" className="text-xs text-muted hover:text-ink">All approvals</Link> : undefined}>Needs your attention</SectionTitle>
               {pending.length === 0 ? (

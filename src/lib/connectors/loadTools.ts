@@ -8,6 +8,7 @@ import { redact, safeJson, untrusted } from "@/lib/connectors/safety";
 import { ConnectorError } from "@/lib/connectors/http";
 import { logActivity } from "@/lib/server/activity";
 import type { ConnectionInfo, ConnectorDef, Env, ToolDef } from "@/lib/connectors/types";
+import { BUILTIN_ID, BUILTIN_TOOLS, getBuiltin } from "@/lib/builtins/tools";
 
 /** Separator between connector id and tool name in the names the model sees. */
 export const SEP = "__";
@@ -58,6 +59,8 @@ export function toOpenAITools(tools: LoadedTool[], connected: Set<string>) {
     type: "function" as const,
     function: { name: t.name, description: `[${t.connector.name}] ${t.def.description}${t.def.requiresApproval ? " (may require user approval)" : ""}`.slice(0, 1000), parameters: jsonSchema(t.def.input) },
   }));
+  // TARGET's own tools (images, charts, files, Pages, video, parallel research, browser jobs): always available.
+  for (const b of BUILTIN_TOOLS) specs.push({ type: "function" as const, function: { name: `${BUILTIN_ID}${SEP}${b.name}`, description: `[TARGET] ${b.description}`.slice(0, 1000), parameters: jsonSchema(b.input) } });
   if (others.length) specs.push({
     type: "function" as const,
     function: {
@@ -111,6 +114,7 @@ export async function executeToolCall(ctx: ToolCtx, name: string, rawArgs: strin
   }
 
   const [cid, tname] = name.split(SEP);
+  if (cid === BUILTIN_ID) return runBuiltin(ctx, tname ?? "", args);
   const c = cid ? getConnector(cid) : undefined;
   if (!c || !tname) return { kind: "error", content: err({ error: "unknown_tool", tool: name.slice(0, 80) }) };
 
@@ -135,6 +139,28 @@ export async function executeToolCall(ctx: ToolCtx, name: string, rawArgs: strin
   }
 
   return runTool(ctx.userId, c, t.def, parsed.data, ctx.f);
+}
+
+/** TARGET's built-in tools: no account needed, rate limited, writes go through the server with the owner's id. */
+async function runBuiltin(ctx: ToolCtx, tname: string, args: Record<string, unknown> | null): Promise<ToolOutcome> {
+  const b = getBuiltin(tname);
+  if (!b) return { kind: "error", content: err({ error: "unknown_tool", tool: tname.slice(0, 80) }) };
+  if (!(await checkLimit(LIMITS.toolCall(ctx.userId)))) return { kind: "error", connector: BUILTIN_ID, tool: tname, content: err({ error: "rate_limited", message: "Too many tool calls; try again in a minute." }) };
+  if (args === null) return { kind: "error", connector: BUILTIN_ID, tool: tname, content: err({ error: "invalid_arguments", message: "Arguments must be a JSON object" }) };
+  const parsed = b.input.safeParse(args);
+  if (!parsed.success) return { kind: "error", connector: BUILTIN_ID, tool: tname, content: err({ error: "invalid_arguments", issues: parsed.error.issues.slice(0, 5).map((i) => `${i.path.join(".")}: ${i.message}`) }) };
+  let db = ctx.db;
+  try { db = createAdminClient() as unknown as Db; } catch { /* fall back to the user's own client */ }
+  try {
+    const out = await b.execute(parsed.data, { db, userId: ctx.userId, conversationId: ctx.conversationId, fetch: ctx.f });
+    // A built-in that prepared something for approval (an order card): pause exactly like a connector approval.
+    const ap = (out as { __approval?: { id: string; summary: string } } | null)?.__approval;
+    if (ap) return { kind: "approval", connector: BUILTIN_ID, tool: tname, approvalId: ap.id, summary: ap.summary, content: err({ status: "approval_required", approval_id: ap.id, message: "The order card is waiting for the user to tap Approve. Nothing was bought. Do not retry." }) };
+    return { kind: "result", connector: BUILTIN_ID, tool: tname, content: untrusted(BUILTIN_ID, tname, safeJson(out, [], 32000)) };
+  } catch (e) {
+    const message = e instanceof Error ? e.message.slice(0, 200) : "The tool failed";
+    return { kind: "error", connector: BUILTIN_ID, tool: tname, content: err({ error: "tool_failed", message }) };
+  }
 }
 
 async function runTool(userId: string, c: ConnectorDef, def: ToolDef, args: unknown, f: typeof fetch = fetch): Promise<ToolOutcome> {

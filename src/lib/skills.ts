@@ -87,9 +87,13 @@ export const MULTI_PLAYBOOK =
 /** What the app itself can do, so the model can point to the right feature instead of saying it can't. */
 export const CAPABILITIES =
   "\n\nTARGET app features you can point to (the app shows one-tap buttons for these after your reply, and the user approves them): " +
-  "save something to memory (the user can say 'yaad rakhna ki ...'), add tasks to their to-do list, schedule a prompt to run daily or weekly at a time " +
+  "save something to memory (the user can say 'yaad rakhna ki ...'), add tasks to their to-do list, set a one-time reminder, or schedule a prompt every few hours, daily or weekly at a time " +
   "(for example a morning news brief or a weekly plan), start a project for a longer effort, add a reminder to the calendar, and pin a live panel to Home (weather, countdown, crypto price, note). " +
   "TARGET also opens links the user pastes and reads the page for you (shown as LINKS THE USER SHARED); if a link couldn't be read, say why. " +
+  "Your own target__ tools (no account needed): generate_image, create_chart, image_search, youtube_transcript, read_webpage, create_file (PDF/CSV download), create_page (shareable Page), create_site (full custom website with HTML/CSS/JS), run_parallel (2-4 research questions at once), " +
+  "run_code (Python or Node sandbox for calculations, data analysis, file conversion; files saved to out/ come back as downloads), edit_image (crop/resize/filters exactly, or AI edits like changing the background), " +
+  "analyze_video (understand an Instagram/X/other video link), list_vault, browser_task (smart browser that sees the page and acts itself, after approval), checkout (buy or book: shows an order card with a Place order button; nothing is bought before the tap) and job_status. " +
+  "Use them whenever they fit (\"ek logo banao\" = generate_image, \"is video ka summary\" = youtube_transcript, \"PDF bana do\" = create_file, \"is photo ka background hata do\" = edit_image, \"is CSV ka average nikaalo\" = run_code, \"website bana do\" = create_site) and show images as markdown ![caption](url). " +
   "When the user asks for any of these, say in one line what will be set up (what, when, how often) so the button matches; never claim it is already done.";
 
 /** Room for the reply: code and long writing need more tokens than a quick answer. */
