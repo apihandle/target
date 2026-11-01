@@ -4,6 +4,7 @@ import { CAPABILITIES, MULTI_PLAYBOOK, detectTask, isMultiTask, MAX_TOKENS, PLAY
 import { llm, llmText, LLMError } from "@/lib/llm";
 import { ACTIONS_PROMPT, heuristicActions, mergeActions, sanitizeAction, type Action } from "@/lib/actions";
 import { projectBlock } from "@/lib/projects";
+import { extractUrls, pagesBlock, readUrl } from "@/lib/urlReader";
 import { needsSearch, searchBlock, searchQuery, sourcesFence, tavilySearch, type SearchResult } from "@/lib/search";
 import { EXTRACT_PROMPT, MAX_MEMORIES, explicitRemember, isDuplicate, looksSecret, memoryBlock, parseFacts } from "@/lib/memory";
 import { isUuid } from "@/lib/ids";
@@ -186,8 +187,15 @@ export async function POST(req: Request) {
     webNote = "\n\n(The user asked for a web search, but web search isn't set up on this server. Say so briefly and answer from general knowledge, clearly labelled as possibly out of date.)";
   }
 
+  // Read links the user pasted (public pages only, capped), so questions about a link get real answers.
+  let pageNote = "";
+  const links = extractUrls(text);
+  if (links.length) {
+    try { pageNote = pagesBlock(await Promise.all(links.map((u) => readUrl(u)))); } catch { pageNote = ""; }
+  }
+
   const messages: LLMMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT + PLAYBOOKS[kind] + (isMultiTask(text) ? MULTI_PLAYBOOK : "") + CAPABILITIES + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + files.block + connectorNote + resumeNote },
+    { role: "system", content: SYSTEM_PROMPT + PLAYBOOKS[kind] + (isMultiTask(text) ? MULTI_PLAYBOOK : "") + CAPABILITIES + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + pageNote + files.block + connectorNote + resumeNote },
     ...history,
     files.imageParts.length ? { role: "user", content: [{ type: "text", text }, ...files.imageParts] as ContentPart[] } : { role: "user", content: text },
   ];
