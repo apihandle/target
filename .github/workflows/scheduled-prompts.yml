@@ -9,7 +9,7 @@ on:
 jobs:
   tick:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
       - name: Run due prompts
         env:
@@ -17,3 +17,9 @@ jobs:
         run: |
           if [ -z "$CRON_SECRET" ]; then echo "CRON_SECRET not set; skipping"; exit 0; fi
           curl -fsS --max-time 70 -H "Authorization: Bearer $CRON_SECRET" https://gettarget.vercel.app/api/cron/scheduled || true
+      - name: Run queued browser jobs (built-in cloud worker)
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then exit 0; fi
+          curl -fsS --max-time 100 -H "Authorization: Bearer $CRON_SECRET" https://gettarget.vercel.app/api/browser-jobs/run || true

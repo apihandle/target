@@ -1,3 +1,4 @@
+import { kickCloudWorker } from "@/lib/server/kickWorker";
 import type { Db } from "@/lib/server/auth";
 import { ACTION_DEFS, APPROVAL_COLS, availability, type Approval, type Params, type Proposal } from "@/lib/approvals";
 import { getConnector, isConfigured } from "@/lib/connectors/registry";
@@ -39,6 +40,7 @@ export const EXECUTORS: Record<string, Executor> = {
   async purchase(p, { db, userId }) {
     const { data } = await db.from("browser_jobs").update({ status: "queued" }).eq("id", p.browser_job_id).eq("user_id", userId).in("status", ["needs_approval", "failed"]).select("id");
     if (!data?.length) throw new Error("This order can't be started again.");
+    await kickCloudWorker();
     return { browser_job_id: p.browser_job_id, note: "The browser is placing the order now. You'll get a notification when it's done." };
   },
   /** A connector tool marked requiresApproval, proposed by the agent loop. Payload is immutable after creation. */

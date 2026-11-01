@@ -1,3 +1,4 @@
+import { kickCloudWorker } from "@/lib/server/kickWorker";
 import { z } from "zod";
 import type { Db } from "@/lib/server/auth";
 import { ATTACHMENT_BUCKET } from "@/lib/attachments";
@@ -151,6 +152,7 @@ export const BUILTIN_TOOLS: BuiltinTool[] = [
         status: needs ? "needs_approval" : "queued", conversation_id: ctx.conversationId,
       }).select("id").single();
       if (error || !data) throw new Error("Couldn't create the browser task");
+      if (!needs) await kickCloudWorker();
       return {
         job_id: data.id, status: needs ? "needs_approval" : "queued", manage_url: `${SITE}/app/settings/browser`,
         note: needs ? "Tell the user it waits for their approval in Settings, Browser tasks." : "It runs when the browser worker picks it up; results appear in Settings, Browser tasks.",

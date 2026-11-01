@@ -2,6 +2,7 @@ import { badRequest, json, notFound, readJson, requireUser, unauthorized, type D
 import { isUuid } from "@/lib/ids";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/server/activity";
+import { kickCloudWorker } from "@/lib/server/kickWorker";
 
 export const dynamic = "force-dynamic";
 
@@ -20,5 +21,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     .eq("id", params.id).eq("user_id", a.user.id).in("status", from).select("id, goal, status");
   if (!data?.length) return json({ error: "This task can't be changed now" }, 409);
   await logActivity(a.db, a.user.id, { category: "approval", title: `${action === "approve" ? "Approved" : "Cancelled"} browser task “${String(data[0].goal).slice(0, 80)}”` });
+  if (action === "approve") await kickCloudWorker();
   return json({ job: data[0] });
 }
