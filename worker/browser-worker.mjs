@@ -23,6 +23,7 @@ import { createServer } from "node:http";
 const BASE = (process.env.TARGET_URL || "https://gettarget.vercel.app").replace(/\/$/, "");
 const SECRET = process.env.SESSION_WORKER_SECRET || "";
 const POLL_MS = Number(process.env.POLL_MS || 5000);
+const WORKER_ID = (process.env.WORKER_ID || process.env.SPACE_ID || process.env.RENDER_SERVICE_NAME || "default").replace(/[^\w.-]/g, "-").slice(0, 60);
 // Code runs as the unprivileged "nobody" user so it can't read this process's secret (/proc/<pid>/environ).
 const ROOT = typeof process.getuid === "function" && process.getuid() === 0;
 const CODE = process.env.ENABLE_CODE === "1" && (ROOT || process.env.ALLOW_UNSAFE_CODE === "1");
@@ -225,7 +226,7 @@ async function run(job) {
 console.log(`TARGET worker polling ${BASE} every ${POLL_MS / 1000}s for: ${MODES.join(", ")}`);
 for (;;) {
   try {
-    const { job } = await api({ action: "claim", modes: MODES });
+    const { job } = await api({ action: "claim", modes: MODES, worker_id: WORKER_ID });
     if (job) { await run(job); continue; }
   } catch (e) { console.log(`poll error: ${e.message}`); }
   await new Promise((r) => setTimeout(r, POLL_MS));

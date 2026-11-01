@@ -4,14 +4,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { openVault } from "@/lib/builtins/vault";
 import { checkLimit } from "@/lib/connectors/rateLimit";
 import { sendPushToUser } from "@/lib/server/push";
-import { ATTACHMENT_BUCKET } from "@/lib/attachments";
 import { decideNext, describeVideo, snapshotSchema } from "@/lib/server/autoBrowser";
-import { SITE } from "@/lib/builtins/helpers";
+import { storeOutFiles } from "@/lib/server/jobFiles";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const OUT_MIME: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", csv: "text/csv", txt: "text/plain", md: "text/markdown", json: "application/json", html: "text/html", pdf: "application/pdf", mp3: "audio/mpeg", mp4: "video/mp4", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
 
 /**
  * Trusted browser worker only (Bearer SESSION_WORKER_SECRET). Actions:
@@ -33,7 +31,10 @@ export async function POST(req: Request) {
     // Jobs stuck in running for 10+ minutes are failed so they never block the queue.
     await db.from("browser_jobs").update({ status: "failed", error: "The browser worker stopped responding", finished_at: new Date().toISOString() })
       .eq("status", "running").lt("claimed_at", new Date(Date.now() - 600000).toISOString());
-    const modes = Array.isArray(b.modes) ? (b.modes as unknown[]).filter((m): m is string => typeof m === "string") : ["steps"];
+    const modes = Array.isArray(b.modes) ? (b.modes as unknown[]).filter((m): m is string => typeof m === "string" && m !== "browser_code").slice(0, 8) : ["steps"];
+    // Heartbeat: lets TARGET know a worker is online (Setup check, and code runs fall back to the browser without one).
+    const wid = typeof b.worker_id === "string" && /^[\w.-]{1,60}$/.test(b.worker_id) ? b.worker_id : "default";
+    try { await db.from("worker_heartbeats").upsert({ id: wid, modes, seen_at: new Date().toISOString() }); } catch { /* table added in 0015 */ }
     const { data: next } = await db.from("browser_jobs").select("id").eq("status", "queued").in("mode", modes).order("created_at", { ascending: true }).limit(1);
     if (!next?.length) return json({ job: null });
     const { data } = await db.from("browser_jobs").update({ status: "running", claimed_at: new Date().toISOString() })
@@ -85,22 +86,7 @@ export async function POST(req: Request) {
       result = await describeVideo(job.goal as string, typeof b.title === "string" ? b.title.slice(0, 300) : "", typeof b.captions === "string" ? b.captions : "", frames);
     }
     // Code jobs: files the program saved into out/ become downloads for the owner.
-    const files: { name: string; url: string }[] = [];
-    if (Array.isArray(b.files)) {
-      for (const f of (b.files as { name?: unknown; base64?: unknown }[]).slice(0, 5)) {
-        if (typeof f?.name !== "string" || typeof f.base64 !== "string") continue;
-        const name = f.name.replace(/[^\w.\- ]/g, "_").slice(0, 100) || "file";
-        const bytes = Buffer.from(f.base64, "base64");
-        if (!bytes.byteLength || bytes.byteLength > 10 * 1024 * 1024) continue;
-        const mime = OUT_MIME[name.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream";
-        const fid = crypto.randomUUID();
-        const path = `${job.user_id}/generated/${fid}-${name}`;
-        const up = await db.storage.from(ATTACHMENT_BUCKET).upload(path, bytes, { contentType: mime, upsert: false });
-        if (up.error) continue;
-        const { error } = await db.from("generated_files").insert({ id: fid, user_id: job.user_id, name, mime, size_bytes: bytes.byteLength, storage_path: path });
-        if (!error) files.push({ name, url: `${SITE}/api/files/${fid}` });
-      }
-    }
+    const files = await storeOutFiles(db, job.user_id as string, b.files);
     await db.from("browser_jobs").update({
       status: ok ? "done" : "failed", result: result ? result.slice(0, 20000) : null, files,
       error: ok ? null : String(b.error ?? "The browser task failed").slice(0, 500), finished_at: new Date().toISOString(),

@@ -55,7 +55,7 @@ describe("round 2 tools", () => {
   it("queues code jobs and returns the finished result", async () => {
     const { db, inserts } = fakeDb({ browser_jobs: [{ id: J, mode: "code", status: "done", result: "Output:\n42", files: [] }] });
     const out = await getBuiltin("run_code")!.execute({ language: "python", code: "print(42)", purpose: "math", files: [] }, { db, userId: "u", conversationId: null }) as { status: string; result: string };
-    expect(inserts[0].row).toMatchObject({ mode: "code", status: "queued", language: "python", code: "print(42)" });
+    expect(inserts[0].row).toMatchObject({ mode: "browser_code", status: "queued", language: "python", code: "print(42)" });
     expect(out).toMatchObject({ status: "done", result: "Output:\n42" });
   });
 

@@ -2,6 +2,7 @@ import AppShell, { getSessionOrRedirect } from "@/components/AppShell";
 import { Page } from "@/components/ui/Card";
 import { SettingsGroup, SettingsRow } from "@/components/SettingsList";
 import { isAdminEmail } from "@/lib/server/errors";
+import { canSeeSetup } from "@/lib/server/setupCheck";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Settings · TARGET" };
@@ -55,6 +56,7 @@ export default async function SettingsPage() {
           <SettingsGroup title="Privacy">
             <SettingsRow href="/app/settings/privacy" icon="shield" title="Privacy & memory" description="Review or clear memories" testId="settings-privacy" />
             <SettingsRow href="/app/activity" icon="activity" title="Activity" description="Everything TARGET did for you" />
+            {canSeeSetup(email) && <SettingsRow href="/app/settings/setup" icon="shield" title="Setup check" description="What is still missing to run TARGET fully" testId="settings-setup" />}
             {isAdminEmail(email) && <SettingsRow href="/app/settings/work-links" icon="coin" title="Work links" description="Ad links and coins (owner only)" testId="settings-work-links" />}
             {isAdminEmail(email) && <SettingsRow href="/app/settings/errors" icon="alert" title="Site errors" description="Errors from the live site (owner only)" testId="settings-errors" />}
           </SettingsGroup>
