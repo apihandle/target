@@ -33,3 +33,15 @@ describe("cloud browser providers", () => {
     expect(safeUrl("https://example.com")).toBe("https://example.com/");
   });
 });
+
+import { validateJob } from "@/lib/schedule";
+describe("automations: allow_browser", () => {
+  it("accepts a boolean and rejects other values", () => {
+    const base = { prompt: "check prices", cadence: "daily", time_of_day: "09:00" };
+    const ok = validateJob({ ...base, allow_browser: true });
+    expect(ok.ok && ok.value.allow_browser).toBe(true);
+    expect(validateJob({ ...base, allow_browser: "yes" }).ok).toBe(false);
+    const patch = validateJob({ allow_browser: false }, true);
+    expect(patch.ok && patch.value.allow_browser).toBe(false);
+  });
+});

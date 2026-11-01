@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   if (!body) return badRequest("Bad JSON");
   const v = validateJob(body);
   if (!v.ok) return json({ error: v.error, field: v.field }, 400);
-  const job = v.value as Required<Pick<ScheduledJob, "title" | "prompt" | "cadence" | "weekday" | "run_on" | "interval_hours" | "time_of_day" | "timezone" | "project_id">>;
+  const job = v.value as Required<Pick<ScheduledJob, "title" | "prompt" | "cadence" | "weekday" | "run_on" | "interval_hours" | "time_of_day" | "timezone" | "project_id">> & { allow_browser?: boolean };
   if (job.project_id) {
     const { data: p } = await a.db.from("projects").select("id").eq("id", job.project_id).eq("user_id", a.user.id).maybeSingle();
     if (!p) return json({ error: "Project not found", field: "project_id" }, 404);

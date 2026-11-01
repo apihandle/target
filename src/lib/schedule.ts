@@ -8,9 +8,9 @@ export type JobStatus = "active" | "paused" | "done";
 export type ScheduledJob = {
   id: string; user_id?: string; project_id: string | null; title: string; prompt: string; cadence: Cadence; weekday: number | null; run_on?: string | null; interval_hours?: number | null;
   time_of_day: string; timezone: string; status: JobStatus; next_run_at: string | null; last_run_at: string | null;
-  last_status: string | null; last_error: string | null; last_task_id: string | null; run_count: number; created_at?: string;
+  last_status: string | null; last_error: string | null; last_task_id: string | null; run_count: number; created_at?: string; allow_browser?: boolean;
 };
-export const JOB_COLS = "id, project_id, title, prompt, cadence, weekday, run_on, interval_hours, time_of_day, timezone, status, next_run_at, last_run_at, last_status, last_error, last_task_id, run_count, created_at";
+export const JOB_COLS = "id, project_id, title, prompt, cadence, weekday, run_on, interval_hours, time_of_day, timezone, status, next_run_at, last_run_at, last_status, last_error, last_task_id, run_count, created_at, allow_browser";
 export const MAX_JOBS_PER_USER = 25;
 export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -21,7 +21,7 @@ export function isValidTimeZone(tz: unknown): tz is string {
 
 const TIME_RE = /^([01][0-9]|2[0-3]):([0-5][0-9])$/;
 
-type JobInput = Pick<ScheduledJob, "title" | "prompt" | "cadence" | "weekday" | "run_on" | "interval_hours" | "time_of_day" | "timezone" | "project_id">;
+type JobInput = Pick<ScheduledJob, "title" | "prompt" | "cadence" | "weekday" | "run_on" | "interval_hours" | "time_of_day" | "timezone" | "project_id"> & { allow_browser?: boolean };
 type When = Pick<ScheduledJob, "cadence" | "weekday" | "time_of_day" | "timezone"> & { run_on?: string | null; interval_hours?: number | null };
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -78,6 +78,10 @@ export function validateJob(input: Record<string, unknown>, partial = false): { 
     if (pid !== null && pid !== "" && !isUuid(pid)) return { ok: false, error: "Unknown project", field: "project_id" };
     v.project_id = isUuid(pid) ? pid : null;
   } else if (!partial) v.project_id = null;
+  if (input.allow_browser !== undefined) {
+    if (typeof input.allow_browser !== "boolean") return { ok: false, error: "allow_browser must be true or false", field: "allow_browser" };
+    v.allow_browser = input.allow_browser;
+  }
   if (input.status !== undefined) {
     if (input.status !== "active" && input.status !== "paused") return { ok: false, error: "Status must be active or paused", field: "status" };
     v.status = input.status;

@@ -43,7 +43,7 @@ export async function POST(req: Request) {
 
   const id = typeof b.job_id === "string" && UUID_RE.test(b.job_id) ? b.job_id : null;
   if (!id) return badRequest("job_id required");
-  const { data: job } = await db.from("browser_jobs").select("id, user_id, goal, status, steps, mode, allowed_secrets, max_steps, log").eq("id", id).maybeSingle();
+  const { data: job } = await db.from("browser_jobs").select("id, user_id, goal, status, steps, mode, allowed_secrets, max_steps, log, conversation_id").eq("id", id).maybeSingle();
   if (!job || job.status !== "running") return json({ error: "Job is not running" }, 409);
 
   if (b.action === "secret") {
@@ -105,6 +105,14 @@ export async function POST(req: Request) {
       status: ok ? "done" : "failed", result: result ? result.slice(0, 20000) : null, files,
       error: ok ? null : String(b.error ?? "The browser task failed").slice(0, 500), finished_at: new Date().toISOString(),
     }).eq("id", id).eq("status", "running");
+    if (job.conversation_id) {
+      const head = ok ? `🌐 **Browser task done:** ${job.goal}` : `⚠️ **Browser task failed:** ${job.goal}`;
+      const body = ok ? (result ?? "").slice(0, 6000) : String(b.error ?? "The browser task failed").slice(0, 500);
+      const links = files.map((f) => `- [${f.name}](${f.url})`).join("\n");
+      const content = [head, body, links].filter(Boolean).join("\n\n");
+      await db.from("messages").insert({ conversation_id: job.conversation_id, user_id: job.user_id, role: "assistant", content });
+      await db.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", job.conversation_id);
+    }
     try { await sendPushToUser(db, job.user_id as string, { title: ok ? "Browser task done" : "Browser task failed", body: String(job.goal).slice(0, 120), url: "/app/settings/browser", tag: `browser-${id}` }); } catch { /* optional */ }
     return json({ ok: true });
   }

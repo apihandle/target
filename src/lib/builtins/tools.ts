@@ -1,3 +1,4 @@
+import { waitForJob } from "@/lib/builtins/round2";
 import { kickCloudWorker } from "@/lib/server/kickWorker";
 import { z } from "zod";
 import type { Db } from "@/lib/server/auth";
@@ -10,7 +11,7 @@ import {
   FILE_FORMATS, SITE, browserStep, captionsToText, chartInput, chartUrl, fileName, imageUrl, makePdf, slugFor, stepsNeedApproval, youtubeId, type FileFormat,
 } from "@/lib/builtins/helpers";
 
-export type BuiltinCtx = { db: Db; userId: string; conversationId: string | null; fetch?: typeof fetch };
+export type BuiltinCtx = { db: Db; userId: string; conversationId: string | null; fetch?: typeof fetch; autoApproveBrowser?: boolean };
 export type BuiltinTool<S extends z.ZodTypeAny = z.ZodTypeAny> = {
   name: string; label: string; description: string; input: S;
   execute: (args: z.infer<S>, ctx: BuiltinCtx) => Promise<unknown>;
@@ -146,16 +147,22 @@ export const BUILTIN_TOOLS: BuiltinTool[] = [
         const { data } = await ctx.db.from("vault_secrets").select("id").eq("user_id", ctx.userId).in("id", ids);
         if ((data ?? []).length !== new Set(ids).size) throw new Error("A vault item in the steps doesn't exist");
       }
-      const needs = smart || stepsNeedApproval(a.steps);
+      // Smart tasks without a login just look things up, so they run at once; sign-ins and typing steps wait for the user.
+      const needs = (smart ? a.secret_ids.length > 0 : stepsNeedApproval(a.steps)) && !ctx.autoApproveBrowser;
       const { data, error } = await ctx.db.from("browser_jobs").insert({
         user_id: ctx.userId, goal: a.goal, start_url: a.start_url, steps: smart ? [] : a.steps, mode: smart ? "auto" : "steps", allowed_secrets: smart ? a.secret_ids : [],
         status: needs ? "needs_approval" : "queued", conversation_id: ctx.conversationId,
       }).select("id").single();
       if (error || !data) throw new Error("Couldn't create the browser task");
-      if (!needs) await kickCloudWorker();
+      if (!needs) {
+        await kickCloudWorker();
+        const done = await waitForJob(ctx, data.id, 100000, 3000);
+        if (done && (done.status === "done" || done.status === "failed"))
+          return { job_id: data.id, status: done.status, result: done.result, error: done.error, files: done.files, note: "The cloud browser finished. Answer the user from this result now." };
+      }
       return {
         job_id: data.id, status: needs ? "needs_approval" : "queued", manage_url: `${SITE}/app/settings/browser`,
-        note: needs ? "Tell the user it waits for their approval in Settings, Browser tasks." : "It runs when the browser worker picks it up; results appear in Settings, Browser tasks.",
+        note: needs ? "Tell the user it waits for their approval in Settings, Browser tasks." : "It runs now in a cloud browser; the result is posted into this chat when it finishes (also in Settings, Browser tasks).",
       };
     },
   }),

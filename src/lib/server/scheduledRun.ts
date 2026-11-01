@@ -90,7 +90,7 @@ export async function runScheduledJob(db: Db, job: ScheduledJob & { user_id: str
       next: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 25000, tools, prefer }),
       onText: (d) => { full += d; },
       label: (call: ToolCall) => call.function.name.replace("__", " · ").replace(/_/g, " "),
-      onTool: (call: ToolCall) => executeToolCall({ db, userId: uid, projectId, conversationId: convId, taskId }, call.function.name, call.function.arguments, loaded),
+      onTool: (call: ToolCall) => executeToolCall({ db, userId: uid, projectId, conversationId: convId, taskId, autoApproveBrowser: job.allow_browser === true }, call.function.name, call.function.arguments, loaded),
       cancelled: () => Date.now() > opts.deadline,
     });
 

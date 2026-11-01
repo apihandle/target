@@ -20,7 +20,7 @@ function fmt(iso: string | null, tz: string) {
 
 export default function ScheduledJobs({ initial, projects, unavailable }: { initial: ScheduledJob[]; projects: { id: string; name: string }[]; unavailable?: boolean }) {
   const [jobs, setJobs] = useState(initial);
-  const [form, setForm] = useState({ title: "", prompt: "", cadence: "once", weekday: "1", run_on: "", interval_hours: "2", time_of_day: "09:00", timezone: "Asia/Kolkata", project_id: "" });
+  const [form, setForm] = useState({ title: "", prompt: "", cadence: "once", weekday: "1", run_on: "", interval_hours: "2", time_of_day: "09:00", timezone: "Asia/Kolkata", project_id: "", allow_browser: false });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -118,6 +118,10 @@ export default function ScheduledJobs({ initial, projects, unavailable }: { init
               <input value={form.timezone} onChange={set("timezone")} maxLength={64} className={inputClass} />
             </Field>
           </div>
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" checked={form.allow_browser} onChange={(e) => setForm((f) => ({ ...f, allow_browser: e.target.checked }))} className="mt-1" data-testid="schedule-allow-browser" />
+            <span>Let it use the cloud browser on its own <span className="block text-xs text-muted">Website tasks in this automation run without asking each time. Purchases still need your tap.</span></span>
+          </label>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-muted">Runs can start a few minutes after the time you pick. You&apos;ll get a phone notification if notifications are on.</p>
             <Button type="submit" variant="primary" disabled={busy || !form.prompt.trim() || unavailable} data-testid="schedule-create">{busy ? "Saving…" : "Schedule it"}</Button>
@@ -132,7 +136,7 @@ export default function ScheduledJobs({ initial, projects, unavailable }: { init
           <Card key={j.id} data-testid="schedule-item">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <p className="flex items-center gap-2 font-medium"><span className="truncate">{j.title}</span><Badge tone={j.status === "active" ? "accent" : "neutral"}>{j.status === "active" ? "Active" : j.status === "done" ? "Done" : "Paused"}</Badge></p>
+                <p className="flex items-center gap-2 font-medium"><span className="truncate">{j.title}</span><Badge tone={j.status === "active" ? "accent" : "neutral"}>{j.status === "active" ? "Active" : j.status === "done" ? "Done" : "Paused"}</Badge>{j.allow_browser && <Badge tone="neutral">🌐 Browser</Badge>}</p>
                 <p className="mt-1 text-xs text-muted">{describeSchedule(j)}</p>
                 <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-sm text-ink-soft">{j.prompt}</p>
                 <p className="mt-2 text-xs text-muted-soft">
