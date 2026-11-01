@@ -18,6 +18,7 @@ import { spawn } from "node:child_process";
 import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:http";
 
 const BASE = (process.env.TARGET_URL || "https://gettarget.vercel.app").replace(/\/$/, "");
 const SECRET = process.env.SESSION_WORKER_SECRET || "";
@@ -27,6 +28,8 @@ const ROOT = typeof process.getuid === "function" && process.getuid() === 0;
 const CODE = process.env.ENABLE_CODE === "1" && (ROOT || process.env.ALLOW_UNSAFE_CODE === "1");
 if (process.env.ENABLE_CODE === "1" && !CODE) console.warn("Code/video jobs are off: run the worker in Docker (as root) so code can drop to an unprivileged user.");
 if (SECRET.length < 32) { console.error("Set SESSION_WORKER_SECRET (32+ chars, same as on Vercel)."); process.exit(1); }
+// Hosts like Hugging Face Spaces need an open web port: answer a tiny health check on PORT when it is set.
+if (process.env.PORT) createServer((_q, r) => { r.writeHead(200, { "content-type": "text/plain" }); r.end("TARGET worker running"); }).listen(Number(process.env.PORT), "0.0.0.0");
 const MODES = CODE ? ["steps", "auto", "code", "video"] : ["steps", "auto"];
 
 async function api(body) {

@@ -1,0 +1,49 @@
+# TARGET: remaining setup (handoff, 2026-11-01)
+
+Repo is private. These values are real secrets: do not paste them anywhere public, and don't commit them to any other repo.
+Live site: https://gettarget.vercel.app (Vercel project for apihandle/target, auto-deploys main).
+
+## 1. Vercel > Project > Settings > Environment Variables (Production, Preview, Development)
+
+Add or update (safe to overwrite):
+
+| Name | Value |
+|---|---|
+| CRON_SECRET | 7cae2175ea8cd81a3847f8c8f2a76568b17b61e91df65a3c0c2bfa015e016fac |
+| SESSION_WORKER_SECRET | 9857387c2558cad497bf4f66bf625ebd779696999a4f4ea4b4438e6989f3f994 |
+
+Add ONLY if the name does not exist yet (changing an existing value breaks saved logins / push subscriptions):
+
+| Name | Value |
+|---|---|
+| CONNECTOR_ENCRYPTION_KEY | HcjKRFJG2cYmfvtUUDLSrSK1T7kZNkKMy0QuOSm8ARE= |
+| NEXT_PUBLIC_VAPID_PUBLIC_KEY | BK8u3sjdCmOP8lUhI5QWmyxnuTEwnHgIeAQuWlNs3jH_POhnUqTEFjFyDgdODBtzHMxP8IPGlvGWbq7vBRoENSM |
+| VAPID_PRIVATE_KEY | kZw4GbVxM3lQ9Xg-8cY4jLgtrERhfzWUvZsFfx_5_P0 |
+
+(Add both VAPID keys together, or neither.)
+
+Also needed from the owner: SUPABASE_SERVICE_ROLE_KEY (Supabase > Project Settings > API), ADMIN_EMAIL (owner's sign-in email). Optional: TAVILY_API_KEY (free key at tavily.com), POLLINATIONS_KEY (AI photo edits).
+
+Then Deployments > latest Production > Redeploy.
+
+## 2. GitHub > apihandle/target > Settings > Secrets and variables > Actions
+
+New repository secret: CRON_SECRET = same value as on Vercel (above). Used by .github/workflows/scheduled-prompts.yml and proactive.yml.
+
+## 3. Supabase > SQL Editor
+
+Run every file in supabase/migrations/ that has not been run yet, in number order (0006 through 0014).
+
+## 4. Worker (free): Hugging Face Space
+
+1. huggingface.co > New Space. Name target-worker, SDK Docker > Blank, hardware CPU basic (free), Private.
+2. Upload worker/hf-space/Dockerfile and worker/browser-worker.mjs to the Space root, commit.
+3. Space Settings > Variables and secrets > New secret: SESSION_WORKER_SECRET = same value as on Vercel.
+4. Wait until the Space shows Running and the page says "TARGET worker running".
+
+On the free Space only browser jobs run (steps/auto). Code and video jobs need a root container (worker/Dockerfile on a paid host).
+
+## 5. Check
+
+- https://gettarget.vercel.app loads and sign-in works.
+- Settings > Browser tasks: a test task gets picked up by the worker.
