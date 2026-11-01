@@ -4,6 +4,8 @@ import Markdown from "@/components/Markdown";
 import type { Metadata } from "next";
 import { loadSharedConversation, publicContent } from "@/lib/shares";
 import { splitSources } from "@/lib/search";
+import { splitBlocks } from "@/lib/blocks";
+import Blocks from "@/components/Blocks";
 import SourceList from "@/components/SourceList";
 
 export const dynamic = "force-dynamic";
@@ -54,10 +56,12 @@ export default async function SharedChatPage({ params }: { params: { token: stri
               {m.role === "user" ? (
                 <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-surface-3 px-4 py-2.5 text-sm text-ink">{m.content}</div>
               ) : (() => {
-                const { text, sources } = splitSources(publicContent(m.content));
+                const { text: withBlocks, sources } = splitSources(publicContent(m.content));
+                const { text, blocks } = splitBlocks(withBlocks);
                 return (
                   <div className="prose-target text-sm leading-relaxed text-ink-soft">
                     <Markdown>{text}</Markdown>
+                    <Blocks blocks={blocks} />
                     <SourceList sources={sources} />
                   </div>
                 );

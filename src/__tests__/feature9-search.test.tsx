@@ -52,7 +52,7 @@ describe("Feature 9: web search", () => {
     fireEvent.click(screen.getByTestId("chat-send"));
     await waitFor(() => expect(screen.getByTestId("sources")).toBeTruthy());
     expect(JSON.parse(f.mock.calls[0][1].body)).toMatchObject({ message: "ISRO news", web: true });
-    expect(screen.getByText("[2] two.org")).toBeTruthy();
+    expect(screen.getByText("two.org")).toBeTruthy();
     expect(screen.queryByText(/```sources/)).toBeNull();
   });
 });

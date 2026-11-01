@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import ActionButtons from "@/components/ActionButtons";
 import { splitActions } from "@/lib/actions";
 import SourceList from "@/components/SourceList";
+import Blocks from "@/components/Blocks";
+import { splitBlocks } from "@/lib/blocks";
 import { splitSources } from "@/lib/search";
 import Markdown from "@/components/Markdown";
 import { ErrorNote } from "@/components/ui/EmptyState";
@@ -293,11 +295,13 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
                 );
               }
               const { text: withSources, actions } = splitActions(m.content);
-              const { text, sources } = splitSources(withSources);
+              const { text: withBlocks, sources } = splitSources(withSources);
+              const { text, blocks } = splitBlocks(withBlocks);
               return (
                 <div key={i} data-testid="msg-assistant" className="group flex flex-col items-start">
                   <div className="prose-target max-w-[92%] rounded-[22px] rounded-bl-md border border-line bg-surface/85 px-4 py-3 text-[15px] leading-relaxed text-ink-soft backdrop-blur-xl">
                     <Markdown>{text}</Markdown>
+                    {!isLive && <Blocks blocks={blocks} />}
                     {!isLive && <SourceList sources={sources} />}
                     {!isLive && <ActionButtons actions={actions} />}
                   </div>

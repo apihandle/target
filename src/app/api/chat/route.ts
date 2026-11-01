@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { SYSTEM_PROMPT, titleFrom, type ChatMsg } from "@/lib/ai";
+import { BLOCKS_PROMPT } from "@/lib/blocks";
 import { CAPABILITIES, MULTI_PLAYBOOK, detectTask, isMultiTask, MAX_TOKENS, PLAYBOOKS, taskModel } from "@/lib/skills";
 import { llm, llmText, LLMError } from "@/lib/llm";
 import { ACTIONS_PROMPT, heuristicActions, mergeActions, sanitizeAction, type Action } from "@/lib/actions";
@@ -196,7 +197,7 @@ export async function POST(req: Request) {
   }
 
   const messages: LLMMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT + PLAYBOOKS[kind] + (isMultiTask(text) ? MULTI_PLAYBOOK : "") + CAPABILITIES + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + pageNote + files.block + connectorNote + resumeNote },
+    { role: "system", content: SYSTEM_PROMPT + PLAYBOOKS[kind] + (isMultiTask(text) ? MULTI_PLAYBOOK : "") + CAPABILITIES + BLOCKS_PROMPT + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + pageNote + files.block + connectorNote + resumeNote },
     ...history,
     files.imageParts.length ? { role: "user", content: [{ type: "text", text }, ...files.imageParts] as ContentPart[] } : { role: "user", content: text },
   ];
