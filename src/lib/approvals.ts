@@ -1,4 +1,4 @@
-import { validateJob, describeSchedule } from "@/lib/schedule";
+import { validateJob, describeSchedule, type Cadence } from "@/lib/schedule";
 import { cleanMultiline, cleanText } from "@/lib/ids";
 
 export const APPROVAL_STATUSES = ["pending", "approved", "rejected", "cancelled", "executing", "executed", "failed"] as const;
@@ -70,13 +70,15 @@ export const ACTION_DEFS: Record<string, Def> = {
   create_schedule: {
     label: "Schedule a prompt", provider: null,
     validate(r) {
-      const v = validateJob({ title: r.title, prompt: r.prompt, cadence: r.cadence, weekday: r.cadence === "weekly" ? r.weekday : null, time_of_day: r.time_of_day, timezone: r.timezone || "Asia/Kolkata" });
+      const v = validateJob({ title: r.title, prompt: r.prompt, cadence: r.cadence, weekday: r.cadence === "weekly" ? r.weekday : null,
+        run_on: r.cadence === "once" ? r.run_on : null, interval_hours: r.cadence === "interval" ? r.interval_hours : null, time_of_day: r.time_of_day, timezone: r.timezone || "Asia/Kolkata" });
       if (!v.ok) return { ok: false, error: v.error };
       const j = v.value;
-      return { ok: true, params: { title: j.title!, prompt: j.prompt!, cadence: j.cadence!, weekday: j.weekday === null || j.weekday === undefined ? "" : String(j.weekday), time_of_day: j.time_of_day!, timezone: j.timezone! } };
+      return { ok: true, params: { title: j.title!, prompt: j.prompt!, cadence: j.cadence!, weekday: j.weekday === null || j.weekday === undefined ? "" : String(j.weekday),
+        run_on: j.run_on ?? "", interval_hours: j.interval_hours ? String(j.interval_hours) : "", time_of_day: j.time_of_day!, timezone: j.timezone! } };
     },
     describe: (p) => ({
-      summary: `Run “${p.title}” ${describeSchedule({ cadence: p.cadence as "daily" | "weekly", weekday: p.weekday === "" ? null : Number(p.weekday), time_of_day: p.time_of_day, timezone: p.timezone })}`,
+      summary: `Run “${p.title}” ${describeSchedule({ cadence: p.cadence as Cadence, weekday: p.weekday === "" ? null : Number(p.weekday), run_on: p.run_on || null, interval_hours: p.interval_hours ? Number(p.interval_hours) : null, time_of_day: p.time_of_day, timezone: p.timezone })}`,
       destination: "TARGET · Scheduled",
     }),
   },

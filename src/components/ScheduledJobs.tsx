@@ -20,13 +20,15 @@ function fmt(iso: string | null, tz: string) {
 
 export default function ScheduledJobs({ initial, projects, unavailable }: { initial: ScheduledJob[]; projects: { id: string; name: string }[]; unavailable?: boolean }) {
   const [jobs, setJobs] = useState(initial);
-  const [form, setForm] = useState({ title: "", prompt: "", cadence: "daily", weekday: "1", time_of_day: "09:00", timezone: "Asia/Kolkata", project_id: "" });
+  const [form, setForm] = useState({ title: "", prompt: "", cadence: "once", weekday: "1", run_on: "", interval_hours: "2", time_of_day: "09:00", timezone: "Asia/Kolkata", project_id: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     try { const tz = Intl.DateTimeFormat().resolvedOptions().timeZone; if (tz) setForm((f) => ({ ...f, timezone: tz })); } catch { /* keep default */ }
+    const d = new Date(); const pad = (n: number) => String(n).padStart(2, "0");
+    setForm((f) => ({ ...f, run_on: f.run_on || `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }));
   }, []);
 
   async function create(e: React.FormEvent) {
@@ -35,7 +37,10 @@ export default function ScheduledJobs({ initial, projects, unavailable }: { init
     try {
       const r = await fetch("/api/scheduled", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, weekday: form.cadence === "weekly" ? Number(form.weekday) : null, project_id: form.project_id || null }),
+        body: JSON.stringify({
+          ...form, weekday: form.cadence === "weekly" ? Number(form.weekday) : null, run_on: form.cadence === "once" ? form.run_on : null,
+          interval_hours: form.cadence === "interval" ? Number(form.interval_hours) : null, project_id: form.project_id || null,
+        }),
       });
       const j = await r.json();
       if (!r.ok) { if (j.field) setErrors({ [j.field]: j.error }); else setError(j.error || "Could not save"); return; }
@@ -65,7 +70,7 @@ export default function ScheduledJobs({ initial, projects, unavailable }: { init
       <Card>
         <form onSubmit={create} className="space-y-4" data-testid="schedule-form">
           <Field id="job-prompt" label="What should TARGET do?" error={errors.prompt}>
-            <textarea value={form.prompt} onChange={set("prompt")} rows={3} maxLength={4000} placeholder="e.g. Summarize my unread GitHub notifications and list what needs a reply" className={inputClass} />
+            <textarea value={form.prompt} onChange={set("prompt")} rows={3} maxLength={4000} placeholder="e.g. Remind me to call the bank, or summarize my unread GitHub notifications" className={inputClass} />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field id="job-title" label="Name" optional error={errors.title}>
@@ -78,13 +83,27 @@ export default function ScheduledJobs({ initial, projects, unavailable }: { init
               </select>
             </Field>
           </div>
-          <div className="grid gap-4 sm:grid-cols-4">
-            <Field id="job-cadence" label="Repeats" error={errors.cadence}>
-              <select value={form.cadence} onChange={set("cadence")} className={inputClass}>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <Field id="job-cadence" label="When" error={errors.cadence}>
+              <select value={form.cadence} onChange={set("cadence")} className={inputClass} data-testid="schedule-cadence">
+                <option value="once">Once (reminder)</option>
+                <option value="interval">Every few hours</option>
                 <option value="daily">Every day</option>
                 <option value="weekly">Every week</option>
               </select>
             </Field>
+            {form.cadence === "once" && (
+              <Field id="job-date" label="Date" error={errors.run_on}>
+                <input type="date" value={form.run_on} onChange={set("run_on")} required className={inputClass} />
+              </Field>
+            )}
+            {form.cadence === "interval" && (
+              <Field id="job-every" label="Every" error={errors.interval_hours}>
+                <select value={form.interval_hours} onChange={set("interval_hours")} className={inputClass}>
+                  {[1, 2, 3, 4, 6, 8, 12, 24, 48, 72].map((n) => <option key={n} value={n}>{n === 1 ? "1 hour" : `${n} hours`}</option>)}
+                </select>
+              </Field>
+            )}
             {form.cadence === "weekly" && (
               <Field id="job-weekday" label="Day" error={errors.weekday}>
                 <select value={form.weekday} onChange={set("weekday")} className={inputClass}>
@@ -92,7 +111,7 @@ export default function ScheduledJobs({ initial, projects, unavailable }: { init
                 </select>
               </Field>
             )}
-            <Field id="job-time" label="Time" error={errors.time_of_day}>
+            <Field id="job-time" label={form.cadence === "interval" ? "Starting at" : "Time"} error={errors.time_of_day}>
               <input type="time" value={form.time_of_day} onChange={set("time_of_day")} required className={inputClass} />
             </Field>
             <Field id="job-tz" label="Timezone" error={errors.timezone}>
@@ -100,7 +119,7 @@ export default function ScheduledJobs({ initial, projects, unavailable }: { init
             </Field>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-muted">Runs happen on the server&apos;s cron schedule, so a run can start a little after the time you pick.</p>
+            <p className="text-xs text-muted">Runs can start a few minutes after the time you pick. You&apos;ll get a phone notification if notifications are on.</p>
             <Button type="submit" variant="primary" disabled={busy || !form.prompt.trim() || unavailable} data-testid="schedule-create">{busy ? "Saving…" : "Schedule it"}</Button>
           </div>
         </form>
@@ -113,18 +132,18 @@ export default function ScheduledJobs({ initial, projects, unavailable }: { init
           <Card key={j.id} data-testid="schedule-item">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <p className="flex items-center gap-2 font-medium"><span className="truncate">{j.title}</span><Badge tone={j.status === "active" ? "accent" : "neutral"}>{j.status === "active" ? "Active" : "Paused"}</Badge></p>
+                <p className="flex items-center gap-2 font-medium"><span className="truncate">{j.title}</span><Badge tone={j.status === "active" ? "accent" : "neutral"}>{j.status === "active" ? "Active" : j.status === "done" ? "Done" : "Paused"}</Badge></p>
                 <p className="mt-1 text-xs text-muted">{describeSchedule(j)}</p>
                 <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-sm text-ink-soft">{j.prompt}</p>
                 <p className="mt-2 text-xs text-muted-soft">
-                  {j.status === "active" ? <>Next run: {fmt(j.next_run_at, j.timezone)}</> : "Paused"}
+                  {j.status === "active" ? <>Next run: {fmt(j.next_run_at, j.timezone)}</> : j.status === "done" ? "Finished" : "Paused"}
                   {j.last_run_at && <> · {STATUS_TEXT[j.last_status ?? ""] ?? "Last run"} {timeAgo(j.last_run_at)}</>}
                   {j.last_task_id && <> · <a className="text-accent-strong underline" href="/app/activity?filter=tasks">See in Activity</a></>}
                 </p>
                 {j.last_status === "failed" && j.last_error && <p className="mt-1 text-xs text-danger">{j.last_error}</p>}
               </div>
               <div className="flex shrink-0 gap-2">
-                <Button size="sm" data-testid="schedule-toggle" onClick={() => patch(j.id, { status: j.status === "active" ? "paused" : "active" })}>{j.status === "active" ? "Pause" : "Resume"}</Button>
+                {j.status !== "done" && <Button size="sm" data-testid="schedule-toggle" onClick={() => patch(j.id, { status: j.status === "active" ? "paused" : "active" })}>{j.status === "active" ? "Pause" : "Resume"}</Button>}
                 <Button size="sm" variant="danger" data-testid="schedule-delete" onClick={() => remove(j.id)}>Delete</Button>
               </div>
             </div>

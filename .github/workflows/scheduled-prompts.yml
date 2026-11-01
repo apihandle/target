@@ -1,0 +1,19 @@
+# Vercel's free cron runs only once a day, so reminders and every-N-hours prompts would be late.
+# This free GitHub Actions job calls the same protected endpoint every 10 minutes.
+# Setup: repo Settings > Secrets and variables > Actions > add CRON_SECRET (same value as on Vercel).
+name: Scheduled prompts
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Run due prompts
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then echo "CRON_SECRET not set; skipping"; exit 0; fi
+          curl -fsS --max-time 70 -H "Authorization: Bearer $CRON_SECRET" https://gettarget.vercel.app/api/cron/scheduled || true

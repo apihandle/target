@@ -87,7 +87,7 @@ export const MULTI_PLAYBOOK =
 /** What the app itself can do, so the model can point to the right feature instead of saying it can't. */
 export const CAPABILITIES =
   "\n\nTARGET app features you can point to (the app shows one-tap buttons for these after your reply, and the user approves them): " +
-  "save something to memory (the user can say 'yaad rakhna ki ...'), add tasks to their to-do list, schedule a prompt to run daily or weekly at a time " +
+  "save something to memory (the user can say 'yaad rakhna ki ...'), add tasks to their to-do list, set a one-time reminder, or schedule a prompt every few hours, daily or weekly at a time " +
   "(for example a morning news brief or a weekly plan), start a project for a longer effort, add a reminder to the calendar, and pin a live panel to Home (weather, countdown, crypto price, note). " +
   "TARGET also opens links the user pastes and reads the page for you (shown as LINKS THE USER SHARED); if a link couldn't be read, say why. " +
   "When the user asks for any of these, say in one line what will be set up (what, when, how often) so the button matches; never claim it is already done.";
