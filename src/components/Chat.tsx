@@ -14,6 +14,7 @@ import ModelPicker, { type ModelChoice } from "@/components/ModelPicker";
 import VoiceButton from "@/components/VoiceButton";
 import TemplatesMenu from "@/components/TemplatesMenu";
 import ShareButton from "@/components/ShareButton";
+import BrowserLiveCard from "@/components/BrowserLiveCard";
 import { ACCEPT_ATTR, ATTACHMENT_BUCKET, MAX_ATTACHMENTS_PER_MESSAGE, MAX_ATTACHMENT_BYTES, safeFileName, storageKeyName, typeFor } from "@/lib/attachments";
 
 export type UIMsg = { role: "user" | "assistant"; content: string; attachments?: { name: string; kind: string }[] };
@@ -333,6 +334,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
                 </div>
               );
             })}
+            <BrowserLiveCard conversationId={conversationId} streaming={streaming} />
             <div ref={endRef} />
           </div>
         )}

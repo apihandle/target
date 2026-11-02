@@ -18,6 +18,7 @@ const OUT_MIME: Record<string, string> = { png: "image/png", jpg: "image/jpeg", 
  *  claim  -> the oldest queued job (atomically moved to running) of a mode this worker supports
  *  next   -> smart mode: given the page snapshot, the AI's next action
  *  secret -> one vault field for a fill_secret step of a RUNNING job that lists that secret
+ *  progress -> add one human-readable line to the job's live log
  *  finish -> store the result (done/failed) and notify the owner
  */
 export async function POST(req: Request) {
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
     const { data: next } = await db.from("browser_jobs").select("id").eq("status", "queued").in("mode", modes).order("created_at", { ascending: true }).limit(1);
     if (!next?.length) return json({ job: null });
     const { data } = await db.from("browser_jobs").update({ status: "running", claimed_at: new Date().toISOString() })
-      .eq("id", next[0].id).eq("status", "queued").select("id, user_id, goal, start_url, steps, mode, max_steps, language, code, inputs");
+      .eq("id", next[0].id).eq("status", "queued").select("id, user_id, goal, start_url, steps, mode, max_steps, language, code, inputs, allowed_secrets");
     return json({ job: data?.[0] ?? null });
   }
 
@@ -59,6 +60,14 @@ export async function POST(req: Request) {
     await db.from("vault_secrets").update({ last_used_at: new Date().toISOString() }).eq("id", sid);
     if (!(field in fields)) return json({ error: "That field isn't saved" }, 404);
     return new Response(JSON.stringify({ value: fields[field] }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  }
+
+  if (b.action === "progress") {
+    const line = typeof b.line === "string" ? b.line.replace(/\s+/g, " ").trim().slice(0, 200) : "";
+    if (!line) return badRequest("line required");
+    const log = ((job.log ?? []) as string[]).slice(-40);
+    await db.from("browser_jobs").update({ log: [...log, line] }).eq("id", id);
+    return json({ ok: true });
   }
 
   if (b.action === "next") {

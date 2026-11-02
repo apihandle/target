@@ -17,7 +17,7 @@ async function handle(req: Request) {
   const secret = process.env.SESSION_WORKER_SECRET;
   if (!secret || secret.length < 32) return json({ error: "SESSION_WORKER_SECRET is not set" }, 503);
   const providers = configuredProviders();
-  if (!providers.length) return json({ providers, ran: 0, results: [] });
+  // With no cloud browser configured, reading tasks still run through the direct-read fallback.
   const results = await runQueuedJobs({ budgetMs: 270000, secret });
   return json({ providers, ran: results.length, results });
 }
