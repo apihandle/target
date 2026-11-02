@@ -195,3 +195,22 @@ describe("OtpCard", () => {
     expect(post[0]).toBe("/api/browser-jobs/00000000-0000-4000-8000-000000000000/code");
   });
 });
+
+describe("sign-in autofill in the browser agent", () => {
+  it("fills username then password from the vault, then lets the model submit; retries once after a failed submit", async () => {
+    const { signinAutofill } = await import("@/lib/server/autoBrowser");
+    const snap = { url: "https://the-internet.herokuapp.com/login", title: "", text: "", elements: [
+      { i: 1, tag: "a", text: "Home" }, { i: 2, tag: "input", type: "text", text: "", name: "username" }, { i: 3, tag: "input", type: "password", text: "", name: "password" }, { i: 4, tag: "button", type: "submit", text: "Login" },
+    ] };
+    const secrets = [{ id: "11111111-1111-4111-8111-111111111111", kind: "login", site: "the-internet.herokuapp.com" }];
+    const goal = "Sign in to the-internet.herokuapp.com with the saved login";
+    expect(signinAutofill(goal, snap, secrets, [])).toMatchObject({ do: "fill_secret", i: 2, field: "username" });
+    expect(signinAutofill(goal, snap, secrets, ["fill_secret [2] username: Saved login"])).toMatchObject({ do: "fill_secret", i: 3, field: "password" });
+    expect(signinAutofill(goal, snap, secrets, ["fill_secret [2] username", "fill_secret [3] password"])).toBeNull();
+    const failedOnce = ["fill_secret [2] username", "fill_secret [3] password", "click [4]: Submit"];
+    expect(signinAutofill(goal, snap, secrets, failedOnce)).toMatchObject({ field: "username" });
+    expect(signinAutofill(goal, snap, secrets, [...failedOnce, "fill_secret [2] username", "fill_secret [3] password", "click [4]"])).toBeNull();
+    expect(signinAutofill("Find the price of a phone", snap, secrets, [])).toBeNull();
+    expect(signinAutofill(goal, { ...snap, elements: snap.elements.filter((e) => e.type !== "password") }, secrets, [])).toBeNull();
+  });
+});

@@ -118,7 +118,7 @@ export async function POST(req: Request) {
     const ids = (job.allowed_secrets ?? []) as string[];
     const { data: secrets } = ids.length ? await db.from("vault_secrets").select("id, kind, label, site").eq("user_id", job.user_id).in("id", ids) : { data: [] };
     const action = await decideNext(signin?.goal ?? (job.goal as string), snap.data, (secrets ?? []) as { id: string; kind: string; label: string; site: string | null }[], log, left);
-    const line = action.do === "done" || action.do === "fail" ? action.do : `${action.do}${"i" in action ? ` [${action.i}]` : ""}${"why" in action && action.why ? `: ${action.why}` : ""}`.slice(0, 200);
+    const line = action.do === "done" || action.do === "fail" ? action.do : `${action.do}${"i" in action ? ` [${action.i}]` : ""}${action.do === "fill_secret" ? ` ${action.field}` : ""}${"why" in action && action.why ? `: ${action.why}` : ""}`.slice(0, 200);
     await db.from("browser_jobs").update({ log: [...log, line] }).eq("id", id);
     return json({ action });
   }

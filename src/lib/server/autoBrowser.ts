@@ -81,7 +81,32 @@ export function secretSafe(a: AutoAction, snap: Snapshot, secrets: { id: string;
   return a;
 }
 
+/**
+ * Sign-in pages: a visible password box with a saved login is filled from the vault without asking the model
+ * (username first, then password), since free models often skip a field or click Login on an empty form.
+ */
+export function signinAutofill(goal: string, snap: Snapshot, secrets: { id: string; kind: string; site?: string | null }[], history: string[]): AutoAction | null {
+  let host = "";
+  try { host = new URL(snap.url).hostname.replace(/^www\./, ""); } catch { /* keep "" */ }
+  const logins = secrets.filter((s) => s.kind === "login");
+  // The login saved for this page's site (e.g. the Google account on accounts.google.com), else the only one.
+  const login = logins.find((s) => s.site && host && (host === s.site.replace(/^www\./, "") || host.endsWith("." + s.site.replace(/^www\./, "")))) ?? (logins.length === 1 ? logins[0] : undefined);
+  if (!login || !/\bsign in\b/i.test(goal)) return null;
+  const pwIdx = snap.elements.findIndex((e) => e.type === "password");
+  if (pwIdx < 0) return null;
+  // Only the fills since the last time this form was submitted count (a failed attempt reloads the form).
+  const since = history.slice(history.map((h) => h.startsWith("click") || h.startsWith("press")).lastIndexOf(true) + 1);
+  const did = (field: string) => since.some((h) => h.startsWith("fill_secret") && h.includes(` ${field}`));
+  if (history.filter((h) => h.startsWith("fill_secret") && h.includes(" password")).length >= 2) return null; // tried twice: let the model judge the error
+  const user = snap.elements.slice(0, pwIdx).reverse().find((e) => (e.tag === "input" && (!e.type || /^(text|email|tel)$/i.test(e.type))));
+  if (user && !did("username")) return { do: "fill_secret", i: user.i, secret_id: login.id, field: "username", why: "Saved login" };
+  if (!did("password")) return { do: "fill_secret", i: snap.elements[pwIdx].i, secret_id: login.id, field: "password", why: "Saved login" };
+  return null;
+}
+
 export async function decideNext(goal: string, snap: Snapshot, secrets: { id: string; kind: string; label: string; site: string | null }[], history: string[], stepsLeft: number): Promise<AutoAction> {
+  const auto = signinAutofill(goal, snap, secrets, history);
+  if (auto) return auto;
   const sys = autoPrompt(goal, secrets, history, stepsLeft);
   const vision = snap.screenshot && visionModels().length ? visionModels() : null;
   const user: LLMMessage = vision
@@ -96,6 +121,12 @@ export async function decideNext(goal: string, snap: Snapshot, secrets: { id: st
     if (a) {
       if ((a.do === "click" || a.do === "fill" || a.do === "fill_secret" || a.do === "select" || a.do === "need_code") && !snap.elements.some((e) => e.i === a.i)) continue;
       if (a.do === "fill_secret" && !secrets.some((s) => s.id === a.secret_id)) return { do: "fail", reason: "Needed a login or card that isn't in the vault for this task" };
+      // "Signed in" while the login form is still on screen and was never submitted: submit it instead.
+      if (a.do === "done" && /\bsign in\b/i.test(goal) && snap.elements.some((e) => e.type === "password") && !history.some((h) => /^(click|press)/.test(h) && /log ?in|sign ?in|submit/i.test(h))) {
+        const submit = snap.elements.find((e) => (e.tag === "button" || e.type === "submit") && /log ?in|sign ?in|submit|continue/i.test(e.text));
+        if (submit) return { do: "click", i: submit.i, why: "Submit the login form" };
+        return { do: "press", key: "Enter", why: "Submit the login form" };
+      }
       return secretSafe(a, snap, secrets);
     }
   }
