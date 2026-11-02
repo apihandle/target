@@ -7,6 +7,7 @@ import { llmText } from "@/lib/llm";
 import { searchBlock, tavilySearch } from "@/lib/search";
 import { readUrl } from "@/lib/urlReader";
 import { ROUND2_TOOLS } from "@/lib/builtins/round2";
+import { siteLoginTool } from "@/lib/builtins/signin";
 import {
   FILE_FORMATS, SITE, browserStep, captionsToText, chartInput, chartUrl, fileName, imageUrl, makePdf, slugFor, stepsNeedApproval, youtubeId, type FileFormat,
 } from "@/lib/builtins/helpers";
@@ -166,6 +167,7 @@ export const BUILTIN_TOOLS: BuiltinTool[] = [
       };
     },
   }),
+  siteLoginTool,
   ...ROUND2_TOOLS,
 ];
 

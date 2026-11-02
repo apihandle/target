@@ -6,8 +6,8 @@ import { BLOCKS_PROMPT } from "@/lib/blocks";
 const ids = (m: string) => pickPlaybooks(m).map((p) => p.id);
 
 describe("agent playbooks: catalogue", () => {
-  it("has the six playbooks, each with an id, title, triggers and concise guidance", () => {
-    expect(AGENT_PLAYBOOKS.map((p) => p.id).sort()).toEqual(["browsing", "drafting", "forms", "lookup", "research", "scheduling"]);
+  it("has the seven playbooks, each with an id, title, triggers and concise guidance", () => {
+    expect(AGENT_PLAYBOOKS.map((p) => p.id).sort()).toEqual(["browsing", "drafting", "forms", "lookup", "research", "scheduling", "signin"]);
     for (const p of AGENT_PLAYBOOKS) {
       expect(p.title.length).toBeGreaterThan(3);
       expect(p.triggers.length).toBeGreaterThan(0);

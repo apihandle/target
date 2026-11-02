@@ -3,6 +3,8 @@ import { useState } from "react";
 import { actionLabel, calendarUrl, mapUrl, type Action } from "@/lib/actions";
 import ApprovalCard from "@/components/ApprovalCard";
 import ConnectCard from "@/components/ConnectCard";
+import LoginCard from "@/components/LoginCard";
+import OtpCard from "@/components/OtpCard";
 
 type State = "idle" | "busy" | "done" | "error";
 
@@ -32,7 +34,9 @@ export default function ActionButtons({ actions }: { actions: Action[] }) {
   const approvals = actions.filter((a): a is Extract<Action, { type: "approval" }> => a.type === "approval");
   const limits = actions.filter((a): a is Extract<Action, { type: "unavailable" }> => a.type === "unavailable");
   const connects = actions.filter((a): a is Extract<Action, { type: "connect" }> => a.type === "connect");
-  const buttons = actions.filter((a) => a.type !== "approval" && a.type !== "unavailable" && a.type !== "connect");
+  const logins = actions.filter((a): a is Extract<Action, { type: "vault_login" }> => a.type === "vault_login");
+  const codes = actions.filter((a): a is Extract<Action, { type: "otp" }> => a.type === "otp");
+  const buttons = actions.filter((a) => !["approval", "unavailable", "connect", "vault_login", "otp"].includes(a.type));
   return (
     <>
     {buttons.length > 0 && <div data-testid="actions" className="mt-3 flex flex-wrap gap-2">
@@ -54,6 +58,8 @@ export default function ActionButtons({ actions }: { actions: Action[] }) {
     ))}
     {connects.map((c) => <ConnectCard key={`${c.connector}-${c.taskId ?? ""}`} connector={c.connector} taskId={c.taskId} />)}
     {approvals.map((a) => <ApprovalCard key={a.id} id={a.id} />)}
+    {logins.map((l) => <LoginCard key={l.site} site={l.site} forSite={l.for} />)}
+    {codes.map((c) => <OtpCard key={c.job} job={c.job} site={c.site} />)}
     </>
   );
 }

@@ -107,6 +107,15 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
     send("I've connected it. Please continue.", { resumeTaskId });
   }, [resumeTaskId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Cards in a reply (e.g. the secure login form) can continue the chat with a follow-up message.
+  const sendRef = useRef<(t: string) => void>(() => undefined);
+  sendRef.current = (t: string) => { void send(t); };
+  useEffect(() => {
+    const on = (e: Event) => { const t = (e as CustomEvent<{ text?: string }>).detail?.text; if (typeof t === "string" && t.trim()) sendRef.current(t.slice(0, 500)); };
+    window.addEventListener("target:send", on);
+    return () => window.removeEventListener("target:send", on);
+  }, []);
+
   function stop() { abortRef.current?.abort(); }
 
   const patchChip = (key: string, p: Partial<Chip>) => setChips((cs) => cs.map((c) => (c.key === key ? { ...c, ...p } : c)));

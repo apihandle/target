@@ -24,6 +24,8 @@ import { checkLimit, LIMITS, tooMany } from "@/lib/connectors/rateLimit";
 import { runAgent, type ToolCall } from "@/lib/agent";
 import { resolveModel, visionModels, type ContentPart, type ModelRef } from "@/lib/llm";
 import { loadPreferredModel } from "@/lib/settings";
+import { SIGNIN_PROMPT, loginIntent } from "@/lib/signin";
+import { cardFromToolOutput } from "@/lib/builtins/signin";
 import { attachmentContext, claimableAttachments, conversationAttachments, linkAttachments, parseAttachmentIds } from "@/lib/server/attachments";
 
 export const runtime = "nodejs";
@@ -196,8 +198,10 @@ export async function POST(req: Request) {
     try { pageNote = pagesBlock(await Promise.all(links.map((u) => readUrl(u)))); } catch { pageNote = ""; }
   }
 
+  const intent = loginIntent(text);
+  const signinNote = intent ? SIGNIN_PROMPT + ` The user wants to sign in to ${intent.site}${intent.google ? " with Google" : ""}.` : "";
   const messages: LLMMessage[] = [
-    { role: "system", content: coreSystemPrompt(text) + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + pageNote + files.block + connectorNote + resumeNote },
+    { role: "system", content: coreSystemPrompt(text) + signinNote + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + pageNote + files.block + connectorNote + resumeNote },
     ...history,
     files.imageParts.length ? { role: "user", content: [{ type: "text", text }, ...files.imageParts] as ContentPart[] } : { role: "user", content: text },
   ];
@@ -232,6 +236,8 @@ export async function POST(req: Request) {
     async start(controller) {
       const send = (s: string) => { if (cancelled) return; try { controller.enqueue(encoder.encode(s)); } catch { cancelled = true; } };
       let full = "";
+      let signinRan = false;
+      const cards: Record<string, string>[] = [];
       let interrupted = false;
       let paused = false;
       try {
@@ -241,9 +247,25 @@ export async function POST(req: Request) {
           next: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 30000, maxTokens, tools: toolSpecs, prefer, only }),
           onText: (d) => { full += d; send(d); },
           label: (call: ToolCall) => toolLabel(call.function.name),
-          onTool: (call: ToolCall) => executeToolCall({ db, userId: user.id, projectId, conversationId: convId, taskId: task?.id ?? null }, call.function.name, call.function.arguments, loaded),
+          onTool: async (call: ToolCall) => {
+            const out = await executeToolCall({ db, userId: user.id, projectId, conversationId: convId, taskId: task?.id ?? null }, call.function.name, call.function.arguments, loaded);
+            if (call.function.name === SITE_LOGIN) { signinRan = true; const c = cardFromToolOutput(out.content); if (c) cards.push(c); }
+            return out;
+          },
           cancelled: () => cancelled,
         });
+        // Asked to sign in but the model didn't start it: start it here so the user always gets the form or the result.
+        if (intent && !signinRan && !cancelled && !result.pause) {
+          const out = await executeToolCall({ db, userId: user.id, projectId, conversationId: convId, taskId: task?.id ?? null }, SITE_LOGIN, { site: intent.site, method: intent.google ? "google" : "password" }, loaded);
+          const c = cardFromToolOutput(out.content);
+          if (c) cards.push(c);
+          const line = signinLine(out.content, intent.site);
+          if (line) { full += line; send(line); }
+        }
+        if (cards.length) {
+          const block = "\n\n```actions\n" + JSON.stringify(cards.slice(0, 2)) + "\n```";
+          full += block; send(block);
+        }
         if (result.interrupted && !cancelled) { interrupted = true; send("\n\n[connection interrupted]"); }
         if (result.hitLimit) { const n = "\n\n_I stopped after several tool steps. Tell me to continue if you want me to keep going._"; full += n; send(n); }
         if (result.pause?.kind === "needs_connection") {
@@ -332,6 +354,24 @@ export async function POST(req: Request) {
   });
 }
 
+const SITE_LOGIN = `${BUILTIN_ID}${SEP}site_login`;
+
+/** One short line for a sign-in the server started itself (used when the model didn't call the tool). */
+function signinLine(content: string, site: string): string {
+  const status = content.match(/"status":"([a-z_]+)"/)?.[1];
+  if (status === "needs_login") return `\n\n${site} ka login abhi vault mein nahi hai. Neeche secure form mein email/username aur password save karo, save hote hi main sign in kar dunga.`;
+  if (status === "needs_code") return `\n\n${site} ne ek code bheja hai. Neeche code daalo, main sign-in poora kar dunga.`;
+  if (status === "signed_in") {
+    const r = content.match(/"result":"((?:[^"\\]|\\.)*)"/)?.[1];
+    let res = "";
+    try { res = r ? JSON.parse(`"${r}"`) : ""; } catch { res = ""; }
+    return `\n\n✓ ${site} pe sign in ho gaya.${res ? `\n\n${res.slice(0, 1500)}` : ""}`;
+  }
+  if (status === "failed") { const r = content.match(/"reason":"((?:[^"\\]|\\.)*)"/)?.[1]; return `\n\n${r ?? `${site} pe sign-in nahi hua.`}`; }
+  if (status === "queued" || status === "running") return `\n\n${site} pe sign in chal raha hai; result isi chat mein aa jayega.`;
+  return "";
+}
+
 async function extractFacts(text: string, known: string[]): Promise<string[]> {
   if (text.length < 8) return [];
   const raw = await llmText({
@@ -380,7 +420,7 @@ async function suggestActions(userText: string, reply: string): Promise<{ action
     const list = Array.isArray(arr) ? arr : [];
     const proposals = list.filter((x) => x && typeof x === "object" && x.type === "propose").map(parseProposal);
     // The model may not mint approval cards or limitation notes itself; only the server creates those.
-    const actions = list.filter((x) => x && typeof x === "object" && x.type !== "propose" && x.type !== "approval" && x.type !== "unavailable" && x.type !== "connect")
+    const actions = list.filter((x) => x && typeof x === "object" && x.type !== "propose" && x.type !== "approval" && x.type !== "unavailable" && x.type !== "connect" && x.type !== "vault_login" && x.type !== "otp")
       .map(sanitizeAction).filter((x): x is Action => !!x).slice(0, 3);
     return { actions, proposals };
   } catch {

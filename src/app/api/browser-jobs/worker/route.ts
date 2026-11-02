@@ -7,6 +7,10 @@ import { sendPushToUser } from "@/lib/server/push";
 import { ATTACHMENT_BUCKET } from "@/lib/attachments";
 import { decideNext, describeVideo, snapshotSchema } from "@/lib/server/autoBrowser";
 import { SITE } from "@/lib/builtins/helpers";
+import { decryptWithAny, decryptionKeys } from "@/lib/connectors/crypto";
+import { loadSiteCookies, saveSiteSession } from "@/lib/server/siteSessions";
+import { gmailSigninCode } from "@/lib/server/signinMail";
+import { WAITING_FOR_CODE } from "@/lib/builtins/signin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -19,6 +23,9 @@ const OUT_MIME: Record<string, string> = { png: "image/png", jpg: "image/jpeg", 
  *  next   -> smart mode: given the page snapshot, the AI's next action
  *  secret -> one vault field for a fill_secret step of a RUNNING job that lists that secret
  *  progress -> add one human-readable line to the job's live log
+ *  cookies -> sign-in jobs: the saved session for the job's site (so an existing login is reused)
+ *  code   -> sign-in jobs: a one-time code, from the user's Gmail or the code form in chat
+ *  save_session -> sign-in jobs: store the signed-in cookies (encrypted) in site_sessions
  *  finish -> store the result (done/failed) and notify the owner
  */
 export async function POST(req: Request) {
@@ -44,7 +51,7 @@ export async function POST(req: Request) {
 
   const id = typeof b.job_id === "string" && UUID_RE.test(b.job_id) ? b.job_id : null;
   if (!id) return badRequest("job_id required");
-  const { data: job } = await db.from("browser_jobs").select("id, user_id, goal, status, steps, mode, allowed_secrets, max_steps, log, conversation_id").eq("id", id).maybeSingle();
+  const { data: job } = await db.from("browser_jobs").select("id, user_id, goal, status, steps, mode, allowed_secrets, max_steps, log, conversation_id, inputs, claimed_at").eq("id", id).maybeSingle();
   if (!job || job.status !== "running") return json({ error: "Job is not running" }, 409);
 
   if (b.action === "secret") {
@@ -60,6 +67,37 @@ export async function POST(req: Request) {
     await db.from("vault_secrets").update({ last_used_at: new Date().toISOString() }).eq("id", sid);
     if (!(field in fields)) return json({ error: "That field isn't saved" }, 404);
     return new Response(JSON.stringify({ value: fields[field] }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  }
+
+  const signin = signinOf(job.inputs);
+  if (b.action === "cookies" || b.action === "code" || b.action === "save_session") {
+    if (!signin) return badRequest("Not a sign-in job");
+    if (b.action === "cookies") {
+      const cookies = await loadSiteCookies(job.user_id as string, signin.site).catch(() => null);
+      return new Response(JSON.stringify({ cookies: cookies ?? [] }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
+    if (b.action === "save_session") {
+      const r = await saveSiteSession({ userId: job.user_id as string, site: signin.site, via: signin.via, cookies: b.cookies }).catch(() => ({ ok: false as const, error: "save failed" }));
+      return json({ ok: r.ok });
+    }
+    // code: the user's own entry wins, then the newest code in their Gmail; otherwise ask in chat.
+    const inputs = job.inputs as Record<string, unknown>;
+    if (typeof inputs.code_box === "string" && inputs.code_box) {
+      let code: string | null = null;
+      try { code = decryptWithAny(inputs.code_box, decryptionKeys()); } catch { code = null; }
+      await db.from("browser_jobs").update({ inputs: { ...inputs, code_box: null } }).eq("id", id);
+      if (code) return new Response(JSON.stringify({ code, from: "user" }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
+    const askedAt = typeof inputs.code_asked_at === "number" ? inputs.code_asked_at : Date.now();
+    if (inputs.code_asked_at === undefined) await db.from("browser_jobs").update({ inputs: { ...inputs, code_asked_at: askedAt } }).eq("id", id);
+    const fromMail = await gmailSigninCode(job.user_id as string, signin.site, askedAt - 120000).catch(() => null);
+    if (fromMail && fromMail !== "unavailable") return new Response(JSON.stringify({ code: fromMail, from: "gmail" }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    const log = ((job.log ?? []) as string[]).slice(-40);
+    // Ask the user once Gmail can't help (not connected, or nothing arrived in ~30s).
+    if (!log.includes(WAITING_FOR_CODE) && (fromMail === "unavailable" || Date.now() - askedAt > 30000)) {
+      await db.from("browser_jobs").update({ log: [...log, WAITING_FOR_CODE] }).eq("id", id);
+    }
+    return json({ code: null });
   }
 
   if (b.action === "progress") {
@@ -79,7 +117,7 @@ export async function POST(req: Request) {
     if (left <= 0) return json({ action: { do: "fail", reason: "Ran out of steps before finishing" } });
     const ids = (job.allowed_secrets ?? []) as string[];
     const { data: secrets } = ids.length ? await db.from("vault_secrets").select("id, kind, label, site").eq("user_id", job.user_id).in("id", ids) : { data: [] };
-    const action = await decideNext(job.goal as string, snap.data, (secrets ?? []) as { id: string; kind: string; label: string; site: string | null }[], log, left);
+    const action = await decideNext(signin?.goal ?? (job.goal as string), snap.data, (secrets ?? []) as { id: string; kind: string; label: string; site: string | null }[], log, left);
     const line = action.do === "done" || action.do === "fail" ? action.do : `${action.do}${"i" in action ? ` [${action.i}]` : ""}${"why" in action && action.why ? `: ${action.why}` : ""}`.slice(0, 200);
     await db.from("browser_jobs").update({ log: [...log, line] }).eq("id", id);
     return json({ action });
@@ -126,4 +164,11 @@ export async function POST(req: Request) {
     return json({ ok: true });
   }
   return badRequest("Unknown action");
+}
+
+function signinOf(inputs: unknown): { site: string; via: string; goal?: string } | null {
+  if (!inputs || typeof inputs !== "object" || Array.isArray(inputs)) return null;
+  const s = (inputs as { signin?: { site?: unknown; via?: unknown; goal?: unknown } }).signin;
+  if (!s || typeof s.site !== "string") return null;
+  return { site: s.site, via: typeof s.via === "string" ? s.via : "password", goal: typeof s.goal === "string" ? s.goal : undefined };
 }

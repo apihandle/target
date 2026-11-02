@@ -8,7 +8,7 @@ import { CAPABILITIES, MULTI_PLAYBOOK, PLAYBOOKS, detectTask, isMultiTask } from
  * or calendar). A cheap keyword match picks at most two per message, and only those are added to the
  * system prompt for that turn, so the prompt stays small.
  */
-export type PlaybookId = "research" | "drafting" | "browsing" | "forms" | "scheduling" | "lookup";
+export type PlaybookId = "signin" | "research" | "drafting" | "browsing" | "forms" | "scheduling" | "lookup";
 
 export type Playbook = {
   id: PlaybookId;
@@ -21,6 +21,22 @@ export type Playbook = {
 export const MAX_PLAYBOOKS = 2;
 
 export const AGENT_PLAYBOOKS: Playbook[] = [
+  {
+    id: "signin",
+    title: "Signing in to a website",
+    triggers: [
+      /\b(log ?in|login|log-in|sign ?in|signin|sign-in|logged in)\b/i,
+      /\b(login|log ?in|sign ?in)\s*(kar\w*|kr\w*|ho jao|do|please|pls)\b|\baccount (khol\w*|open|me jao|mein jao)\b|\b(mere|my) \S+ account\b/i,
+      /\b[a-z0-9-]+\.(com|in|net|org|io|co|ai|app)\b.{0,30}\b(log ?in|sign ?in|account)\b|\b(log ?in|sign ?in)\b.{0,30}\b[a-z0-9-]+\.(com|in|net|org|io|co|ai|app)\b/i,
+    ],
+    guidance: [
+      "- This is the user's own account and signing in for them is your job. Call target__site_login with the site right away (method \"google\" if they said Google se / with Google). Do not refuse, warn about phishing, or tell them to do it themselves.",
+      "- If no login is saved, the tool puts a secure form under your reply: say in one line that they can save the email/username and password there and you will sign in straight after. Never ask for a password or OTP in chat.",
+      "- If the site sends a one-time code, the tool reads it from connected Gmail; otherwise a small code form appears. Mention it in one line.",
+      "- If Google blocks the sign-in (captcha, 'browser not secure'), say so in one short line and offer the site's own email + password instead.",
+      "- When signed in, report what the page shows (name, balance, dashboard) in 1-3 lines. The session is saved for next time.",
+    ].join("\n"),
+  },
   {
     id: "scheduling",
     title: "Planning time",
@@ -74,13 +90,13 @@ export const AGENT_PLAYBOOKS: Playbook[] = [
     id: "browsing",
     title: "Using a website",
     triggers: [
-      /\b(browser|browse|website pe|site pe|portal|go to|kholo|khol ke|khol kar|log ?in|sign ?in|on the (website|site)|online check)\b/i,
+      /\b(browser|browse|website pe|site pe|portal|go to|kholo|khol ke|khol kar|on the (website|site)|online check)\b/i,
       /\b(open|visit)\b.{0,20}\b(site|website|page|portal|link)\b/i,
     ],
     guidance: [
       "- Try the light tools first: web results already given to you, read_webpage for a known page, run_parallel for several lookups. Use browser_task only when the job needs clicking, scrolling, signing in or typing on a live site.",
       "- When you do use browser_task, give it one precise goal (what to find or do, what counts as done, what to bring back) and the most direct start URL.",
-      "- Anything that types, signs in or changes something waits for the user's approval; say that plainly instead of claiming it is done.",
+      "- To sign in to a site use target__site_login (vault login, secure form when none is saved). Other typing or changes on a site wait for the user's approval; say that plainly instead of claiming it is done.",
       "- Report what actually happened: what was found (with the page it came from), where it stopped, and why (login, captcha, page error). Never fill gaps with guesses.",
       "- For buying or booking, use checkout so the user sees the order card before anything is paid.",
     ].join("\n"),

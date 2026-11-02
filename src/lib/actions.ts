@@ -10,7 +10,11 @@ export type Action =
   /** An action the user asked for that this build can't perform; shown as a limitation, never as an approval. */
   | { type: "unavailable"; label: string; reason: string }
   /** Created by the server when a task paused because a connector isn't connected. */
-  | { type: "connect"; connector: string; taskId?: string };
+  | { type: "connect"; connector: string; taskId?: string }
+  /** Server-made: a secure form to save a website login in the vault (the password never enters the chat). */
+  | { type: "vault_login"; site: string; for?: string }
+  /** Server-made: a small form for the one-time code a site sent during a sign-in job. */
+  | { type: "otp"; job: string; site: string };
 
 export const ACTIONS_PROMPT = `
 
@@ -35,7 +39,8 @@ Rules: base buttons ONLY on what the user asks in their latest message, never on
 - The user wants to check/track something regularly (a price, weather, a date) -> ALWAYS a panel button (crypto {"symbol"}, weather {"city"}, countdown {"date"}).
 - Greetings, thanks, small talk, general questions -> [].`;
 
-const TYPES = new Set(["calendar", "map", "link", "memory", "panel", "copy", "approval", "unavailable", "connect"]);
+const TYPES = new Set(["calendar", "map", "link", "memory", "panel", "copy", "approval", "unavailable", "connect", "vault_login", "otp"]);
+const HOST = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PANEL_KINDS = new Set(["weather", "countdown", "crypto", "ai", "note"]);
 const s = (v: unknown, max = 300) => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -68,6 +73,14 @@ export function sanitizeAction(raw: unknown): Action | null {
     case "connect": {
       const connector = s(a.connector, 30), taskId = s(a.taskId, 40);
       return /^[a-z][a-z0-9_]{1,29}$/.test(connector) ? { type: "connect", connector, ...(UUID.test(taskId) ? { taskId } : {}) } : null;
+    }
+    case "vault_login": {
+      const site = s(a.site, 200).toLowerCase(), forSite = s(a.for, 200).toLowerCase();
+      return HOST.test(site) ? { type: "vault_login", site, ...(HOST.test(forSite) && forSite !== site ? { for: forSite } : {}) } : null;
+    }
+    case "otp": {
+      const job = s(a.job, 40), site = s(a.site, 200).toLowerCase();
+      return UUID.test(job) && HOST.test(site) ? { type: "otp", job, site } : null;
     }
     case "unavailable": {
       const label = s(a.label, 80), reason = s(a.reason, 300);
@@ -122,6 +135,8 @@ export function actionLabel(a: Action): string {
     case "approval": return "Review action";
     case "unavailable": return a.label;
     case "connect": return `Connect ${a.connector}`;
+    case "vault_login": return `Save login for ${a.site}`;
+    case "otp": return `Enter code for ${a.site}`;
   }
 }
 

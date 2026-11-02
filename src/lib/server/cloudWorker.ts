@@ -10,7 +10,23 @@ import { llmText } from "@/lib/llm";
  * It talks to /api/browser-jobs/worker exactly like the external worker, so claim/next/secret/finish
  * logic, limits, and secret handling stay in one place.
  */
-type Job = { id: string; mode: string; goal?: string; start_url: string; steps?: Step[]; max_steps?: number; allowed_secrets?: string[] };
+type Job = { id: string; mode: string; goal?: string; start_url: string; steps?: Step[]; max_steps?: number; allowed_secrets?: string[]; inputs?: unknown };
+
+/** Sign-in jobs carry { signin: { site } } in inputs: reuse a saved session first and save the new one after. */
+export function signinSite(job: Job): string | null {
+  const i = job.inputs as { signin?: { site?: unknown } } | undefined;
+  return i && !Array.isArray(i) && typeof i.signin?.site === "string" ? i.signin.site : null;
+}
+
+/** Wait for a one-time code (Gmail or the code form in chat), checking every few seconds. */
+export async function waitForCode(job: Job, api: Api, until: number, pause: (ms: number) => Promise<unknown>): Promise<string | null> {
+  while (Date.now() < until) {
+    const r = (await api({ action: "code", job_id: job.id }).catch(() => ({}))) as { code?: string | null };
+    if (r.code) return String(r.code);
+    await pause(4000);
+  }
+  return null;
+}
 type Step = { action: string; url?: string; selector?: string; value?: string; secret_id?: string; field?: string; key?: string; ms?: number };
 type Api = (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
 
@@ -59,7 +75,7 @@ async function snapshot(page: Page) {
       const st = getComputedStyle(e);
       if (r.width < 2 || r.height < 2 || st.visibility === "hidden" || st.display === "none" || r.bottom < 0 || r.top > innerHeight * 2.5) continue;
       e.setAttribute("data-target-i", String(i));
-      const text = (e.getAttribute("aria-label") || e.innerText || e.getAttribute("placeholder") || e.getAttribute("title") || (e as HTMLInputElement).value || e.getAttribute("alt") || "").replace(/\s+/g, " ").trim().slice(0, 110);
+      const text = (e.getAttribute("aria-label") || e.innerText || e.getAttribute("placeholder") || e.getAttribute("title") || ((e as HTMLInputElement).type === "password" ? "" : (e as HTMLInputElement).value) || e.getAttribute("alt") || "").replace(/\s+/g, " ").trim().slice(0, 110);
       els.push({ i, tag: e.tagName.toLowerCase(), type: e.getAttribute("type") || undefined, text, name: (e.getAttribute("name") || "").slice(0, 70) || undefined });
       if (++i >= 180) break;
     }
@@ -83,6 +99,13 @@ async function runAuto(job: Job, page: Page, api: Api, deadline: number): Promis
       if (a.do === "fail") throw Object.assign(new Error(a.reason), { final: true });
       if (a.do === "click") await el(a.i).click();
       else if (a.do === "fill") await el(a.i).fill(a.value);
+      else if (a.do === "need_code") {
+        await api({ action: "progress", job_id: job.id, line: "Looking for the one-time code" }).catch(() => {});
+        const code = await waitForCode(job, api, Math.min(deadline - 20000, Date.now() + 200000), (ms) => page.waitForTimeout(ms));
+        if (!code) throw Object.assign(new Error("No one-time code arrived in time"), { final: true });
+        await el(a.i).fill(code);
+        await page.keyboard.press("Enter").catch(() => {});
+      }
       else if (a.do === "select") await el(a.i).selectOption({ label: a.value }).catch(() => el(a.i).selectOption(a.value));
       else if (a.do === "fill_secret") {
         const { value } = await api({ action: "secret", job_id: job.id, secret_id: a.secret_id, field: a.field });
@@ -169,7 +192,19 @@ export async function runQueuedJobs(opts: { budgetMs: number; secret: string; ba
         const ctx = browser.contexts()[0] ?? (await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "en-IN" }));
         const page = ctx.pages()[0] ?? (await ctx.newPage());
         page.setDefaultTimeout(15000);
+        const site = signinSite(job);
+        if (site) {
+          const { cookies } = (await api({ action: "cookies", job_id: job.id }).catch(() => ({ cookies: [] }))) as { cookies?: Parameters<typeof ctx.addCookies>[0] };
+          if (cookies?.length) await ctx.addCookies(cookies).catch(() => {});
+        }
         const result = job.mode === "auto" ? await runAuto(job, page, api, deadline - 15000) : await runSteps(job, page, api);
+        if (site) {
+          const cookies = await ctx.cookies().catch(() => []);
+          if (cookies.length) {
+            const saved = (await api({ action: "save_session", job_id: job.id, cookies }).catch(() => ({}))) as { ok?: boolean };
+            if (saved.ok) await api({ action: "progress", job_id: job.id, line: "Saved the sign-in for next time" }).catch(() => {});
+          }
+        }
         await api({ action: "finish", job_id: job.id, status: "done", result });
         results.push({ id: job.id, ok: true, provider });
       } finally {

@@ -6,6 +6,17 @@ import { kickCloudWorker } from "@/lib/server/kickWorker";
 
 export const dynamic = "force-dynamic";
 
+/** One of the owner's browser tasks (status, result, live log). */
+export async function GET(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const a = await requireUser();
+  if (!a) return unauthorized();
+  if (!isUuid(params.id)) return notFound();
+  const { data } = await a.db.from("browser_jobs").select("id, goal, status, result, error, log, created_at, finished_at").eq("id", params.id).eq("user_id", a.user.id).maybeSingle();
+  if (!data) return notFound();
+  return json({ job: data });
+}
+
 /** The owner approves (queues) or cancels a browser task. Only these two moves exist. */
 export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
