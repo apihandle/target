@@ -10,6 +10,8 @@ const STATUS: Record<UiStatus, [string, Tone]> = {
   not_connected: ["Not connected", "neutral"], setup_required: ["Setup required", "warn"],
 };
 
+const hostOf = (u: string) => { try { return new URL(u).host.replace(/^www\./, ""); } catch { return "the provider"; } };
+
 type Props = { initial: ConnectorView[]; focus?: string; returnTo?: string | null };
 
 export default function ConnectorsGrid({ initial, focus, returnTo }: Props) {
@@ -72,7 +74,7 @@ export default function ConnectorsGrid({ initial, focus, returnTo }: Props) {
                   <a href={oauthHref(c)} data-testid="connector-oauth" className={buttonClass("primary", "sm")}>{connectLabel}</a>
                 )}
                 {canConnect && !c.methods.oauth && !isOpen && <Button size="sm" variant="primary" data-testid="connector-connect" onClick={() => setOpen(c.id)}>{connectLabel}</Button>}
-                {isOpen && <Button size="sm" variant="ghost" onClick={() => setOpen(null)}>Cancel</Button>}
+                {isOpen && <Button size="sm" variant="ghost" data-testid="connector-cancel" onClick={() => { setOpen(null); setError(c.id, ""); }}>Cancel</Button>}
                 {(c.status === "connected" || c.status === "expired" || c.status === "revoked") && (
                   <ConfirmButton label="Disconnect" question={`Disconnect ${c.name}?`} confirmLabel="Disconnect" testId="connector-disconnect" onConfirm={() => disconnect(c)} />
                 )}
@@ -84,12 +86,12 @@ export default function ConnectorsGrid({ initial, focus, returnTo }: Props) {
                 <label htmlFor={`key-${c.id}`} className="sr-only">{c.apiKey.label}</label>
                 <div className="flex gap-2">
                   <input id={`key-${c.id}`} data-testid="connector-key" type="password" autoComplete="off" spellCheck={false}
-                    value={keys[c.id] ?? ""} placeholder={c.apiKey.label} maxLength={500}
+                    value={keys[c.id] ?? ""} placeholder={c.apiKey.placeholder ?? c.apiKey.label} maxLength={500} autoFocus
                     onChange={(e) => setKeys((k) => ({ ...k, [c.id]: e.target.value }))}
                     className="h-9 min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-3 text-sm text-ink outline-none focus:border-accent" />
                   <Button type="submit" size="sm" variant="primary" data-testid="connector-save" disabled={busy === c.id}>{busy === c.id ? "…" : "Save"}</Button>
                 </div>
-                <a href={c.apiKey.helpUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-xs text-accent-strong underline">Get token</a>
+                <a href={c.apiKey.helpUrl} target="_blank" rel="noopener noreferrer" data-testid="connector-help" className="mt-1 inline-block text-xs text-accent-strong underline">Create a token on {hostOf(c.apiKey.helpUrl)}</a>
               </form>
             )}
             {errors[c.id] && <p role="alert" className="mt-2 text-xs text-danger">{errors[c.id]}</p>}

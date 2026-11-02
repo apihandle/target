@@ -4,9 +4,9 @@ import { Page, PageHeader } from "@/components/ui/Card";
 import { connectorViews, CONNECTOR_ID } from "@/lib/connectors/registry";
 import { listConnections } from "@/lib/connectors/store";
 import { safeReturnTo } from "@/lib/connectors/state";
+import { SHOWN_CONNECTORS } from "@/lib/connectors/shown";
 import type { Db } from "@/lib/server/auth";
 
-const SHOWN = ["github", "google"];
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Connectors · TARGET" };
@@ -29,7 +29,8 @@ export default async function ConnectorsPage(
   let loadError = false;
   const conns = await listConnections(supabase as unknown as Db, user.id).catch(() => { loadError = true; return []; });
   // Only the connectors that work end to end today, in this order.
-  const views = SHOWN.map((id) => connectorViews(process.env, conns).find((v) => v.id === id)).filter((v): v is NonNullable<typeof v> => !!v);
+  const all = connectorViews(process.env, conns);
+  const views = SHOWN_CONNECTORS.map((id) => all.find((v) => v.id === id)).filter((v): v is NonNullable<typeof v> => !!v);
   const notice = searchParams.error ? NOTICES[searchParams.error] ?? "Something went wrong." : null;
   const connected = searchParams.connected && CONNECTOR_ID.test(searchParams.connected) ? views.find((v) => v.id === searchParams.connected) : undefined;
   const focus = searchParams.connect && CONNECTOR_ID.test(searchParams.connect) ? searchParams.connect : undefined;

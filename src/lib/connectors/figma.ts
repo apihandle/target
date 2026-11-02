@@ -34,7 +34,7 @@ export const figma = defineConnector({
   apiKey: {
     label: "Figma personal access token",
     placeholder: "figd_…",
-    helpUrl: "https://www.figma.com/developers/api#access-tokens",
+    helpUrl: "https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens",
     helpText: "Figma → Settings → Security → Generate new token. Give it only “File content: read” and “Current user: read”, and an expiry.",
     async validate(key, f) {
       if (key.length < 20 || /\s/.test(key)) throw new ConnectorError("That doesn't look like a Figma personal access token.", 400, "invalid");
