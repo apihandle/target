@@ -9,7 +9,8 @@ import { isUuid } from "@/lib/ids";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Project · TARGET" };
 
-export default async function ProjectPage({ params }: { params: { id: string } }) {
+export default async function ProjectPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { supabase, user } = await getSessionOrRedirect(`/app/projects/${params.id}`);
   if (!isUuid(params.id)) notFound();
   const { data: project } = await supabase.from("projects").select(PROJECT_COLS).eq("id", params.id).eq("user_id", user.id).maybeSingle();

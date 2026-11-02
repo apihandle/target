@@ -18,7 +18,8 @@ const TABS = [
   { id: "outcomes", label: "Outcomes" },
 ] as const;
 
-export default async function ActivityPage({ searchParams }: { searchParams: { filter?: string } }) {
+export default async function ActivityPage(props: { searchParams: Promise<{ filter?: string }> }) {
+  const searchParams = await props.searchParams;
   const { supabase, user } = await getSessionOrRedirect("/app/activity");
   const filter = parseFilter(searchParams.filter);
   const cats = ACTIVITY_FILTERS[filter];

@@ -1,9 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    // PDF text extraction (chat attachments) runs server-side; keep pdf.js out of the webpack bundle.
-    serverComponentsExternalPackages: ["unpdf", "playwright-core"],
-  },
+  // PDF text extraction (chat attachments) runs server-side; keep pdf.js out of the server bundle.
+  serverExternalPackages: ["unpdf", "playwright-core"],
   async headers() {
     return [
       {

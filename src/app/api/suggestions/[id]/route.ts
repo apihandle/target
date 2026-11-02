@@ -4,7 +4,8 @@ import { isUuid } from "@/lib/ids";
 export const dynamic = "force-dynamic";
 
 /** Dismiss a "For you" card, or mark it done after the user acted on it. */
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   if (!isUuid(params.id)) return notFound();

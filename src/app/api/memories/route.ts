@@ -4,7 +4,7 @@ import { MAX_MEMORIES, MAX_MEMORY_LEN, cleanFact, isDuplicate } from "@/lib/memo
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Not signed in" }, { status: 401 });
   const { data, error } = await supabase.from("memories").select("id, content, source, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(MAX_MEMORIES);
@@ -13,7 +13,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Not signed in" }, { status: 401 });
   let body: { content?: string };
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Not signed in" }, { status: 401 });
   const { error } = await supabase.from("memories").delete().eq("user_id", user.id);

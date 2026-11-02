@@ -6,7 +6,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export const dynamic = "force-dynamic";
 
 /** Download a file TARGET made for you: owner only, via a 60-second signed link. */
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return Response.redirect(new URL(`/login?next=/api/files/${encodeURIComponent(params.id)}`, process.env.NEXT_PUBLIC_SITE_URL || "https://gettarget.vercel.app"), 302);
   if (!isUuid(params.id)) return notFound();
@@ -19,7 +20,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   return new Response(null, { status: 302, headers: { Location: data.signedUrl, "Cache-Control": "no-store" } });
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   if (!isUuid(params.id)) return notFound();

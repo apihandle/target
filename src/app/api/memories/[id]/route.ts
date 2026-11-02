@@ -4,7 +4,8 @@ import { MAX_MEMORY_LEN, cleanFact } from "@/lib/memory";
 
 export const dynamic = "force-dynamic";
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   if (!isUuid(params.id)) return notFound();
@@ -19,7 +20,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return json({ memory: data[0] });
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   if (!isUuid(params.id)) return notFound();

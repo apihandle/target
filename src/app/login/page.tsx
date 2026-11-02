@@ -5,7 +5,10 @@ import { safeNext } from "@/lib/ids";
 export const metadata = { title: "Sign in · TARGET" };
 
 /** Auth page: the same moving water as the home hero, with one dark glass card. */
-export default function LoginPage({ searchParams }: { searchParams: { email?: string; next?: string; error?: string; mode?: string; expired?: string } }) {
+export default async function LoginPage(
+  props: { searchParams: Promise<{ email?: string; next?: string; error?: string; mode?: string; expired?: string }> }
+) {
+  const searchParams = await props.searchParams;
   const next = safeNext(searchParams.next);
   const initialMode = searchParams.mode === "signup" ? "signup" : searchParams.mode === "signin" ? "signin" : undefined;
   return (

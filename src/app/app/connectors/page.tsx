@@ -21,7 +21,10 @@ const NOTICES: Record<string, string> = {
   unknown: "Unknown connector.",
 };
 
-export default async function ConnectorsPage({ searchParams }: { searchParams: { error?: string; connected?: string; connect?: string; return?: string } }) {
+export default async function ConnectorsPage(
+  props: { searchParams: Promise<{ error?: string; connected?: string; connect?: string; return?: string }> }
+) {
+  const searchParams = await props.searchParams;
   const { supabase, user } = await getSessionOrRedirect("/app/connectors");
   let loadError = false;
   const conns = await listConnections(supabase as unknown as Db, user.id).catch(() => { loadError = true; return []; });

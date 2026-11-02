@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message) return json({ error: "Missing message" }, 400);
   let userId: string | null = null;
-  try { userId = (await createClient().auth.getUser()).data.user?.id ?? null; } catch { /* signed out */ }
+  try { userId = (await (await createClient()).auth.getUser()).data.user?.id ?? null; } catch { /* signed out */ }
   await reportError({ source: "client", message, stack: typeof body.stack === "string" ? body.stack : null, url: typeof body.url === "string" ? body.url : null, userId });
   return json({ ok: true }, 202);
 }

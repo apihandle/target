@@ -15,7 +15,8 @@ export const dynamic = "force-dynamic";
 const page = (origin: string, q: string) => NextResponse.redirect(`${origin}/app/connectors?${q}`, { status: 303 });
 
 /** Start OAuth. The random state is stored server-side (hashed), bound to this user, single-use, 10 min. */
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const url = new URL(req.url);
   const origin = url.origin;
   const a = await requireUser();
@@ -34,7 +35,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 }
 
 /** api_key connectors: { apiKey } is validated with a test call to the provider before it is saved. */
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   const c = CONNECTOR_ID.test(params.id) ? getConnector(params.id) : undefined;

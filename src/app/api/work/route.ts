@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /** Links for the Work page, plus (when signed in) the coin balance and each link's cooldown. */
 export async function GET() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: links, error } = await supabase.from("work_links").select("id, title, url, coins").eq("active", true).order("sort", { ascending: true }).order("created_at", { ascending: true }).limit(100);
   if (error) return json({ links: [], signedIn: false, error: "Work links aren't set up yet" }, 200);
   const { data: { user } } = await supabase.auth.getUser();

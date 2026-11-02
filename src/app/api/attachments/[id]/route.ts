@@ -5,7 +5,8 @@ import { isUuid } from "@/lib/ids";
 export const dynamic = "force-dynamic";
 
 /** Remove an attachment that hasn't been sent yet (the ✕ on a chip before sending). */
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   if (!isUuid(params.id)) return notFound();

@@ -7,7 +7,10 @@ import { isUuid } from "@/lib/ids";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Chat · TARGET" };
 
-export default async function ChatPage({ searchParams }: { searchParams: { c?: string; p?: string; q?: string; send?: string; t?: string; resume?: string } }) {
+export default async function ChatPage(
+  props: { searchParams: Promise<{ c?: string; p?: string; q?: string; send?: string; t?: string; resume?: string }> }
+) {
+  const searchParams = await props.searchParams;
   const { supabase, user } = await getSessionOrRedirect("/app");
   const activeId = isUuid(searchParams.c) ? searchParams.c : undefined;
   let initial: UIMsg[] = [];

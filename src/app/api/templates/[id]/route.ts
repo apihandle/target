@@ -4,9 +4,10 @@ import { TEMPLATE_COLS, validateTemplate } from "@/lib/templates";
 
 export const dynamic = "force-dynamic";
 
-type Ctx = { params: { id: string } };
+type Ctx = { params: Promise<{ id: string }> };
 
-export async function PATCH(req: Request, { params }: Ctx) {
+export async function PATCH(req: Request, props: Ctx) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   if (!isUuid(params.id)) return notFound();
@@ -20,7 +21,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
   return json({ template: data[0] });
 }
 
-export async function DELETE(_req: Request, { params }: Ctx) {
+export async function DELETE(_req: Request, props: Ctx) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   if (!isUuid(params.id)) return notFound();

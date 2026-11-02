@@ -314,15 +314,15 @@ describe("token refresh", () => {
 describe("connector routes", () => {
   it("every route requires a session", async () => {
     h.db.as(null);
-    const p = { params: { id: "supabase" } };
+    const p = { params: Promise.resolve({ id: "supabase" }) };
     const res = await Promise.all([
       listRoute.GET(), connectRoute.POST(post("http://t/api/connectors/supabase/connect", { apiKey: PAT }), p),
       disconnectRoute.POST(post("http://t/x"), p),
     ]);
     expect(res.map((r) => r.status)).toEqual([401, 401, 401]);
-    const g = await connectRoute.GET(new Request("http://t/api/connectors/github/connect"), { params: { id: "github" } });
+    const g = await connectRoute.GET(new Request("http://t/api/connectors/github/connect"), { params: Promise.resolve({ id: "github" }) });
     expect(g.headers.get("location")).toMatch(/\/login/);
-    const cb = await callbackRoute.GET(new Request("http://t/api/connectors/github/callback?code=c&state=s"), { params: { id: "github" } });
+    const cb = await callbackRoute.GET(new Request("http://t/api/connectors/github/callback?code=c&state=s"), { params: Promise.resolve({ id: "github" }) });
     expect(cb.headers.get("location")).toMatch(/\/login/);
   });
 
@@ -330,7 +330,7 @@ describe("connector routes", () => {
     h.db.as(A);
     const f = vi.fn().mockResolvedValue(jsonRes([{ id: REF, name: "prod" }]));
     vi.stubGlobal("fetch", f);
-    const r = await connectRoute.POST(post("http://t/api/connectors/supabase/connect", { apiKey: PAT }), { params: { id: "supabase" } });
+    const r = await connectRoute.POST(post("http://t/api/connectors/supabase/connect", { apiKey: PAT }), { params: Promise.resolve({ id: "supabase" }) });
     const j = await r.json();
     expect(r.status).toBe(200);
     expect(JSON.stringify(j)).not.toContain(PAT);
@@ -347,16 +347,16 @@ describe("connector routes", () => {
   it("api_key connect: a rejected key saves nothing and the error doesn't contain it", async () => {
     h.db.as(A);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonRes({ message: "Unauthorized" }, 401)));
-    const r = await connectRoute.POST(post("http://t/api/connectors/supabase/connect", { apiKey: PAT }), { params: { id: "supabase" } });
+    const r = await connectRoute.POST(post("http://t/api/connectors/supabase/connect", { apiKey: PAT }), { params: Promise.resolve({ id: "supabase" }) });
     expect(r.status).toBe(400);
     expect(JSON.stringify(await r.json())).not.toContain(PAT);
     expect(h.db.tables.connections).toHaveLength(0);
-    expect((await connectRoute.POST(post("http://t/x", { apiKey: "nope" }), { params: { id: "supabase" } })).status).toBe(400);
+    expect((await connectRoute.POST(post("http://t/x", { apiKey: "nope" }), { params: Promise.resolve({ id: "supabase" }) })).status).toBe(400);
   });
 
   it("OAuth: random server-side state, bound to the user, single use", async () => {
     h.db.as(A);
-    const start = await connectRoute.GET(new Request("http://t/api/connectors/github/connect?return=%2Fapp%3Fc%3D1"), { params: { id: "github" } });
+    const start = await connectRoute.GET(new Request("http://t/api/connectors/github/connect?return=%2Fapp%3Fc%3D1"), { params: Promise.resolve({ id: "github" }) });
     const loc = new URL(start.headers.get("location")!);
     expect(loc.origin + loc.pathname).toBe("https://github.com/login/oauth/authorize");
     expect(loc.searchParams.get("scope")).toBe("repo");
@@ -369,30 +369,30 @@ describe("connector routes", () => {
 
     // Another signed-in user can't complete A's flow.
     h.db.as(B);
-    const stolen = await callbackRoute.GET(new Request(`http://t/api/connectors/github/callback?code=abc&state=${state}`), { params: { id: "github" } });
+    const stolen = await callbackRoute.GET(new Request(`http://t/api/connectors/github/callback?code=abc&state=${state}`), { params: Promise.resolve({ id: "github" }) });
     expect(stolen.headers.get("location")).toContain("error=state");
     expect(h.db.tables.connections).toHaveLength(0);
 
     // A fresh flow for A completes once; replaying the same state fails.
     h.db.as(A);
-    const s2 = new URL((await connectRoute.GET(new Request("http://t/api/connectors/github/connect?return=%2Fapp%3Fc%3D1"), { params: { id: "github" } })).headers.get("location")!).searchParams.get("state")!;
+    const s2 = new URL((await connectRoute.GET(new Request("http://t/api/connectors/github/connect?return=%2Fapp%3Fc%3D1"), { params: Promise.resolve({ id: "github" }) })).headers.get("location")!).searchParams.get("state")!;
     const f = vi.fn()
       .mockResolvedValueOnce(jsonRes({ access_token: "gho_" + "z".repeat(30), scope: "repo", token_type: "bearer" }))
       .mockResolvedValueOnce(jsonRes({ login: "octo" }));
     vi.stubGlobal("fetch", f);
-    const ok = await callbackRoute.GET(new Request(`http://t/api/connectors/github/callback?code=abc&state=${s2}`), { params: { id: "github" } });
+    const ok = await callbackRoute.GET(new Request(`http://t/api/connectors/github/callback?code=abc&state=${s2}`), { params: Promise.resolve({ id: "github" }) });
     expect(ok.headers.get("location")).toBe("http://t/app?c=1");
     expect(h.db.tables.connections[0]).toMatchObject({ user_id: A, connector_id: "github", account_label: "@octo", status: "connected" });
     expect(String(h.db.tables.connections[0].encrypted_credentials)).not.toContain("gho_");
-    const replay = await callbackRoute.GET(new Request(`http://t/api/connectors/github/callback?code=abc&state=${s2}`), { params: { id: "github" } });
+    const replay = await callbackRoute.GET(new Request(`http://t/api/connectors/github/callback?code=abc&state=${s2}`), { params: Promise.resolve({ id: "github" }) });
     expect(replay.headers.get("location")).toContain("error=state");
   });
 
   it("expired OAuth state is refused", async () => {
     h.db.as(A);
-    const s = new URL((await connectRoute.GET(new Request("http://t/api/connectors/github/connect"), { params: { id: "github" } })).headers.get("location")!).searchParams.get("state")!;
+    const s = new URL((await connectRoute.GET(new Request("http://t/api/connectors/github/connect"), { params: Promise.resolve({ id: "github" }) })).headers.get("location")!).searchParams.get("state")!;
     h.db.tables.connector_oauth_states[0].expires_at = new Date(Date.now() - 1000).toISOString();
-    const r = await callbackRoute.GET(new Request(`http://t/api/connectors/github/callback?code=abc&state=${s}`), { params: { id: "github" } });
+    const r = await callbackRoute.GET(new Request(`http://t/api/connectors/github/callback?code=abc&state=${s}`), { params: Promise.resolve({ id: "github" }) });
     expect(r.headers.get("location")).toContain("error=state");
   });
 
@@ -402,9 +402,9 @@ describe("connector routes", () => {
     vi.stubGlobal("fetch", f);
     h.db.as(B);
     // B disconnecting removes B's row only.
-    expect((await disconnectRoute.POST(post("http://t/x"), { params: { id: "github" } })).status).toBe(200);
+    expect((await disconnectRoute.POST(post("http://t/x"), { params: Promise.resolve({ id: "github" }) })).status).toBe(200);
     expect(h.db.tables.connections.map((c) => c.user_id)).toEqual([A]);
-    expect((await disconnectRoute.POST(post("http://t/x"), { params: { id: "github" } })).status).toBe(404);
+    expect((await disconnectRoute.POST(post("http://t/x"), { params: Promise.resolve({ id: "github" }) })).status).toBe(404);
     expect(f.mock.calls[0][0]).toBe("https://api.github.com/applications/gh-client/grant");
     expect(f.mock.calls[0][1].method).toBe("DELETE");
     expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ access_token: `tok-github-${B}-xxxxxxxx` });
@@ -413,19 +413,19 @@ describe("connector routes", () => {
   it("connect is rate limited", async () => {
     h.db.as(A);
     h.db.rpcResult = false;
-    const r = await connectRoute.POST(post("http://t/x", { apiKey: PAT }), { params: { id: "supabase" } });
+    const r = await connectRoute.POST(post("http://t/x", { apiKey: PAT }), { params: Promise.resolve({ id: "supabase" }) });
     expect(r.status).toBe(429);
-    const g = await connectRoute.GET(new Request("http://t/api/connectors/github/connect"), { params: { id: "github" } });
+    const g = await connectRoute.GET(new Request("http://t/api/connectors/github/connect"), { params: Promise.resolve({ id: "github" }) });
     expect(g.headers.get("location")).toContain("error=rate");
   });
 
   it("TEST PLAN: connect Supabase → agent sees its tools → disconnect → agent no longer sees them", async () => {
     h.db.as(A);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonRes([])));
-    await connectRoute.POST(post("http://t/x", { apiKey: PAT }), { params: { id: "supabase" } });
+    await connectRoute.POST(post("http://t/x", { apiKey: PAT }), { params: Promise.resolve({ id: "supabase" }) });
     let t = await loadToolsForUser(A, h.db as unknown as Db);
     expect(t.tools.map((x) => x.name)).toEqual(expect.arrayContaining(["supabase__run_sql", "supabase__list_tables", "supabase__apply_migration", "supabase__deploy_edge_function", "supabase__get_project_url"]));
-    expect((await disconnectRoute.POST(post("http://t/x"), { params: { id: "supabase" } })).status).toBe(200);
+    expect((await disconnectRoute.POST(post("http://t/x"), { params: Promise.resolve({ id: "supabase" }) })).status).toBe(200);
     t = await loadToolsForUser(A, h.db as unknown as Db);
     expect(t.tools).toEqual([]);
     expect(toOpenAITools(t.tools, t.connected).map((s) => s.function.name).filter((n) => !n.startsWith("target__"))).toEqual([META_TOOL]);

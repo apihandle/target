@@ -11,7 +11,7 @@ export const badRequest = (error: string) => json({ error }, 400);
 
 /** Resolve the signed-in user from the session cookie. Every API route calls this first. */
 export async function requireUser(): Promise<Authed | null> {
-  const db = createClient() as unknown as Db;
+  const db = (await createClient()) as unknown as Db;
   const { data: { user } } = await db.auth.getUser();
   return user ? { db, user } : null;
 }

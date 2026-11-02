@@ -7,7 +7,8 @@ import { kickCloudWorker } from "@/lib/server/kickWorker";
 export const dynamic = "force-dynamic";
 
 /** The owner approves (queues) or cancels a browser task. Only these two moves exist. */
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   if (!isUuid(params.id)) return notFound();

@@ -26,7 +26,8 @@ function anonClient() {
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-export default async function SharedChatPage({ params }: { params: { token: string } }) {
+export default async function SharedChatPage(props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   const client = anonClient();
   const chat = client ? await loadSharedConversation(params.token, client) : null;
   if (!chat) notFound();

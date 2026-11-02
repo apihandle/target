@@ -6,7 +6,7 @@ import { logActivity } from "@/lib/server/activity";
 
 export const dynamic = "force-dynamic";
 
-type Ctx = { params: { id: string } };
+type Ctx = { params: Promise<{ id: string }> };
 
 async function ownedConversation(db: NonNullable<Awaited<ReturnType<typeof requireUser>>>["db"], userId: string, id: string) {
   if (!isUuid(id)) return null;
@@ -15,7 +15,8 @@ async function ownedConversation(db: NonNullable<Awaited<ReturnType<typeof requi
 }
 
 /** Active share links for one of the user's chats (the tokens themselves are never stored or returned again). */
-export async function GET(_req: Request, { params }: Ctx) {
+export async function GET(_req: Request, props: Ctx) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   if (!(await ownedConversation(a.db, a.user.id, params.id))) return notFound();
@@ -25,7 +26,8 @@ export async function GET(_req: Request, { params }: Ctx) {
 }
 
 /** Create a read-only public link. The full link is returned once, in this response only. */
-export async function POST(_req: Request, { params }: Ctx) {
+export async function POST(_req: Request, props: Ctx) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   const conv = await ownedConversation(a.db, a.user.id, params.id);

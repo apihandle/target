@@ -5,10 +5,11 @@ import { logActivity } from "@/lib/server/activity";
 
 export const dynamic = "force-dynamic";
 
-type Ctx = { params: { id: string } };
+type Ctx = { params: Promise<{ id: string }> };
 
 /** Edit, pause or resume a scheduled prompt. next_run_at is recomputed whenever it's (re)activated or rescheduled. */
-export async function PATCH(req: Request, { params }: Ctx) {
+export async function PATCH(req: Request, props: Ctx) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   if (!isUuid(params.id)) return notFound();
@@ -42,7 +43,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
   return json({ job: data[0] });
 }
 
-export async function DELETE(_req: Request, { params }: Ctx) {
+export async function DELETE(_req: Request, props: Ctx) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   if (!isUuid(params.id)) return notFound();

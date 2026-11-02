@@ -49,7 +49,7 @@ const enc = new TextEncoder();
 const post = (url: string, body?: unknown, headers: Record<string, string> = {}) => new Request(url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
 const patch = (body: unknown) => new Request("http://t/x", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 const del = () => new Request("http://t/x", { method: "DELETE" });
-const ctx = (id: string) => ({ params: { id } });
+const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 const jsonRes = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 function sse(chunks: unknown[]): Response {
   return new Response(chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join("") + "data: [DONE]\n\n", { status: 200, headers: { "Content-Type": "text/event-stream" } });

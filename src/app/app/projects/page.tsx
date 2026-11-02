@@ -5,7 +5,8 @@ import { PROJECT_COLS, type Project } from "@/lib/projects";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Projects · TARGET" };
 
-export default async function ProjectsPage({ searchParams }: { searchParams: { new?: string; view?: string } }) {
+export default async function ProjectsPage(props: { searchParams: Promise<{ new?: string; view?: string }> }) {
+  const searchParams = await props.searchParams;
   const { supabase, user } = await getSessionOrRedirect("/app/projects");
   const archived = searchParams.view === "archived";
   let pq = supabase.from("projects").select(PROJECT_COLS).eq("user_id", user.id).order("updated_at", { ascending: false });

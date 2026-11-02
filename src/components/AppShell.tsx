@@ -7,14 +7,14 @@ import SessionKeeper from "@/components/SessionKeeper";
 
 /** Authenticated workspace frame: resolves the user, loads nav data, renders sidebar + main. */
 export async function getSessionOrRedirect(next: string) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect(`/login?next=${encodeURIComponent(next)}`);
   return { supabase, user };
 }
 
 export default async function AppShell({ user, section, activeId, children }: { user: User; section: Section; activeId?: string; children: React.ReactNode }) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const [convRes, { count: pending }] = await Promise.all([
     supabase.from("conversations").select("id, title, pinned").eq("user_id", user.id).order("pinned", { ascending: false }).order("updated_at", { ascending: false }).limit(40),
     supabase.from("approval_requests").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "pending"),

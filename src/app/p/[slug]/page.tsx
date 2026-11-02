@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import Markdown from "@/components/Markdown";
@@ -18,13 +19,15 @@ async function load(slug: string): Promise<PageRow | null> {
   } catch { return null; }
 }
 
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const p = await load(params.slug);
   return { title: p ? `${p.title} · TARGET` : "Page · TARGET", robots: { index: false, follow: false }, referrer: "no-referrer" };
 }
 
 /** A public Page the owner made with TARGET. Markdown only (react-markdown never renders raw HTML). */
-export default async function PublicPage({ params }: { params: { slug: string } }) {
+export default async function PublicPage(props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
   const p = await load(params.slug);
   if (!p) notFound();
   if (p.format === "html") redirect(`/site/${params.slug}`);
@@ -32,7 +35,7 @@ export default async function PublicPage({ params }: { params: { slug: string } 
     <div className="min-h-[100dvh] bg-bg text-ink">
       <header className="border-b border-line">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
-          <a href="/" className="font-script text-2xl text-accent">Target</a>
+          <Link href="/" className="font-script text-2xl text-accent">Target</Link>
           <span className="rounded-full border border-line-strong px-3 py-1 text-xs text-muted">Made with TARGET</span>
         </div>
       </header>

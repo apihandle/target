@@ -15,7 +15,8 @@ import { connectionFromLogin } from "@/lib/connectors/googleFromLogin";
 export const dynamic = "force-dynamic";
 
 /** OAuth callback: verify state (single-use, this user + connector), exchange the code, encrypt, save. */
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const url = new URL(req.url);
   const origin = url.origin;
   const page = (q: string) => NextResponse.redirect(`${origin}/app/connectors?${q}`, { status: 303 });
@@ -53,14 +54,14 @@ async function googleLogin(url: URL) {
     r.cookies.delete(LOGIN_COOKIE);
     return r;
   };
-  const saved = parseLoginCookie(cookies().get(LOGIN_COOKIE)?.value);
+  const saved = parseLoginCookie((await cookies()).get(LOGIN_COOKIE)?.value);
   const state = (url.searchParams.get("state") ?? "").slice(LOGIN_PREFIX.length);
   if (!saved || !state || saved.state !== state) return fail();
   const code = url.searchParams.get("code");
   if (url.searchParams.get("error") || !code || code.length > 2000) return fail();
   try {
     const t = await exchangeLoginCode(process.env, origin, code);
-    const supabase = createClient();
+    const supabase = await createClient();
     const { data, error } = await supabase.auth.signInWithIdToken({ provider: "google", token: t.id_token, nonce: saved.nonce });
     if (error || !data.user) {
       console.error("[auth] google id-token sign-in failed:", (error?.message ?? "no user").slice(0, 160));

@@ -8,7 +8,8 @@ import { deleteSiteSessions } from "@/lib/server/siteSessions";
 export const dynamic = "force-dynamic";
 
 /** Revoke the token at the provider where possible, then delete the user's own connection row. */
-export async function POST(_req: Request, { params }: { params: { id: string } }) {
+export async function POST(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   const c = CONNECTOR_ID.test(params.id) ? getConnector(params.id) : undefined;

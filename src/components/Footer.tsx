@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 const COLS = [
   { title: "Product", links: ["Features", "Privacy", "Open TARGET"] },
   { title: "Company", links: ["About", "Careers", "Contact"] },
@@ -20,7 +22,7 @@ export default function Footer() {
     <footer className="relative bg-deep-sea px-6 py-16 text-stucco md:px-[5.9vw]">
       <div className="mx-auto grid max-w-6xl gap-12 md:grid-cols-[1.4fr_repeat(4,1fr)]">
         <div>
-          <a href="/" className="font-script text-4xl leading-none text-stucco">Target</a>
+          <Link href="/" className="font-script text-4xl leading-none text-stucco">Target</Link>
           <p className="mt-3 text-[14px] leading-[21px] text-stucco/60">Your personal AI, for everything.</p>
         </div>
         {COLS.map((c) => (

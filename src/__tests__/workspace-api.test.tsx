@@ -31,7 +31,7 @@ const M = "77777777-7777-4777-8777-777777777777";
 const C = "88888888-8888-4888-8888-888888888888";
 
 const req = (body?: unknown, url = "http://t/x") => new Request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
-const ctx = (id: string) => ({ params: { id } });
+const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 
 function seed() {
   db = new FakeDb({

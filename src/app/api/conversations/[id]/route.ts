@@ -5,7 +5,8 @@ import { removeConversationFiles } from "@/lib/server/attachments";
 export const dynamic = "force-dynamic";
 
 /** Rename and/or pin a chat. Body: { title?: string, pinned?: boolean }. */
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   if (!isUuid(params.id)) return notFound();
@@ -29,7 +30,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return json({ conversation: data[0] });
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
   if (!isUuid(params.id)) return notFound();
