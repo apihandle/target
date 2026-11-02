@@ -1,10 +1,13 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { validateCredentials } from "@/lib/validate";
 import GoogleButton from "./GoogleButton";
+import Turnstile, { type TurnstileHandle } from "./Turnstile";
+
+const SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
 type Mode = "signin" | "signup";
 
@@ -21,6 +24,8 @@ export default function AuthForm({ initialEmail = "", next = "/app", initialMode
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [captcha, setCaptcha] = useState<string | null>(null);
+  const captchaRef = useRef<TurnstileHandle>(null);
 
   function switchTo(m: Mode) {
     setMode(m);
@@ -34,6 +39,7 @@ export default function AuthForm({ initialEmail = "", next = "/app", initialMode
     setInfo(null);
     const invalid = validateCredentials(email, password);
     if (invalid) return setError(invalid);
+    if (SITE_KEY && !captcha) return setError("Please wait a moment while we check you're not a bot, then try again.");
     setLoading(true);
     try {
       const supabase = createClient();
@@ -41,7 +47,7 @@ export default function AuthForm({ initialEmail = "", next = "/app", initialMode
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
-          options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
+          options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`, ...(captcha ? { captchaToken: captcha } : {}) },
         });
         if (error) return setError(error.message);
         if (data.session) {
@@ -51,13 +57,15 @@ export default function AuthForm({ initialEmail = "", next = "/app", initialMode
           setInfo("Check your inbox to confirm your email, then sign in.");
         }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password, ...(captcha ? { options: { captchaToken: captcha } } : {}) });
         if (error) return setError(error.message);
         router.push(next);
         router.refresh();
       }
     } finally {
       setLoading(false);
+      // A captcha token works once; get a fresh one for the next try.
+      captchaRef.current?.reset();
     }
   }
 
@@ -121,6 +129,7 @@ export default function AuthForm({ initialEmail = "", next = "/app", initialMode
               </button>
             </span>
           </label>
+          <Turnstile ref={captchaRef} siteKey={SITE_KEY} onToken={setCaptcha} />
           <button
             data-testid="auth-submit"
             type="submit"
