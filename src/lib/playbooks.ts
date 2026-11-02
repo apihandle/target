@@ -109,7 +109,7 @@ export const AGENT_PLAYBOOKS: Playbook[] = [
       /\b(source|sources|citation|cite|latest|news|kya naya|what'?s new|release notes|changelog|update)\b/i,
     ],
     guidance: [
-      "- Start from the web results already given to you and rest the answer on 2-3 primary sources among them (official docs, the maker's own post, the original report) rather than blogs or forums.",
+      "- Start from the LIVE WEB SEARCH RESULTS given to you and rest the answer on 2-3 primary sources among them (official docs, the maker's own post, the original report) rather than blogs or forums.",
       "- Open a page with read_webpage only when a detail you need is missing from those excerpts, and then just the one or two best pages. Use run_parallel only when the question truly splits into separate parts (e.g. three products to compare). Keep it to one round of tools so the answer arrives quickly.",
       "- Lead with the answer or recommendation in 1-2 lines, then the reasons. Use a table when comparing options.",
       "- Cite every non-obvious fact as [n] against the results you actually read, and put dates on anything that changes over time.",
@@ -128,6 +128,11 @@ export function pickPlaybooks(message: string): Playbook[] {
     .sort((a, b) => b.score - a.score || a.order - b.order)
     .slice(0, MAX_PLAYBOOKS)
     .map((x) => x.p);
+}
+
+/** A research-style ask ("compare", "best", "sources ke saath"): fetch live web results up front so the answer can cite them. */
+export function wantsResearch(message: string): boolean {
+  return pickPlaybooks(message).some((p) => p.id === "research");
 }
 
 /** The prompt section for the chosen playbooks ("" when none apply). */

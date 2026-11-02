@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { titleFrom, type ChatMsg } from "@/lib/ai";
 import { detectTask, isMultiTask, MAX_TOKENS, taskModel } from "@/lib/skills";
-import { coreSystemPrompt } from "@/lib/playbooks";
+import { coreSystemPrompt, wantsResearch } from "@/lib/playbooks";
 import { llm, llmText, LLMError } from "@/lib/llm";
 import { ACTIONS_PROMPT, heuristicActions, mergeActions, sanitizeAction, type Action } from "@/lib/actions";
 import { projectBlock } from "@/lib/projects";
@@ -177,7 +177,7 @@ export async function POST(req: Request) {
   let webNote = "";
   let found: SearchResult | null = null;
   const tavilyKey = process.env.TAVILY_API_KEY;
-  if (tavilyKey && (body.web === true || needsSearch(text))) {
+  if (tavilyKey && (body.web === true || needsSearch(text) || wantsResearch(text))) {
     const q = searchQuery(text);
     try {
       found = await tavilySearch(q, tavilyKey);

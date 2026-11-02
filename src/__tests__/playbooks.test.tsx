@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AGENT_PLAYBOOKS, MAX_PLAYBOOKS, coreSystemPrompt, pickPlaybooks, playbookPrompt } from "@/lib/playbooks";
+import { AGENT_PLAYBOOKS, MAX_PLAYBOOKS, coreSystemPrompt, pickPlaybooks, playbookPrompt, wantsResearch } from "@/lib/playbooks";
 import { SYSTEM_PROMPT } from "@/lib/ai";
 import { BLOCKS_PROMPT } from "@/lib/blocks";
 
@@ -47,6 +47,13 @@ describe("pickPlaybooks", () => {
     const got = pickPlaybooks(busy);
     expect(got.length).toBe(MAX_PLAYBOOKS);
     expect(new Set(got.map((p) => p.id)).size).toBe(got.length);
+  });
+
+  it("research asks fetch live web results; drafting and small talk don't", () => {
+    expect(wantsResearch("Next.js 16 me kya naya hai? sources ke saath")).toBe(true);
+    expect(wantsResearch("research best laptops under 50k")).toBe(true);
+    expect(wantsResearch("Mere landlord ko rent late hone ka email draft karo")).toBe(false);
+    expect(wantsResearch("hi")).toBe(false);
   });
 
   it("can combine two related playbooks", () => {
