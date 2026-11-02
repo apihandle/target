@@ -1,6 +1,6 @@
 # TARGET: remaining setup (handoff, 2026-11-01)
 
-Repo is private. These values are real secrets: do not paste them anywhere public, and don't commit them to any other repo.
+Repo is private. Secret values are never stored in this repo. Generate them locally (e.g. `openssl rand -hex 32`) and set them in Vercel / GitHub only.
 Live site: https://gettarget.vercel.app (Vercel project for apihandle/target, auto-deploys main).
 
 ## 1. Vercel > Project > Settings > Environment Variables (Production, Preview, Development)
@@ -9,16 +9,16 @@ Add or update (safe to overwrite):
 
 | Name | Value |
 |---|---|
-| CRON_SECRET | 7cae2175ea8cd81a3847f8c8f2a76568b17b61e91df65a3c0c2bfa015e016fac |
-| SESSION_WORKER_SECRET | 9857387c2558cad497bf4f66bf625ebd779696999a4f4ea4b4438e6989f3f994 |
+| CRON_SECRET | <set in Vercel; never commit> |
+| SESSION_WORKER_SECRET | <set in Vercel; never commit> |
 
 Add ONLY if the name does not exist yet (changing an existing value breaks saved logins / push subscriptions):
 
 | Name | Value |
 |---|---|
-| CONNECTOR_ENCRYPTION_KEY | HcjKRFJG2cYmfvtUUDLSrSK1T7kZNkKMy0QuOSm8ARE= |
-| NEXT_PUBLIC_VAPID_PUBLIC_KEY | BK8u3sjdCmOP8lUhI5QWmyxnuTEwnHgIeAQuWlNs3jH_POhnUqTEFjFyDgdODBtzHMxP8IPGlvGWbq7vBRoENSM |
-| VAPID_PRIVATE_KEY | kZw4GbVxM3lQ9Xg-8cY4jLgtrERhfzWUvZsFfx_5_P0 |
+| CONNECTOR_ENCRYPTION_KEY | <set in Vercel; never commit> |
+| NEXT_PUBLIC_VAPID_PUBLIC_KEY | <set in Vercel; never commit> |
+| VAPID_PRIVATE_KEY | <set in Vercel; never commit> |
 
 (Add both VAPID keys together, or neither.)
 
