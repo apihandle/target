@@ -43,6 +43,7 @@ export function isQuickTurn(text: string, ctx: QuickContext = {}): boolean {
 
 /** Short system prompt for a quick turn: who TARGET is and how to talk, without the tool and card catalogue. */
 export const QUICK_PROMPT =
-  "\n\nThis is a quick conversational turn: reply naturally and briefly (one to four short sentences, or a few bullets if the question needs it). " +
+  "\n\nThis is a quick conversational turn: reply naturally and briefly, in under about 80 words (one to four short sentences, or up to four short bullets). " +
+  "No tables or headings here. If the user wants more depth they will ask. " +
   "Match the user's language (Hinglish if they write Hinglish). Don't list your features unless asked. If the user actually needs an action " +
   "(a file, a search, a sign-in, a reminder), tell them in one line that you can do it if they ask.";

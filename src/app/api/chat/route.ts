@@ -234,7 +234,7 @@ export async function POST(req: Request) {
   // Quick turns get a short reply budget and the fast models; real work keeps the strong models, with a slow
   // starter raced against the next model after a few seconds (see llm()).
   const callOpts = quick
-    ? { stream: true, timeoutMs: 25000, maxTokens: 1200, fast: true, prefer: picked }
+    ? { stream: true, timeoutMs: 25000, maxTokens: 900, fast: true, prefer: picked }
     : { stream: true, timeoutMs: 60000, maxTokens, prefer, only };
   mark("prompt");
 
