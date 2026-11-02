@@ -15,8 +15,7 @@ export default async function ScheduledPage() {
   return (
     <AppShell user={user} section="scheduled">
       <Page>
-        <PageHeader title="Scheduled prompts"
-          description="Prompts TARGET runs for you every day or week, with your connected apps. Each run shows up in Tasks and Activity with a chat to read. Anything that needs your approval still waits for you." />
+        <PageHeader title="Scheduled prompts" />
         <ScheduledJobs initial={(jobs ?? []) as ScheduledJob[]} projects={(projects ?? []) as { id: string; name: string }[]} unavailable={!!error} />
       </Page>
     </AppShell>

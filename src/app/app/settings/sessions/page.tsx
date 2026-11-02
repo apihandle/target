@@ -14,7 +14,7 @@ export default async function SessionsPage() {
     <AppShell user={user} section="settings">
       <Page>
         <SettingsBack />
-        <div className="mt-3"><PageHeader title="Website sign-ins" description="Websites TARGET is signed in to for you, such as ones you joined with your Gmail." /></div>
+        <div className="mt-3"><PageHeader title="Website sign-ins" /></div>
         <div className="mx-auto mt-6 max-w-2xl"><SiteSessions google={google} /></div>
       </Page>
     </AppShell>

@@ -14,7 +14,7 @@ export default async function NotificationsPage() {
     <AppShell user={user} section="settings">
       <Page>
         <SettingsBack />
-        <div className="mt-3"><PageHeader title="Notifications" description="Alerts on this phone or computer when your scheduled prompts finish." /></div>
+        <div className="mt-3"><PageHeader title="Notifications" /></div>
         <div className="mx-auto mt-6 max-w-2xl space-y-3">
           {key ? <NotificationsToggle publicKey={key} /> : (
             <p className="rounded-2xl border border-warn/30 bg-warn-subtle px-4 py-3 text-sm text-warn" data-testid="push-unconfigured">Notifications aren&apos;t set up on this server yet.</p>

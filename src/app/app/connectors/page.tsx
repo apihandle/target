@@ -30,7 +30,7 @@ export default async function ConnectorsPage({ searchParams }: { searchParams: {
   return (
     <AppShell user={user} section="connectors">
       <Page wide>
-        <PageHeader title="Connectors" description="Connect your own accounts once. TARGET's agent can only use the tools of apps you connect here, asks before anything destructive, and loses access the moment you disconnect." />
+        <PageHeader title="Connectors" />
         {notice && <p role="alert" className="mt-6 rounded-xl border border-warn/30 bg-warn-subtle px-4 py-3 text-sm text-warn">{notice}</p>}
         {connected && !notice && <p role="status" className="mt-6 rounded-xl border border-ok/30 bg-ok-subtle px-4 py-3 text-sm text-ok">{connected.name} connected.</p>}
         {loadError && <p role="alert" className="mt-6 rounded-xl border border-warn/30 bg-warn-subtle px-4 py-3 text-sm text-warn">Connection status couldn&apos;t load (apply migration 0007). Connectors are shown as not connected.</p>}

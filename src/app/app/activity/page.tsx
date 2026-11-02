@@ -35,7 +35,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: { f
   return (
     <AppShell user={user} section="activity">
       <Page>
-        <PageHeader title="Activity" description="A record of what you and TARGET did: tasks, approval decisions and their real outcomes." />
+        <PageHeader title="Activity" />
         {(filter === "all" || filter === "approvals") && (
           <section aria-labelledby="pending-title" className="mt-8">
             <SectionTitle id="pending-title">Waiting for you</SectionTitle>

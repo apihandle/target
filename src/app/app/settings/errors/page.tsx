@@ -27,7 +27,7 @@ export default async function ErrorsPage() {
     <AppShell user={user} section="settings">
       <Page>
         <SettingsBack />
-        <div className="mt-3"><PageHeader title="Site errors" description="The latest errors from gettarget.vercel.app, newest first." /></div>
+        <div className="mt-3"><PageHeader title="Site errors" /></div>
         <div className="mx-auto mt-6 max-w-2xl space-y-2" data-testid="error-list">
           {failed && <p className="text-sm text-warn">Couldn&apos;t load errors. Check that migration 0009 has run and SUPABASE_SERVICE_ROLE_KEY is set.</p>}
           {!failed && groups.size === 0 && <p className="text-sm text-muted">No errors. All quiet.</p>}

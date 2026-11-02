@@ -12,7 +12,7 @@ export default async function PagesPage() {
     <AppShell user={user} section="settings">
       <Page>
         <SettingsBack />
-        <div className="mt-3"><PageHeader title="Pages" description="Public Pages TARGET made for you. Anyone with the link can view a public Page." /></div>
+        <div className="mt-3"><PageHeader title="Pages" /></div>
         <div className="mx-auto mt-6 max-w-2xl"><PagesList /></div>
       </Page>
     </AppShell>

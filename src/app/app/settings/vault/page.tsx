@@ -12,7 +12,7 @@ export default async function VaultPage() {
     <AppShell user={user} section="settings">
       <Page>
         <SettingsBack />
-        <div className="mt-3"><PageHeader title="Vault" description="Save logins, cards and keys so TARGET can use them in approved browser tasks. Values are never shown." /></div>
+        <div className="mt-3"><PageHeader title="Vault" /></div>
         <div className="mx-auto mt-6 max-w-2xl"><VaultManager /></div>
       </Page>
     </AppShell>

@@ -20,7 +20,7 @@ export default async function PrivacyPage() {
     <AppShell user={user} section="settings">
       <Page>
         <SettingsBack />
-        <div className="mt-3"><PageHeader title="Privacy & memory" description="What TARGET stores, who can see it, and how to change or delete it." /></div>
+        <div className="mt-3"><PageHeader title="Privacy & memory" /></div>
 
         <section aria-labelledby="what" className="mt-8">
           <SectionTitle id="what">How your data is handled in this version</SectionTitle>

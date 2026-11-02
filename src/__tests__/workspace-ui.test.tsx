@@ -154,12 +154,9 @@ describe("chat controls", () => {
 });
 
 describe("connected apps, quick actions, panels, memory", () => {
-  it("shows Setup required (never Connected) when the server isn't configured", () => {
+  it("hides connectors the server isn't configured for (never shows Connected)", () => {
     render(<ConnectorsGrid initial={connectorViews({}, [])} />);
-    const g = screen.getAllByTestId("connector-card").find((e) => e.getAttribute("data-id") === "google")!;
-    expect(g).toHaveTextContent("Setup required");
-    expect(g).toHaveTextContent("GOOGLE_OAUTH_CLIENT_ID");
-    expect(screen.queryByTestId("connector-connect")).toBeNull();
+    expect(screen.queryAllByTestId("connector-card").find((e) => e.getAttribute("data-id") === "google")).toBeUndefined();
     expect(screen.queryByText("Connected")).toBeNull();
   });
 

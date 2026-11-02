@@ -15,7 +15,7 @@ export default async function QuickActionsPage() {
       <Page>
         <div className="mx-auto max-w-2xl">
           <SettingsBack />
-          <div className="mt-3"><PageHeader title="Quick actions" description="Shortcuts on Home. Each one opens a chat with its text filled in, so you can edit before sending. Nothing runs automatically." /></div>
+          <div className="mt-3"><PageHeader title="Quick actions" /></div>
           <div className="mt-8"><QuickActionsEditor initial={settings.quick_actions} hidden={settings.hidden_quick_actions} /></div>
         </div>
       </Page>

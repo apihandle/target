@@ -15,7 +15,7 @@ export default async function WorkLinksPage() {
     <AppShell user={user} section="settings">
       <Page>
         <SettingsBack />
-        <div className="mt-3"><PageHeader title="Work links" description="The ad links on the Work page, and how many coins each view earns." /></div>
+        <div className="mt-3"><PageHeader title="Work links" /></div>
         <div className="mx-auto mt-6 max-w-2xl"><WorkLinksManager /></div>
       </Page>
     </AppShell>

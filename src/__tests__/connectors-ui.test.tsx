@@ -12,15 +12,13 @@ const ok = (b: unknown) => ({ ok: true, status: 200, json: async () => b }) as R
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Connectors page", () => {
-  it("shows what the agent can do and explains permissions before connecting", () => {
+  it("shows a clean list: name and Connect only, token box opens on tap", () => {
     render(<ConnectorsGrid initial={connectorViews(ENV, [])} />);
     const card = screen.getAllByTestId("connector-card").find((c) => c.getAttribute("data-id") === "supabase")!;
-    expect(card).toHaveTextContent("What the agent can do");
-    expect(card).toHaveTextContent("Not connected");
+    expect(card).not.toHaveTextContent("What the agent can do");
     expect(screen.queryByTestId("connector-permissions")).toBeNull();
     fireEvent.click(card.querySelector('[data-testid="connector-connect"]')!);
-    expect(screen.getByTestId("connector-permissions")).toHaveTextContent("Before you connect");
-    expect(screen.getByTestId("connector-permissions")).toHaveTextContent("personal access token");
+    expect(screen.getByTestId("connector-key")).toBeInTheDocument();
   });
 
   it("api-key connect posts the token to the server and never renders it", async () => {
