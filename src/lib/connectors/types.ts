@@ -63,6 +63,12 @@ export type OAuthConfig = {
   tokenBody?: "form" | "json";
   pkce?: boolean;
   scopeParam?: string;
+  /** Don't send the scope parameter (the provider fixes scopes on the app, e.g. Supabase). */
+  omitScope?: boolean;
+  /** Build the whole authorize URL (non-standard flows like Vercel's integration install page). */
+  buildAuthorizeUrl?: (env: Env, p: { redirectUri: string; state: string; codeChallenge?: string }) => string;
+  /** Non-secret metadata to keep from the callback query string (e.g. Vercel configurationId / teamId). */
+  callbackMeta?: (q: URLSearchParams) => Record<string, unknown>;
   scopeSeparator?: string;
   extraAuthorizeParams?: Record<string, string>;
   /** Pull the token fields out of a non-standard token response (e.g. Slack's authed_user). */

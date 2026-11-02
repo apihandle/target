@@ -450,7 +450,7 @@ describe("cron route", () => {
   });
 
   it("runs due jobs once through the agent; approval-required tools pause for approval and never execute", async () => {
-    Object.assign(process.env, { CRON_SECRET: cronSecret(), NVIDIA_API_KEY: "nv-test", NVIDIA_MODELS: "m1", CONNECTOR_ENCRYPTION_KEY: KEY, SUPABASE_SERVICE_ROLE_KEY: "service-role-test", NEXT_PUBLIC_SUPABASE_URL: "https://x.supabase.co" });
+    Object.assign(process.env, { CRON_SECRET: cronSecret(), NVIDIA_API_KEY: "nv-test", NVIDIA_MODELS: "m1", CONNECTOR_ENCRYPTION_KEY: KEY, SUPABASE_SERVICE_ROLE_KEY: "service-role-test", NEXT_PUBLIC_SUPABASE_URL: "https://x.supabase.co", SUPABASE_OAUTH_CLIENT_ID: "sb-client", SUPABASE_OAUTH_CLIENT_SECRET: "sb-secret" });
     h.db.tables.connections = [{ id: "c1", user_id: A, connector_id: "supabase", status: "connected", scopes: [], account_label: "acct",
       encrypted_credentials: encryptSecret(JSON.stringify({ type: "api_key", access_token: fakePat() }), parseKey(KEY)), created_at: "x", last_used_at: null }];
     h.db.tables.scheduled_jobs = [due(), due({ id: "job-2", user_id: B, status: "paused" }), due({ id: "job-3", next_run_at: "2099-01-01T00:00:00.000Z" })];

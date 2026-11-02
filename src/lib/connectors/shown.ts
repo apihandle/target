@@ -1,2 +1,2 @@
-/** Connectors listed on the Connectors page, in this order (working OAuth first, then paste-a-token). */
-export const SHOWN_CONNECTORS = ["github", "google", "vercel", "supabase", "figma"] as const;
+/** Connectors listed on the Connectors page, in this order. All connect with OAuth (provider sign-in). */
+export const SHOWN_CONNECTORS = ["github", "google", "supabase", "vercel"] as const;

@@ -9,12 +9,13 @@ export function oauthConfigured(c: ConnectorDef, env: Env): boolean {
 
 export function authorizeUrl(c: ConnectorDef, env: Env, p: { redirectUri: string; state: string; codeChallenge?: string }): string {
   const o = c.oauth!;
+  if (o.buildAuthorizeUrl) return o.buildAuthorizeUrl(env, p);
   const q = new URLSearchParams({
     client_id: env[o.clientIdEnv] ?? "",
     redirect_uri: p.redirectUri,
     response_type: "code",
     state: p.state,
-    ...(c.scopes.length ? { [o.scopeParam ?? "scope"]: c.scopes.join(o.scopeSeparator ?? " ") } : {}),
+    ...(c.scopes.length && !o.omitScope ? { [o.scopeParam ?? "scope"]: c.scopes.join(o.scopeSeparator ?? " ") } : {}),
     ...(o.pkce && p.codeChallenge ? { code_challenge: p.codeChallenge, code_challenge_method: "S256" } : {}),
     ...(o.extraAuthorizeParams ?? {}),
   });
@@ -50,7 +51,7 @@ function toCreds(o: OAuthConfig, j: Record<string, unknown>, prev?: Credentials)
     refresh_token: (parsed.refresh_token ?? (j.refresh_token as string | undefined)) ?? prev?.refresh_token,
     expires_at: parsed.expires_at ?? (Number.isFinite(expiresIn) && expiresIn > 0 ? Date.now() + expiresIn * 1000 : undefined),
     scope: (parsed.scope ?? (j.scope as string | undefined)) ?? prev?.scope,
-    meta: prev?.meta,
+    meta: parsed.meta || prev?.meta ? { ...(prev?.meta ?? {}), ...(parsed.meta ?? {}) } : undefined,
   };
 }
 

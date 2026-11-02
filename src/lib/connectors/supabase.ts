@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineConnector, tool } from "@/lib/connectors/define";
-import { apiFetch, ConnectorError } from "@/lib/connectors/http";
+import { apiFetch } from "@/lib/connectors/http";
 import { isDestructiveSql, isReadOnlySql } from "@/lib/connectors/safety";
 import type { ToolContext } from "@/lib/connectors/types";
 
@@ -12,8 +12,9 @@ import type { ToolContext } from "@/lib/connectors/types";
  * Calling the REST endpoints directly from our server gives the same capabilities with per-user tokens,
  * no extra MCP session/transport layer, and lets us enforce approvals per call before anything is sent.
  *
- * Auth: a personal access token (validated with GET /v1/projects), or OAuth when the server owner has
- * registered a Supabase OAuth app (SUPABASE_OAUTH_CLIENT_ID / SUPABASE_OAUTH_CLIENT_SECRET).
+ * Auth: OAuth 2.0 with PKCE through TARGET's Supabase OAuth app (SUPABASE_OAUTH_CLIENT_ID / _SECRET).
+ * Scopes are fixed on the app, so none are sent at authorize time. Access tokens are short-lived and are
+ * refreshed with the refresh token (https://supabase.com/docs/guides/integrations/build-a-supabase-integration).
  */
 const API = "https://api.supabase.com/v1";
 const ref = z.string().regex(/^[a-z]{20}$/, "Project ref is the 20-letter id in the project URL").describe("Project ref (20 lowercase letters), from list_projects");
@@ -35,7 +36,7 @@ export const supabase = defineConnector({
   name: "Supabase",
   icon: "S",
   description: "Query and change your Supabase databases, apply migrations and deploy Edge Functions.",
-  auth: "api_key",
+  auth: "oauth",
   scopes: ["projects:read", "database:read", "database:write", "edge_functions:write"],
   capabilities: [
     "List your projects and get a project's URL",
@@ -45,36 +46,24 @@ export const supabase = defineConnector({
     "DROP / DELETE / TRUNCATE / UPDATE / ALTER statements always wait for your approval",
   ],
   permissions: [
-    "Uses a Supabase personal access token (or OAuth) that can reach the projects you allow when you create it.",
-    "Create a scoped token: Projects (account-wide) Read, Project Settings Read, Database Read-write, Migrations Read-write, Edge Functions Read-write.",
-    "The token is encrypted on TARGET's server and never shown again. Delete it in Supabase → Account → Access tokens to cut access completely.",
+    "You sign in on Supabase and pick the organization TARGET may manage.",
+    "Access is encrypted on TARGET's server. Revoke it any time in Supabase → Organization settings → OAuth Apps (authorized apps).",
   ],
-  requiredEnv: [],
-  apiKey: {
-    label: "Supabase personal access token",
-    placeholder: "sbp_…",
-    helpUrl: "https://supabase.com/dashboard/account/tokens",
-    helpText: "Supabase Dashboard → Account → Access tokens → Generate new token. Scope it to the projects TARGET may use.",
-    async validate(key, f) {
-      if (!/^sbp_[A-Za-z0-9_]{20,}$/.test(key)) throw new ConnectorError("That doesn't look like a Supabase personal access token (it starts with sbp_).", 400, "invalid");
-      try {
-        const projects = await apiFetch<{ name: string }[]>(`${API}/projects`, { f, headers: { Authorization: `Bearer ${key}` } });
-        const n = Array.isArray(projects) ? projects.length : 0;
-        return { accountLabel: `${n} project${n === 1 ? "" : "s"} reachable` };
-      } catch (e) {
-        if (e instanceof ConnectorError && e.code === "auth") throw new ConnectorError("Supabase rejected that token, or it lacks the “Projects (account-wide) Read” permission.", 400, "invalid");
-        throw e;
-      }
-    },
-  },
+  requiredEnv: ["SUPABASE_OAUTH_CLIENT_ID", "SUPABASE_OAUTH_CLIENT_SECRET"],
   oauth: {
     authorizeUrl: `${API}/oauth/authorize`,
     tokenUrl: `${API}/oauth/token`,
     clientIdEnv: "SUPABASE_OAUTH_CLIENT_ID",
     clientSecretEnv: "SUPABASE_OAUTH_CLIENT_SECRET",
-    tokenAuth: "body",
+    tokenAuth: "basic",
     pkce: true,
+    omitScope: true,
     refreshable: true,
+    async accountLabel(token, _j, f) {
+      const orgs = await apiFetch<{ name?: string }[]>(`${API}/organizations`, { f, headers: { Authorization: `Bearer ${token}` } });
+      const names = (Array.isArray(orgs) ? orgs : []).map((o) => o.name).filter(Boolean);
+      return names.length ? names.slice(0, 2).join(", ") : "";
+    },
     async revoke(creds, env, f) {
       if (!creds.refresh_token || !env.SUPABASE_OAUTH_CLIENT_ID) return;
       await apiFetch(`${API}/oauth/revoke`, { method: "POST", f, body: { client_id: env.SUPABASE_OAUTH_CLIENT_ID, client_secret: env.SUPABASE_OAUTH_CLIENT_SECRET, refresh_token: creds.refresh_token } }).catch(() => undefined);
@@ -83,10 +72,9 @@ export const supabase = defineConnector({
   docs: [
     "https://supabase.com/docs/reference/api/introduction",
     "https://api.supabase.com/api/v1-json",
-    "https://supabase.com/docs/guides/platform/personal-access-tokens",
+    "https://supabase.com/docs/guides/integrations/build-a-supabase-integration",
     "https://supabase.com/docs/guides/getting-started/mcp",
   ],
-  todo: ["Supabase OAuth requires the server owner to register an OAuth app (Org settings → OAuth Apps); scopes are chosen there, not at authorize time."],
   getTools: () => [
     tool({
       name: "list_projects",

@@ -12,9 +12,9 @@ const ok = (b: unknown) => ({ ok: true, status: 200, json: async () => b }) as R
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Connectors page", () => {
-  it("shows a clean list: name and Connect only, token box opens on tap", () => {
+  it("shows a clean list: name and Connect only, token box opens on tap (api_key connectors)", () => {
     render(<ConnectorsGrid initial={connectorViews(ENV, [])} />);
-    const card = screen.getAllByTestId("connector-card").find((c) => c.getAttribute("data-id") === "supabase")!;
+    const card = screen.getAllByTestId("connector-card").find((c) => c.getAttribute("data-id") === "figma")!;
     expect(card).not.toHaveTextContent("What the agent can do");
     expect(screen.queryByTestId("connector-permissions")).toBeNull();
     fireEvent.click(card.querySelector('[data-testid="connector-connect"]')!);
@@ -22,14 +22,14 @@ describe("Connectors page", () => {
   });
 
   it("api-key connect posts the token to the server and never renders it", async () => {
-    const f = vi.fn().mockResolvedValue(ok({ ok: true, accountLabel: "2 projects reachable" }));
+    const f = vi.fn().mockResolvedValue(ok({ ok: true, accountLabel: "octo" }));
     vi.stubGlobal("fetch", f);
-    render(<ConnectorsGrid initial={connectorViews(ENV, [])} focus="supabase" />);
-    fireEvent.change(screen.getByTestId("connector-key"), { target: { value: "sbp_secret_value_1234567890" } });
+    render(<ConnectorsGrid initial={connectorViews(ENV, [])} focus="figma" />);
+    fireEvent.change(screen.getByTestId("connector-key"), { target: { value: "figd_secret_value_1234567890" } });
     fireEvent.click(screen.getByTestId("connector-save"));
-    await waitFor(() => expect(f).toHaveBeenCalledWith("/api/connectors/supabase/connect", expect.objectContaining({ method: "POST" })));
-    await waitFor(() => expect(screen.getAllByTestId("connector-card").find((c) => c.getAttribute("data-id") === "supabase")).toHaveAttribute("data-status", "connected"));
-    expect(document.body.innerHTML).not.toContain("sbp_secret_value_1234567890");
+    await waitFor(() => expect(f).toHaveBeenCalledWith("/api/connectors/figma/connect", expect.objectContaining({ method: "POST" })));
+    await waitFor(() => expect(screen.getAllByTestId("connector-card").find((c) => c.getAttribute("data-id") === "figma")).toHaveAttribute("data-status", "connected"));
+    expect(document.body.innerHTML).not.toContain("figd_secret_value_1234567890");
   });
 
   it("OAuth connectors link to the server connect route, carrying the return path", () => {

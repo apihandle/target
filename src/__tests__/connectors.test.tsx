@@ -29,12 +29,15 @@ const B = "22222222-2222-4222-8222-222222222222";
 const KEY = Buffer.alloc(32, 9).toString("base64");
 const OLD_KEY = Buffer.alloc(32, 3).toString("base64");
 const PAT = "sbp_" + "a1".repeat(20);
+const FIGMA_PAT = "figd_" + "b2".repeat(15);
 const REF = "abcdefghijklmnopqrst";
 
 const ENV = {
   CONNECTOR_ENCRYPTION_KEY: KEY, SUPABASE_SERVICE_ROLE_KEY: "service-role-test", NEXT_PUBLIC_SUPABASE_URL: "https://x.supabase.co",
   GITHUB_OAUTH_CLIENT_ID: "gh-client", GITHUB_OAUTH_CLIENT_SECRET: "gh-secret-value",
   GOOGLE_OAUTH_CLIENT_ID: "g-client", GOOGLE_OAUTH_CLIENT_SECRET: "g-secret-value",
+  SUPABASE_OAUTH_CLIENT_ID: "sb-client", SUPABASE_OAUTH_CLIENT_SECRET: "sb-secret-value",
+  VERCEL_OAUTH_CLIENT_ID: "oac_test", VERCEL_OAUTH_CLIENT_SECRET: "vc-secret-value", VERCEL_INTEGRATION_SLUG: "target",
 };
 const saved: Record<string, string | undefined> = {};
 
@@ -314,9 +317,9 @@ describe("token refresh", () => {
 describe("connector routes", () => {
   it("every route requires a session", async () => {
     h.db.as(null);
-    const p = { params: Promise.resolve({ id: "supabase" }) };
+    const p = { params: Promise.resolve({ id: "figma" }) };
     const res = await Promise.all([
-      listRoute.GET(), connectRoute.POST(post("http://t/api/connectors/supabase/connect", { apiKey: PAT }), p),
+      listRoute.GET(), connectRoute.POST(post("http://t/api/connectors/figma/connect", { apiKey: FIGMA_PAT }), p),
       disconnectRoute.POST(post("http://t/x"), p),
     ]);
     expect(res.map((r) => r.status)).toEqual([401, 401, 401]);
@@ -328,30 +331,39 @@ describe("connector routes", () => {
 
   it("api_key connect: validates with a test call, stores only ciphertext, never echoes the key", async () => {
     h.db.as(A);
-    const f = vi.fn().mockResolvedValue(jsonRes([{ id: REF, name: "prod" }]));
+    const f = vi.fn().mockResolvedValue(jsonRes({ handle: "octo" }));
     vi.stubGlobal("fetch", f);
-    const r = await connectRoute.POST(post("http://t/api/connectors/supabase/connect", { apiKey: PAT }), { params: Promise.resolve({ id: "supabase" }) });
+    const r = await connectRoute.POST(post("http://t/api/connectors/figma/connect", { apiKey: FIGMA_PAT }), { params: Promise.resolve({ id: "figma" }) });
     const j = await r.json();
     expect(r.status).toBe(200);
-    expect(JSON.stringify(j)).not.toContain(PAT);
-    expect(f.mock.calls[0][0]).toBe("https://api.supabase.com/v1/projects");
+    expect(JSON.stringify(j)).not.toContain(FIGMA_PAT);
+    expect(f.mock.calls[0][0]).toBe("https://api.figma.com/v1/me");
     const row = h.db.tables.connections[0];
-    expect(row).toMatchObject({ user_id: A, connector_id: "supabase", status: "connected", account_label: "1 project reachable" });
-    expect(String(row.encrypted_credentials)).not.toContain(PAT);
+    expect(row).toMatchObject({ user_id: A, connector_id: "figma", status: "connected", account_label: "octo" });
+    expect(String(row.encrypted_credentials)).not.toContain(FIGMA_PAT);
     const list = await (await listRoute.GET()).json();
     expect(JSON.stringify(list)).not.toContain("encrypted_credentials");
-    expect(JSON.stringify(list)).not.toContain(PAT);
-    expect(list.connectors.find((c: { id: string }) => c.id === "supabase").status).toBe("connected");
+    expect(JSON.stringify(list)).not.toContain(FIGMA_PAT);
+    expect(list.connectors.find((c: { id: string }) => c.id === "figma").status).toBe("connected");
   });
 
   it("api_key connect: a rejected key saves nothing and the error doesn't contain it", async () => {
     h.db.as(A);
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonRes({ message: "Unauthorized" }, 401)));
-    const r = await connectRoute.POST(post("http://t/api/connectors/supabase/connect", { apiKey: PAT }), { params: Promise.resolve({ id: "supabase" }) });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonRes({ err: "Invalid token" }, 403)));
+    const r = await connectRoute.POST(post("http://t/api/connectors/figma/connect", { apiKey: FIGMA_PAT }), { params: Promise.resolve({ id: "figma" }) });
     expect(r.status).toBe(400);
-    expect(JSON.stringify(await r.json())).not.toContain(PAT);
+    expect(JSON.stringify(await r.json())).not.toContain(FIGMA_PAT);
     expect(h.db.tables.connections).toHaveLength(0);
-    expect((await connectRoute.POST(post("http://t/x", { apiKey: "nope" }), { params: Promise.resolve({ id: "supabase" }) })).status).toBe(400);
+    expect((await connectRoute.POST(post("http://t/x", { apiKey: "nope" }), { params: Promise.resolve({ id: "figma" }) })).status).toBe(400);
+  });
+
+  it("Supabase and Vercel no longer accept a pasted token", async () => {
+    h.db.as(A);
+    for (const id of ["supabase", "vercel"]) {
+      const r = await connectRoute.POST(post(`http://t/api/connectors/${id}/connect`, { apiKey: PAT }), { params: Promise.resolve({ id }) });
+      expect(r.status).toBe(400);
+    }
+    expect(h.db.tables.connections).toHaveLength(0);
   });
 
   it("OAuth: random server-side state, bound to the user, single use", async () => {
@@ -413,7 +425,7 @@ describe("connector routes", () => {
   it("connect is rate limited", async () => {
     h.db.as(A);
     h.db.rpcResult = false;
-    const r = await connectRoute.POST(post("http://t/x", { apiKey: PAT }), { params: Promise.resolve({ id: "supabase" }) });
+    const r = await connectRoute.POST(post("http://t/x", { apiKey: FIGMA_PAT }), { params: Promise.resolve({ id: "figma" }) });
     expect(r.status).toBe(429);
     const g = await connectRoute.GET(new Request("http://t/api/connectors/github/connect"), { params: Promise.resolve({ id: "github" }) });
     expect(g.headers.get("location")).toContain("error=rate");
@@ -421,8 +433,8 @@ describe("connector routes", () => {
 
   it("TEST PLAN: connect Supabase → agent sees its tools → disconnect → agent no longer sees them", async () => {
     h.db.as(A);
+    h.db.tables.connections = [conn(A, "supabase")];
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonRes([])));
-    await connectRoute.POST(post("http://t/x", { apiKey: PAT }), { params: Promise.resolve({ id: "supabase" }) });
     let t = await loadToolsForUser(A, h.db as unknown as Db);
     expect(t.tools.map((x) => x.name)).toEqual(expect.arrayContaining(["supabase__run_sql", "supabase__list_tables", "supabase__apply_migration", "supabase__deploy_edge_function", "supabase__get_project_url"]));
     expect((await disconnectRoute.POST(post("http://t/x"), { params: Promise.resolve({ id: "supabase" }) })).status).toBe(200);

@@ -35,7 +35,8 @@ export async function GET(req: Request, props: { params: Promise<{ id: string }>
 
   try {
     const t = await exchangeCode(c, process.env, { code, redirectUri: `${origin}/api/connectors/${c.id}/callback`, codeVerifier: st.codeVerifier });
-    await saveConnection(a.user.id, c.id, { creds: t.creds, accountLabel: t.accountLabel, scopes: t.scopes });
+    const meta = c.oauth.callbackMeta?.(url.searchParams);
+    await saveConnection(a.user.id, c.id, { creds: t.creds, accountLabel: t.accountLabel, scopes: t.scopes, meta });
   } catch (e) {
     console.error(`[connectors] ${c.id} connect failed:`, redact(e instanceof Error ? e.message : String(e)).slice(0, 200));
     return page(`error=exchange&connector=${c.id}`);
