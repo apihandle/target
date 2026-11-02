@@ -35,14 +35,23 @@ export const maxDuration = 300;
 
 export async function POST(req: Request) {
   const t0 = Date.now();
+  // Server-Timing marks: how long each step before the first word took (visible in the browser's network tab).
+  const marks: string[] = [];
+  let tMark = t0;
+  const mark = (name: string) => { const now = Date.now(); marks.push(`${name};dur=${now - tMark}`); tMark = now; };
   const supabase = await createClient();
   const db = supabase as unknown as Db;
+  type Body = { conversationId?: unknown; projectId?: unknown; message?: unknown; web?: unknown; retry?: unknown; regenerate?: unknown; taskId?: unknown; resume?: unknown; attachmentIds?: unknown; model?: unknown };
+  const bodyP = req.json().then((b) => b as Body, () => null);
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Not signed in" }, { status: 401 });
-  if (!(await checkLimit(LIMITS.chat(user.id)))) return tooMany();
+  mark("auth");
+  const [allowed, parsed] = await Promise.all([checkLimit(LIMITS.chat(user.id)), bodyP]);
+  if (!allowed) return tooMany();
+  mark("limit");
 
-  let body: { conversationId?: unknown; projectId?: unknown; message?: unknown; web?: unknown; retry?: unknown; regenerate?: unknown; taskId?: unknown; resume?: unknown; attachmentIds?: unknown; model?: unknown };
-  try { body = await req.json(); } catch { return Response.json({ error: "Bad JSON" }, { status: 400 }); }
+  if (!parsed || typeof parsed !== "object") return Response.json({ error: "Bad JSON" }, { status: 400 });
+  const body: Body = parsed;
   const att = parseAttachmentIds(body.attachmentIds);
   if (!att.ok) return Response.json({ error: att.error }, { status: 400 });
   let text = (typeof body.message === "string" ? body.message : "").trim();
@@ -87,12 +96,18 @@ export async function POST(req: Request) {
     conversationId = data.id as string;
   }
   const convId = conversationId;
+  const isNewChat = !body.conversationId;
+  mark("chat");
 
-  const { data: historyRaw, error: hErr } = await supabase
+  // A plain new message (no retry/regenerate) is saved while the history loads; its own row is dropped from it.
+  const plain = body.retry !== true && body.regenerate !== true;
+  const saveP = plain ? supabase.from("messages").insert({ conversation_id: convId, user_id: user.id, role: "user", content: text }).select("id").single() : null;
+  const { data: historyRaw, error: hErr } = isNewChat ? { data: [], error: null } : await supabase
     .from("messages").select("id, role, content").eq("conversation_id", convId)
     .order("created_at", { ascending: true }).limit(40);
   if (hErr) return Response.json({ error: "Could not load chat" }, { status: 500 });
-  const historyRows = (historyRaw ?? []) as (ChatMsg & { id?: string })[];
+  const savedEarly = saveP ? await saveP : null;
+  const historyRows = ((historyRaw ?? []) as (ChatMsg & { id?: string })[]).filter((m) => !savedEarly?.data?.id || m.id !== savedEarly.data.id);
   let history: ChatMsg[] = historyRows.map((m) => ({ role: m.role, content: m.content }));
 
   // Regenerate: drop the last assistant reply to this same user message, then answer it again like a retry.
@@ -115,11 +130,12 @@ export async function POST(req: Request) {
     if (lastId) (await conversationAttachments(db, user.id, convId)).filter((r) => r.message_id === lastId).forEach((r) => currentIds.add(r.id));
     if (newFiles.length) await linkAttachments(db, user.id, att.ids, convId, lastId ?? null);
   } else {
-    const { data: saved, error: insErr } = await supabase.from("messages").insert({ conversation_id: convId, user_id: user.id, role: "user", content: text }).select("id").single();
+    const { data: saved, error: insErr } = savedEarly ?? await supabase.from("messages").insert({ conversation_id: convId, user_id: user.id, role: "user", content: text }).select("id").single();
     if (insErr) return Response.json({ error: "Could not save your message" }, { status: 500 });
     if (newFiles.length) await linkAttachments(db, user.id, att.ids, convId, (saved?.id as string | undefined) ?? null);
   }
 
+  mark("history");
   // Everything the reply needs is fetched at the same time rather than one query after another.
   const vision = visionModels();
   const kind = detectTask(text);
@@ -152,6 +168,7 @@ export async function POST(req: Request) {
     // Read links the user pasted (public pages only, capped), so questions about a link get real answers.
     links.length ? Promise.all(links.map((u) => readUrl(u))).then(pagesBlock).catch(() => "") : Promise.resolve(""),
   ]);
+  mark("context");
   const settings = settingsAndMemory.st;
   const only: ModelRef[] | undefined = files.imageParts.length ? vision : undefined;
   // Model picker: validated against the configured allow-list; the rest stay as fallback.
@@ -219,7 +236,7 @@ export async function POST(req: Request) {
   const callOpts = quick
     ? { stream: true, timeoutMs: 25000, maxTokens: 1200, fast: true, prefer: picked }
     : { stream: true, timeoutMs: 60000, maxTokens, prefer, only };
-  const tPre = Date.now() - t0;
+  mark("prompt");
 
   const failTask = async (msg: string) => {
     if (!task) return;
@@ -243,6 +260,7 @@ export async function POST(req: Request) {
     await failTask(err.message);
     return Response.json({ error: err.message, conversationId: convId }, { status: err.status, headers: { "X-Conversation-Id": convId } });
   }
+  mark("llm");
   if (task) await supabase.from("tasks").update({ status: "in_progress", progress: "TARGET is writing a reply…", updated_at: new Date().toISOString() }).eq("id", task.id).eq("user_id", user.id);
 
   const encoder = new TextEncoder();
@@ -368,7 +386,7 @@ export async function POST(req: Request) {
     headers: {
       "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Conversation-Id": convId,
       // Where the time went before the first word: context gathering, then waiting for the model.
-      "Server-Timing": `pre;dur=${tPre}, llm;dur=${Date.now() - t0 - tPre}`, "X-Target-Quick": quick ? "1" : "0",
+      "Server-Timing": marks.join(", "), "X-Target-Quick": quick ? "1" : "0",
     },
   });
 }
