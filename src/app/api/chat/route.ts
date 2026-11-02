@@ -205,8 +205,11 @@ export async function POST(req: Request) {
   const quick = !intent && !resumed && !followUp && !files.imageParts.length &&
     isQuickTurn(text, { hasAttachments: currentIds.size > 0, hasTask: !!task, webRequested: body.web === true, resume: body.resume === true });
 
-  const toolSpecs = quick ? [] : toOpenAITools(loaded.tools, loaded.connected);
-  const connectorNote = toolSpecs.length ? toolsPrompt(loaded.tools, loaded.connected) + UNTRUSTED_RULES : "";
+  // A sign-in turn only gets site_login: the job reports the signed-in page, and the model then answers from it
+  // instead of wandering into other tools (job_status, read_webpage, browser_task) until the step limit.
+  const allSpecs = quick ? [] : toOpenAITools(loaded.tools, loaded.connected);
+  const toolSpecs = intent ? allSpecs.filter((t) => t.function.name === SITE_LOGIN) : allSpecs;
+  const connectorNote = toolSpecs.length && !intent ? toolsPrompt(loaded.tools, loaded.connected) + UNTRUSTED_RULES : "";
   const resumeNote = resumed ? `\n\nThe user has just connected ${resumed.name}. Continue the task that was paused waiting for it, using its tools.` : "";
 
   if (task) {

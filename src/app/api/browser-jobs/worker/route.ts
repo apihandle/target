@@ -148,6 +148,19 @@ export async function POST(req: Request) {
         if (!error) files.push({ name, url: `${SITE}/api/files/${fid}` });
       }
     }
+    // The vault values this job could use (passwords, card numbers) never reach the result or the chat, even when
+    // the page or the model's summary repeats them.
+    const sids = (job.allowed_secrets ?? []) as string[];
+    if (sids.length && (result || b.error)) {
+      const { data: rows } = await db.from("vault_secrets").select("secret_box").eq("user_id", job.user_id).in("id", sids);
+      const known: string[] = [];
+      for (const r of (rows ?? []) as { secret_box: string }[]) {
+        try { for (const [k, v] of Object.entries(openVault(job.user_id as string, r.secret_box))) if (typeof v === "string" && v.length >= 4 && !/^(username|email|label|site|name)$/i.test(k)) known.push(v); } catch { /* unreadable box */ }
+      }
+      const hide = (t: string) => known.reduce((acc, v) => acc.split(v).join("[hidden]"), t);
+      if (result) result = hide(result);
+      if (typeof b.error === "string") b.error = hide(b.error);
+    }
     await db.from("browser_jobs").update({
       status: ok ? "done" : "failed", result: result ? result.slice(0, 20000) : null, files,
       error: ok ? null : String(b.error ?? "The browser task failed").slice(0, 500), finished_at: new Date().toISOString(),
