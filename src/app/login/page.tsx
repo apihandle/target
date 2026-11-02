@@ -12,7 +12,7 @@ export default function LoginPage({ searchParams }: { searchParams: { email?: st
     <main className="relative isolate flex min-h-screen flex-col items-center justify-center px-4 py-10 text-stucco">
       <WaterBackground />
       {searchParams.expired && !searchParams.error && <p data-testid="session-expired" className="mb-4 text-sm text-muted">You were signed out on this device. Sign in once and you&apos;ll stay signed in until you sign out.</p>}
-      {searchParams.error && <p className="mb-4 text-sm text-rose-400">That link didn&apos;t work. Please sign in again.</p>}
+      {searchParams.error && <p className="mb-4 text-sm text-rose-400">{searchParams.error === "google" ? "Google sign-in didn't finish. Please try again." : "That link didn't work. Please sign in again."}</p>}
       <AuthForm initialEmail={searchParams.email ?? ""} next={next} initialMode={initialMode} />
     </main>
   );

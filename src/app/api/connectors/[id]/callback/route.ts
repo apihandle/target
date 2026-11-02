@@ -7,6 +7,10 @@ import { saveConnection } from "@/lib/connectors/store";
 import { resumeTasksFor } from "@/lib/connectors/resume";
 import { redact } from "@/lib/connectors/safety";
 import { logActivity } from "@/lib/server/activity";
+import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
+import { LOGIN_COOKIE, LOGIN_PREFIX, exchangeLoginCode, parseLoginCookie } from "@/lib/auth/googleLogin";
+import { connectionFromLogin } from "@/lib/connectors/googleFromLogin";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +19,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   const url = new URL(req.url);
   const origin = url.origin;
   const page = (q: string) => NextResponse.redirect(`${origin}/app/connectors?${q}`, { status: 303 });
+  if (params.id === "google" && (url.searchParams.get("state") ?? "").startsWith(LOGIN_PREFIX)) return googleLogin(url);
   const a = await requireUser();
   if (!a) return NextResponse.redirect(`${origin}/login?next=/app/connectors`, { status: 303 });
   const c = CONNECTOR_ID.test(params.id) ? getConnector(params.id) : undefined;
@@ -38,4 +43,40 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   await resumeTasksFor(a.db, a.user.id, c);
   if (st.returnTo) return NextResponse.redirect(`${origin}${st.returnTo}`, { status: 303 });
   return page(`connected=${c.id}`);
+}
+
+/** "Continue with Google" sign-in that came back to TARGET's own domain. */
+async function googleLogin(url: URL) {
+  const origin = url.origin;
+  const fail = () => {
+    const r = NextResponse.redirect(`${origin}/login?error=google`, { status: 303 });
+    r.cookies.delete(LOGIN_COOKIE);
+    return r;
+  };
+  const saved = parseLoginCookie(cookies().get(LOGIN_COOKIE)?.value);
+  const state = (url.searchParams.get("state") ?? "").slice(LOGIN_PREFIX.length);
+  if (!saved || !state || saved.state !== state) return fail();
+  const code = url.searchParams.get("code");
+  if (url.searchParams.get("error") || !code || code.length > 2000) return fail();
+  try {
+    const t = await exchangeLoginCode(process.env, origin, code);
+    const supabase = createClient();
+    const { data, error } = await supabase.auth.signInWithIdToken({ provider: "google", token: t.id_token, nonce: saved.nonce });
+    if (error || !data.user) {
+      console.error("[auth] google id-token sign-in failed:", (error?.message ?? "no user").slice(0, 160));
+      return fail();
+    }
+    try {
+      const conn = await connectionFromLogin({ provider_token: t.access_token, provider_refresh_token: t.refresh_token });
+      if (conn) await saveConnection(data.user.id, "google", conn);
+    } catch (e) {
+      console.error("[auth] google auto-connect failed:", e instanceof Error ? e.message.slice(0, 120) : "error");
+    }
+    const r = NextResponse.redirect(`${origin}${saved.next}`, { status: 303 });
+    r.cookies.delete(LOGIN_COOKIE);
+    return r;
+  } catch (e) {
+    console.error("[auth] google login failed:", redact(e instanceof Error ? e.message : String(e)).slice(0, 160));
+    return fail();
+  }
 }

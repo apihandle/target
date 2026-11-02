@@ -1,7 +1,5 @@
 "use client";
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { LOGIN_QUERY, LOGIN_SCOPES } from "@/lib/connectors/googleLoginScopes";
 import { detectInApp, openInBrowserUrl, type InApp } from "@/lib/browser";
 
 export default function GoogleButton({ next = "/app", variant = "dark" }: { next?: string; variant?: "dark" | "glass" }) {
@@ -20,20 +18,8 @@ export default function GoogleButton({ next = "/app", variant = "dark" }: { next
     if (inApp?.android) { window.location.href = openInBrowserUrl(window.location.href); return; }
     setError(null);
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
-        // One tap: signing in with Google also connects Gmail, Calendar and Drive.
-        scopes: LOGIN_SCOPES,
-        queryParams: LOGIN_QUERY,
-      },
-    });
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-    }
+    // Runs on TARGET's own domain so Google shows gettarget.vercel.app, and also connects Gmail, Calendar and Drive.
+    window.location.assign(`/auth/google?next=${encodeURIComponent(next)}`);
   }
 
   return (

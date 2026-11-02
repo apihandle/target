@@ -17,6 +17,7 @@ RICH CARDS (optional): when the reply is clearer as a card, end it with ONE fenc
 [{"type":"links","items":[{"title":"…","url":"https://…","description":"short"}]}]
 \`\`\`
 Block types: links (pages to open, up to 6, real URLs from search results only), table {title,columns[],rows[][]} (3+ columns, for comparing options), images {items:[{url,caption}]} (https image URLs you were given only), summary {title,markdown} (long briefing/plan/itinerary), draft {title,body} (an email/message the user will send, plain text), code {title,language,source}, calendar {title,start,end,location} (ISO date-time with offset), order {merchant,items:[{name,price}],total,comment} (a cart/booking summary to show; TARGET never pays by itself).
+EMAILS, EVENTS, FILES: when you list or summarize emails, calendar events or Drive files, ALWAYS use a table card (emails: columns From, Subject, Gist, Date; events: Event, When, Where; files: Name, Type, Updated), one row per item, newest first, and above it 1-2 short lines with only what needs the user's attention. No emoji headings, no bullet lists of emails. Write domains as plain text (no raw URLs in the text).
 Keep the text above short when a card carries the detail; never repeat the card's content in the text. Skip the block for greetings and simple answers. Never invent URLs.`;
 
 const s = (v: unknown, max = 300) => (typeof v === "string" ? v.trim().slice(0, max) : "");

@@ -73,21 +73,14 @@ describe("Feature 3: Auth", () => {
     expect(pushMock).toHaveBeenCalledWith("/login?email=v%40example.com");
   });
 
-  it("Google button starts Supabase OAuth with callback redirect", async () => {
-    signInWithOAuth.mockResolvedValue({ error: null });
+  it("Google button starts sign-in on TARGET's own domain (not supabase.co)", () => {
+    const assign = vi.fn();
+    const orig = window.location;
+    Object.defineProperty(window, "location", { configurable: true, value: { ...orig, assign, href: orig.href, origin: orig.origin } });
     render(<SignupCard />);
     fireEvent.click(screen.getByTestId("google-btn"));
-    await waitFor(() => expect(signInWithOAuth).toHaveBeenCalled());
-    const arg = signInWithOAuth.mock.calls[0][0];
-    expect(arg.provider).toBe("google");
-    expect(arg.options.redirectTo).toBe(`${window.location.origin}/auth/callback?next=%2Fapp`);
-  });
-
-  it("Google error is shown", async () => {
-    signInWithOAuth.mockResolvedValue({ error: { message: "provider is not enabled" } });
-    render(<AuthForm next="/app" />);
-    fireEvent.click(screen.getByTestId("google-btn"));
-    expect(await screen.findByTestId("google-error")).toHaveTextContent("provider is not enabled");
+    expect(assign).toHaveBeenCalledWith("/auth/google?next=%2Fapp");
+    Object.defineProperty(window, "location", { configurable: true, value: orig });
   });
 
   it("no fake Apple button", () => {
