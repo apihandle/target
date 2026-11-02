@@ -104,6 +104,11 @@ export function signinAutofill(goal: string, snap: Snapshot, secrets: { id: stri
   return null;
 }
 
+function submitLogin(snap: Snapshot): AutoAction {
+  const submit = snap.elements.find((e) => (e.tag === "button" || e.type === "submit") && /log ?in|sign ?in|submit|continue|next/i.test(e.text));
+  return submit ? { do: "click", i: submit.i, why: "Submit the login form" } : { do: "press", key: "Enter", why: "Submit the login form" };
+}
+
 export async function decideNext(goal: string, snap: Snapshot, secrets: { id: string; kind: string; label: string; site: string | null }[], history: string[], stepsLeft: number): Promise<AutoAction> {
   const auto = signinAutofill(goal, snap, secrets, history);
   if (auto) return auto;
@@ -115,17 +120,24 @@ export async function decideNext(goal: string, snap: Snapshot, secrets: { id: st
   // An empty or still-loading page (bot check, splash) gets a wait instead of a model call.
   if (!snap.elements.length && snap.text.trim().length < 200 && history.filter((h) => h.startsWith("wait")).length < 3) return { do: "wait", why: "Page is still loading" };
   const plain: LLMMessage = { role: "user", content: pageBlock(snap) };
+  // The worker's request for the next step is capped at 60 s, so the model gets ~45 s in total: each try races the
+  // next model after 10 s and stops at 20 s.
+  const started = Date.now();
   for (let attempt = 0; attempt < 3; attempt++) {
-    const reply = await llmText({ messages: [{ role: "system", content: sys }, attempt === 0 ? user : plain], maxTokens: 2500, temperature: 0, timeoutMs: 25000, ...(vision && attempt === 0 ? { only: vision } : {}) });
+    if (Date.now() - started > 25000) return { do: "wait", why: "The AI was slow; trying this step again" };
+    const reply = await llmText({ messages: [{ role: "system", content: sys }, attempt === 0 ? user : plain], maxTokens: 2500, temperature: 0, timeoutMs: 20000, firstTokenMs: 10000, ...(vision && attempt === 0 ? { only: vision } : {}) });
     const a = parseAction(reply);
     if (a) {
       if ((a.do === "click" || a.do === "fill" || a.do === "fill_secret" || a.do === "select" || a.do === "need_code") && !snap.elements.some((e) => e.i === a.i)) continue;
       if (a.do === "fill_secret" && !secrets.some((s) => s.id === a.secret_id)) return { do: "fail", reason: "Needed a login or card that isn't in the vault for this task" };
+      // Re-filling a login field that was already filled from the vault: the form is ready, so submit it.
+      if (a.do === "fill_secret" && /\bsign in\b/i.test(goal) && snap.elements.some((e) => e.type === "password")) {
+        const since = history.slice(history.map((h) => h.startsWith("click") || h.startsWith("press")).lastIndexOf(true) + 1);
+        if (since.some((h) => h.startsWith("fill_secret") && h.includes(` ${a.field}`)) && since.some((h) => h.startsWith("fill_secret") && h.includes(" password"))) return submitLogin(snap);
+      }
       // "Signed in" while the login form is still on screen and was never submitted: submit it instead.
       if (a.do === "done" && /\bsign in\b/i.test(goal) && snap.elements.some((e) => e.type === "password") && !history.some((h) => /^(click|press)/.test(h) && /log ?in|sign ?in|submit/i.test(h))) {
-        const submit = snap.elements.find((e) => (e.tag === "button" || e.type === "submit") && /log ?in|sign ?in|submit|continue/i.test(e.text));
-        if (submit) return { do: "click", i: submit.i, why: "Submit the login form" };
-        return { do: "press", key: "Enter", why: "Submit the login form" };
+        return submitLogin(snap);
       }
       return secretSafe(a, snap, secrets);
     }
