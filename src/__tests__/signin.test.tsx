@@ -4,7 +4,7 @@ import { loginIntent, matchLogin, googleLogin, signinGoal, signinFailure, cleanC
 import { cardFromToolOutput, siteLoginTool } from "@/lib/builtins/signin";
 import { pickPlaybooks, coreSystemPrompt } from "@/lib/playbooks";
 import { sanitizeAction, splitActions } from "@/lib/actions";
-import { parseAction, autoPrompt } from "@/lib/server/autoBrowser";
+import { parseAction, autoPrompt, secretSafe } from "@/lib/server/autoBrowser";
 import { signinSite, waitForCode } from "@/lib/server/cloudWorker";
 import { BUILTIN_TOOLS } from "@/lib/builtins/tools";
 import { SYSTEM_PROMPT } from "@/lib/ai";
@@ -97,6 +97,8 @@ describe("cards", () => {
     const content = '<untrusted_data source="target" tool="site_login">\n{"status":"needs_login","site":"x.com","__card":{"type":"vault_login","site":"x.com","for":"x.com"}}\n</untrusted_data>';
     expect(cardFromToolOutput(content)).toEqual({ type: "vault_login", site: "x.com", for: "x.com" });
     expect(cardFromToolOutput("{}")).toBeNull();
+    const pretty = '<untrusted_data source="target" tool="site_login">\n' + JSON.stringify({ status: "needs_login", __card: { type: "vault_login", site: "x.com" } }, null, 1) + "\n</untrusted_data>";
+    expect(cardFromToolOutput(pretty)).toEqual({ type: "vault_login", site: "x.com" });
   });
 });
 
@@ -138,6 +140,13 @@ describe("browser worker sign-in helpers", () => {
     expect(signinSite({ id: "1", mode: "code", start_url: "https://x.com", inputs: [] })).toBeNull();
     expect(parseAction('{"do":"need_code","i":3}')).toMatchObject({ do: "need_code", i: 3 });
     expect(autoPrompt("g", [], [], 5)).toMatch(/need_code/);
+  });
+  it("turns a plain fill of a password box into fill_secret", () => {
+    const snap = { url: "https://x.com", title: "", text: "", elements: [{ i: 2, tag: "input", type: "text", text: "Username", name: "username" }, { i: 4, tag: "input", type: "password", text: "", name: "password" }] };
+    const secrets = [{ id: "11111111-1111-4111-8111-111111111111", kind: "login" }];
+    expect(secretSafe({ do: "fill", i: 4, value: "vault secret field password", why: "" }, snap, secrets)).toMatchObject({ do: "fill_secret", field: "password" });
+    expect(secretSafe({ do: "fill", i: 2, value: "<saved username>", why: "" }, snap, secrets)).toMatchObject({ do: "fill_secret", field: "username" });
+    expect(secretSafe({ do: "fill", i: 2, value: "hello", why: "" }, snap, secrets)).toMatchObject({ do: "fill" });
   });
   it("waits for a code until one arrives", async () => {
     let n = 0;

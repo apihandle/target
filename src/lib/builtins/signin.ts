@@ -65,6 +65,9 @@ export const siteLoginTool: BuiltinTool = {
         note: `${site} sent a one-time code and it was not found in Gmail. A small code form is shown under your reply; ask for the code in one line. The sign-in continues once it is entered.`,
         __card: { type: "otp", job: job.id, site },
       };
+    // The browser sometimes "finishes" on the login page with an error showing: that is a failed sign-in.
+    if (j?.status === "done" && /\b(login (attempt )?failed|not successful|password is (invalid|incorrect|wrong)|invalid (password|credentials|username))\b/i.test(j.result ?? ""))
+      return { job_id: job.id, status: "failed", site, reason: signinFailure("WRONG_LOGIN", site).line, page: (j.result ?? "").slice(0, 600), note: "Say this in one short line and offer to update the saved login (a form is shown under your reply).", __card: { type: "vault_login", site, for: site } };
     if (j?.status === "done") return { job_id: job.id, status: "signed_in", site, result: (j.result ?? "").slice(0, 4000), note: "Signed in; the session is saved. Report what the page shows in 1-3 lines." };
     if (j?.status === "failed") {
       const f = signinFailure(j.error, site);
@@ -78,9 +81,14 @@ export const siteLoginTool: BuiltinTool = {
   },
 };
 
+/** The JSON a built-in tool returned, out of its <untrusted_data> wrapper (null when it isn't JSON). */
+export function toolJson(content: string): Record<string, unknown> | null {
+  const body = content.replace(/^\s*<untrusted_data[^>]*>\s*/, "").replace(/\s*<\/untrusted_data>\s*$/, "");
+  try { const j = JSON.parse(body); return j && typeof j === "object" && !Array.isArray(j) ? j : null; } catch { return null; }
+}
+
 /** Pull the card a site_login result asked for out of the tool output (the chat shows it under the reply). */
 export function cardFromToolOutput(content: string): Record<string, string> | null {
-  const m = content.match(/"__card":(\{[^{}]*\})/);
-  if (!m) return null;
-  try { const c = JSON.parse(m[1]); return c && typeof c === "object" ? c : null; } catch { return null; }
+  const c = toolJson(content)?.__card;
+  return c && typeof c === "object" && !Array.isArray(c) ? (c as Record<string, string>) : null;
 }

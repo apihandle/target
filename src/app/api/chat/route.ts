@@ -25,7 +25,7 @@ import { runAgent, type ToolCall } from "@/lib/agent";
 import { resolveModel, visionModels, type ContentPart, type ModelRef } from "@/lib/llm";
 import { loadPreferredModel } from "@/lib/settings";
 import { SIGNIN_PROMPT, loginIntent } from "@/lib/signin";
-import { cardFromToolOutput } from "@/lib/builtins/signin";
+import { cardFromToolOutput, toolJson } from "@/lib/builtins/signin";
 import { attachmentContext, claimableAttachments, conversationAttachments, linkAttachments, parseAttachmentIds } from "@/lib/server/attachments";
 
 export const runtime = "nodejs";
@@ -358,16 +358,12 @@ const SITE_LOGIN = `${BUILTIN_ID}${SEP}site_login`;
 
 /** One short line for a sign-in the server started itself (used when the model didn't call the tool). */
 function signinLine(content: string, site: string): string {
-  const status = content.match(/"status":"([a-z_]+)"/)?.[1];
+  const j = toolJson(content) ?? {};
+  const status = typeof j.status === "string" ? j.status : "";
   if (status === "needs_login") return `\n\n${site} ka login abhi vault mein nahi hai. Neeche secure form mein email/username aur password save karo, save hote hi main sign in kar dunga.`;
   if (status === "needs_code") return `\n\n${site} ne ek code bheja hai. Neeche code daalo, main sign-in poora kar dunga.`;
-  if (status === "signed_in") {
-    const r = content.match(/"result":"((?:[^"\\]|\\.)*)"/)?.[1];
-    let res = "";
-    try { res = r ? JSON.parse(`"${r}"`) : ""; } catch { res = ""; }
-    return `\n\n✓ ${site} pe sign in ho gaya.${res ? `\n\n${res.slice(0, 1500)}` : ""}`;
-  }
-  if (status === "failed") { const r = content.match(/"reason":"((?:[^"\\]|\\.)*)"/)?.[1]; return `\n\n${r ?? `${site} pe sign-in nahi hua.`}`; }
+  if (status === "signed_in") return `\n\n✓ ${site} pe sign in ho gaya.${typeof j.result === "string" && j.result ? `\n\n${j.result.slice(0, 1500)}` : ""}`;
+  if (status === "failed") return `\n\n${typeof j.reason === "string" ? j.reason : `${site} pe sign-in nahi hua.`}`;
   if (status === "queued" || status === "running") return `\n\n${site} pe sign in chal raha hai; result isi chat mein aa jayega.`;
   return "";
 }
