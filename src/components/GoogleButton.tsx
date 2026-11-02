@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { LOGIN_QUERY, LOGIN_SCOPES } from "@/lib/connectors/googleLoginScopes";
 import { detectInApp, openInBrowserUrl, type InApp } from "@/lib/browser";
 
 export default function GoogleButton({ next = "/app", variant = "dark" }: { next?: string; variant?: "dark" | "glass" }) {
@@ -22,7 +23,12 @@ export default function GoogleButton({ next = "/app", variant = "dark" }: { next
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        // One tap: signing in with Google also connects Gmail, Calendar and Drive.
+        scopes: LOGIN_SCOPES,
+        queryParams: LOGIN_QUERY,
+      },
     });
     if (error) {
       setError(error.message);
