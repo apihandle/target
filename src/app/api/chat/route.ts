@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
-import { titleFrom, type ChatMsg } from "@/lib/ai";
+import { SYSTEM_PROMPT, titleFrom, type ChatMsg } from "@/lib/ai";
+import { isQuickTurn, QUICK_PROMPT } from "@/lib/quick";
 import { detectTask, isMultiTask, MAX_TOKENS, taskModel } from "@/lib/skills";
 import { coreSystemPrompt, wantsResearch } from "@/lib/playbooks";
 import { llm, llmText, LLMError } from "@/lib/llm";
@@ -33,6 +34,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export async function POST(req: Request) {
+  const t0 = Date.now();
   const supabase = await createClient();
   const db = supabase as unknown as Db;
   const { data: { user } } = await supabase.auth.getUser();
@@ -118,55 +120,75 @@ export async function POST(req: Request) {
     if (newFiles.length) await linkAttachments(db, user.id, att.ids, convId, (saved?.id as string | undefined) ?? null);
   }
 
-  // Attachments: file text as untrusted context; images to a vision-capable model when one is configured.
+  // Everything the reply needs is fetched at the same time rather than one query after another.
   const vision = visionModels();
-  const allFiles = await conversationAttachments(db, user.id, convId);
-  const files = await attachmentContext(db, allFiles, currentIds, vision.length > 0);
+  const kind = detectTask(text);
+  const intent = loginIntent(text);
+  const tavilyKey = process.env.TAVILY_API_KEY;
+  const links = extractUrls(text);
+  const searchQ = tavilyKey && (body.web === true || needsSearch(text) || wantsResearch(text)) ? searchQuery(text) : null;
+  let taskQuery = supabase.from("tasks").select("title, status").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(30);
+  if (projectId) taskQuery = taskQuery.eq("project_id", projectId);
+  type LoadedTools = { tools: LoadedTool[]; connected: Set<string> };
+  const [files, pickedRaw, settingsAndMemory, project, openTasks, loadedOrNull, searchOut, pageNote] = await Promise.all([
+    // Attachments: file text as untrusted context; images to a vision-capable model when one is configured.
+    conversationAttachments(db, user.id, convId).then((all) => attachmentContext(db, all, currentIds, vision.length > 0)),
+    body.model !== undefined ? Promise.resolve(body.model) : loadPreferredModel(supabase, user.id),
+    // Long-term memory (not read at all when the user has turned memory off)
+    loadSettings(supabase, user.id).then(async (st) => {
+      if (!st.memory_enabled) return { st, mem: [] as string[] };
+      const { data: memRows } = await supabase.from("memories").select("content").eq("user_id", user.id).order("created_at", { ascending: true }).limit(MAX_MEMORIES);
+      return { st, mem: (memRows ?? []).map((m) => m.content as string) };
+    }),
+    projectId ? Promise.all([
+      supabase.from("projects").select("name, instructions, description").eq("id", projectId).eq("user_id", user.id).maybeSingle(),
+      supabase.from("projects").update({ updated_at: new Date().toISOString() }).eq("id", projectId).eq("user_id", user.id),
+    ]).then(([r]) => ((r.data as { name: string; instructions: string; description?: string } | null) ?? null)) : Promise.resolve(null),
+    taskQuery.then((r) => r.data),
+    // Connectors: only tools of connectors this user has connected are offered to the model.
+    loadToolsForUser(user.id, db).catch(() => null as LoadedTools | null), // connectors unavailable (e.g. migration 0007 not applied)
+    // Live web search (Tavily) when asked or when the question needs fresh info
+    searchQ ? tavilySearch(searchQ, tavilyKey as string).then((r) => ({ ok: true as const, r }), () => ({ ok: false as const })) : Promise.resolve(null),
+    // Read links the user pasted (public pages only, capped), so questions about a link get real answers.
+    links.length ? Promise.all(links.map((u) => readUrl(u))).then(pagesBlock).catch(() => "") : Promise.resolve(""),
+  ]);
+  const settings = settingsAndMemory.st;
   const only: ModelRef[] | undefined = files.imageParts.length ? vision : undefined;
   // Model picker: validated against the configured allow-list; the rest stay as fallback.
-  const kind = detectTask(text);
-  const picked = body.model !== undefined ? resolveModel(body.model) : resolveModel(await loadPreferredModel(supabase, user.id));
+  const picked = resolveModel(pickedRaw);
   // The user's own model pick always wins; otherwise use a model that is strong at this kind of task.
   const prefer = picked ?? (only ? null : taskModel(kind));
   const maxTokens = isMultiTask(text) ? Math.max(MAX_TOKENS[kind], 6144) : MAX_TOKENS[kind];
 
-  const settings = await loadSettings(supabase, user.id);
-
-  // Long-term memory (skipped entirely when the user has turned memory off)
-  let known: string[] = [];
+  let known: string[] = settingsAndMemory.mem;
   let explicit: string | null = null;
   let savedExplicit = false;
   if (settings.memory_enabled) {
-    const { data: memRows } = await supabase.from("memories").select("content").eq("user_id", user.id).order("created_at", { ascending: true }).limit(MAX_MEMORIES);
-    known = (memRows ?? []).map((m) => m.content as string);
     explicit = explicitRemember(text);
     if (explicit && looksSecret(explicit)) explicit = null; // never keep passwords, keys or card numbers
     if (explicit && !isDuplicate(explicit, known)) {
       const { error } = await supabase.from("memories").insert({ user_id: user.id, content: explicit, source: "explicit" });
-      if (!error) { known.push(explicit); savedExplicit = true; }
+      if (!error) { known = [...known, explicit]; savedExplicit = true; }
     }
   }
+  // Fact extraction for memory runs alongside the reply instead of after it.
+  const factsP: Promise<string[]> = settings.memory_enabled && !explicit ? extractFacts(text, known).catch(() => []) : Promise.resolve([]);
   const memNote = savedExplicit ? `\n(You just saved this to memory: "${explicit}". Confirm briefly.)`
     : !settings.memory_enabled && explicitRemember(text) ? "\n(The user has turned memory off in Settings, so nothing is saved. Tell them briefly if they ask you to remember something.)" : "";
 
-  let project: { name: string; instructions: string; description?: string } | null = null;
-  if (projectId) {
-    const { data: p } = await supabase.from("projects").select("name, instructions, description").eq("id", projectId).eq("user_id", user.id).maybeSingle();
-    project = (p as typeof project) ?? null;
-    await supabase.from("projects").update({ updated_at: new Date().toISOString() }).eq("id", projectId).eq("user_id", user.id);
-  }
-
-  let taskQuery = supabase.from("tasks").select("title, status").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(30);
-  if (projectId) taskQuery = taskQuery.eq("project_id", projectId);
-  const { data: openTasks } = await taskQuery;
   const taskNote = (openTasks ? tasksBlock(openTasks as { title: string; status: TaskStatus }[]) : "") +
     (task ? `\n\nThe user opened this chat to work on their task "${task.title}". Help them make concrete progress on it.` : "");
 
-  // Connectors: only tools of connectors this user has connected are offered to the model.
-  let loaded: { tools: LoadedTool[]; connected: Set<string> } = { tools: [], connected: new Set() };
-  try { loaded = await loadToolsForUser(user.id, db); } catch { /* connectors unavailable (e.g. migration 0007 not applied) */ }
-  const toolSpecs = toOpenAITools(loaded.tools, loaded.connected);
+  const loaded: LoadedTools = loadedOrNull ?? { tools: [], connected: new Set() };
   const resumed = body.resume === true && task?.needs_connector && loaded.connected.has(task.needs_connector) ? getConnector(task.needs_connector) : undefined;
+
+  // Quick turn (small talk, a short self-contained question): fast model, thinking off, no tool list.
+  const lastAssistant = [...history].reverse().find((m) => m.role === "assistant")?.content ?? "";
+  const followUp = history.length > 0 && (CONTINUE_RE.test(text) || /```actions|\n> /.test(lastAssistant));
+  const quick = !intent && !resumed && !followUp && !files.imageParts.length &&
+    isQuickTurn(text, { hasAttachments: currentIds.size > 0, hasTask: !!task, webRequested: body.web === true, resume: body.resume === true });
+
+  const toolSpecs = quick ? [] : toOpenAITools(loaded.tools, loaded.connected);
   const connectorNote = toolSpecs.length ? toolsPrompt(loaded.tools, loaded.connected) + UNTRUSTED_RULES : "";
   const resumeNote = resumed ? `\n\nThe user has just connected ${resumed.name}. Continue the task that was paused waiting for it, using its tools.` : "";
 
@@ -175,36 +197,29 @@ export async function POST(req: Request) {
     await logActivity(db, user.id, { category: "task", title: `Started working on “${task.title}”`, status: "planning", task_id: task.id, project_id: task.project_id });
   }
 
-  // Live web search (Tavily) when asked or when the question needs fresh info
   let webNote = "";
-  let found: SearchResult | null = null;
-  const tavilyKey = process.env.TAVILY_API_KEY;
-  if (tavilyKey && (body.web === true || needsSearch(text) || wantsResearch(text))) {
-    const q = searchQuery(text);
-    try {
-      found = await tavilySearch(q, tavilyKey);
-      webNote = searchBlock(q, found);
-    } catch {
-      webNote = "\n\n(Live web search failed just now. If the answer needs current info, say so briefly instead of guessing.)";
-    }
+  const found: SearchResult | null = searchOut?.ok ? searchOut.r : null;
+  if (searchQ) {
+    webNote = found ? searchBlock(searchQ, found) : "\n\n(Live web search failed just now. If the answer needs current info, say so briefly instead of guessing.)";
   } else if (body.web === true && !tavilyKey) {
     webNote = "\n\n(The user asked for a web search, but web search isn't set up on this server. Say so briefly and answer from general knowledge, clearly labelled as possibly out of date.)";
   }
 
-  // Read links the user pasted (public pages only, capped), so questions about a link get real answers.
-  let pageNote = "";
-  const links = extractUrls(text);
-  if (links.length) {
-    try { pageNote = pagesBlock(await Promise.all(links.map((u) => readUrl(u)))); } catch { pageNote = ""; }
-  }
-
-  const intent = loginIntent(text);
   const signinNote = intent ? SIGNIN_PROMPT + ` The user wants to sign in to ${intent.site}${intent.google ? " with Google" : ""}.` : "";
+  const system = quick
+    ? SYSTEM_PROMPT + QUICK_PROMPT + nowLine() + projectBlock(project) + memoryBlock(known) + memNote + webNote + files.block
+    : coreSystemPrompt(text) + signinNote + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + pageNote + files.block + connectorNote + resumeNote;
   const messages: LLMMessage[] = [
-    { role: "system", content: coreSystemPrompt(text) + signinNote + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + pageNote + files.block + connectorNote + resumeNote },
+    { role: "system", content: system },
     ...history,
     files.imageParts.length ? { role: "user", content: [{ type: "text", text }, ...files.imageParts] as ContentPart[] } : { role: "user", content: text },
   ];
+  // Quick turns get a short reply budget and the fast models; real work keeps the strong models, with a slow
+  // starter raced against the next model after a few seconds (see llm()).
+  const callOpts = quick
+    ? { stream: true, timeoutMs: 25000, maxTokens: 1200, fast: true, prefer: picked }
+    : { stream: true, timeoutMs: 60000, maxTokens, prefer, only };
+  const tPre = Date.now() - t0;
 
   const failTask = async (msg: string) => {
     if (!task) return;
@@ -216,12 +231,12 @@ export async function POST(req: Request) {
   let toolsOff = false;
   try {
     try {
-      upstream = await llm({ messages, stream: true, timeoutMs: 30000, maxTokens, tools: toolSpecs.length ? toolSpecs : undefined, prefer, only });
+      upstream = await llm({ ...callOpts, messages, tools: toolSpecs.length ? toolSpecs : undefined });
     } catch (e) {
       // The model/provider can't do tool calling: ordinary chat still works, without connector tools.
       if (!(e instanceof LLMError) || !e.toolsRejected) throw e;
       toolsOff = true;
-      upstream = await llm({ messages: messages.map((m) => (m.role === "system" ? { ...m, content: String(m.content).replace(connectorNote, "") } : m)), stream: true, timeoutMs: 30000, maxTokens, prefer, only });
+      upstream = await llm({ ...callOpts, messages: messages.map((m) => (m.role === "system" ? { ...m, content: String(m.content).replace(connectorNote, "") } : m)) });
     }
   } catch (e) {
     const err = e instanceof LLMError ? e : new LLMError("AI error", 502);
@@ -244,7 +259,7 @@ export async function POST(req: Request) {
         if (toolsOff && loaded.connected.size) { const n = "_(Connector tools aren't available with the AI model answering right now, so this reply can't use your connected apps.)_\n\n"; full += n; send(n); }
         const result = await runAgent({
           messages, first: upstream,
-          next: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 30000, maxTokens, tools: toolSpecs, prefer, only }),
+          next: (msgs) => llm({ ...callOpts, messages: msgs, tools: toolSpecs.length ? toolSpecs : undefined }),
           onText: (d) => { full += d; send(d); },
           label: (call: ToolCall) => toolLabel(call.function.name),
           onTool: async (call: ToolCall) => {
@@ -296,7 +311,7 @@ export async function POST(req: Request) {
           const src = sourcesFence(found);
           full += src; send(src);
         }
-        if (!cancelled && full && text.length >= 12 && !/```actions?/i.test(full)) {
+        if (!cancelled && full && !quick && text.length >= 12 && !/```actions?/i.test(full)) {
           try {
             const { actions, proposals } = await suggestActions(text, full);
             const extra: Action[] = [];
@@ -332,7 +347,7 @@ export async function POST(req: Request) {
         }
         if (!cancelled && settings.memory_enabled && !explicit) {
           try {
-            const facts = await extractFacts(text, known);
+            const facts = await factsP;
             const fresh: string[] = [];
             for (const f of facts) if (!isDuplicate(f, [...known, ...fresh])) fresh.push(f);
             if (fresh.length && known.length < MAX_MEMORIES)
@@ -350,9 +365,16 @@ export async function POST(req: Request) {
   });
 
   return new Response(stream, {
-    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Conversation-Id": convId },
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Conversation-Id": convId,
+      // Where the time went before the first word: context gathering, then waiting for the model.
+      "Server-Timing": `pre;dur=${tPre}, llm;dur=${Date.now() - t0 - tPre}`, "X-Target-Quick": quick ? "1" : "0",
+    },
   });
 }
+
+/** "haan", "karo", "go ahead": a reply to the assistant's last offer, which may need the tools. */
+const CONTINUE_RE = /^\s*(haan|han|ha|hn|yes|yep|yeah|ok|okay|sure|theek|thik|karo|kar\s*do|kardo|go\s*ahead|continue|aage|next|chalo|do\s*it|done|y|ji)\b/i;
 
 const SITE_LOGIN = `${BUILTIN_ID}${SEP}site_login`;
 
@@ -371,7 +393,7 @@ function signinLine(content: string, site: string): string {
 async function extractFacts(text: string, known: string[]): Promise<string[]> {
   if (text.length < 8) return [];
   const raw = await llmText({
-    temperature: 0, maxTokens: 300,
+    temperature: 0, maxTokens: 300, fast: true, timeoutMs: 10000, firstTokenMs: 5000,
     messages: [
       { role: "system", content: EXTRACT_PROMPT },
       { role: "user", content: `Already known:\n${known.slice(-50).map((k) => "- " + k).join("\n") || "(nothing)"}\n\nLatest user message:\n${text}` },
@@ -402,7 +424,7 @@ function nowLine(): string {
 /** Ask the model for buttons. Ordinary buttons are sanitized; "propose" items are validated against the action catalogue. */
 async function suggestActions(userText: string, reply: string): Promise<{ actions: Action[]; proposals: ReturnType<typeof parseProposal>[] }> {
   const raw = await llmText({
-    temperature: 0, maxTokens: 500,
+    temperature: 0, maxTokens: 500, fast: true, timeoutMs: 8000, firstTokenMs: 4000,
     messages: [
       { role: "system", content: "You pick action buttons for a chat reply." + nowLine() + ACTIONS_PROMPT +
         "\nReply with ONLY the JSON array (no fence, no prose). Return [] for small talk or when no button clearly helps." },

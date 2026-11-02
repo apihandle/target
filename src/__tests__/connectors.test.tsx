@@ -541,7 +541,7 @@ describe("chat route with connectors", () => {
       return sse([{ choices: [{ delta: { content: "Hello there, friend." } }] }]);
     });
     vi.stubGlobal("fetch", f);
-    const r = await chatRoute.POST(post("http://t/api/chat", { conversationId: CONV, message: "hi" }));
+    const r = await chatRoute.POST(post("http://t/api/chat", { conversationId: CONV, message: "Check my supabase tables" }));
     expect(r.status).toBe(200);
     const text = await readAll(r);
     expect(text).toContain("Hello there, friend.");

@@ -373,11 +373,22 @@ describe("model picker allow-list", () => {
     Object.assign(process.env, env);
     const models: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (_u: string, init: RequestInit) => { const b = JSON.parse(String(init.body)); if (b.stream) models.push(b.model); return b.stream ? textSse("hi") : jsonRes({ choices: [{ message: { content: "[]" } }] }); }));
-    await (await chatRoute.POST(post("http://t/api/chat", { conversationId: CONV, message: "hello", model: "openrouter:evil/model" }))).text();
+    await (await chatRoute.POST(post("http://t/api/chat", { conversationId: CONV, message: "Explain how a SIP works", model: "openrouter:evil/model" }))).text();
     expect(models[0]).toBe("a/one");
     models.length = 0;
-    await (await chatRoute.POST(post("http://t/api/chat", { conversationId: CONV, message: "hello", model: "openrouter:c/three:free" }))).text();
+    await (await chatRoute.POST(post("http://t/api/chat", { conversationId: CONV, message: "Explain how a SIP works", model: "openrouter:c/three:free" }))).text();
     expect(models[0]).toBe("c/three:free");
+  });
+  it("small talk goes to the fast models with no tools and thinking off", async () => {
+    Object.assign(process.env, env, { NVIDIA_FAST_MODELS: "f/fast" });
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_u: string, init: RequestInit) => { const b = JSON.parse(String(init.body)); if (b.stream) bodies.push(b); return b.stream ? textSse("hi") : jsonRes({ choices: [{ message: { content: "[]" } }] }); }));
+    const r = await chatRoute.POST(post("http://t/api/chat", { conversationId: CONV, message: "hello" }));
+    await r.text();
+    expect(r.headers.get("X-Target-Quick")).toBe("1");
+    expect(bodies[0]).toMatchObject({ model: "f/fast", reasoning_effort: "none" });
+    expect(bodies[0].tools).toBeUndefined();
+    delete process.env.NVIDIA_FAST_MODELS;
   });
 });
 
