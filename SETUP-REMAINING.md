@@ -32,7 +32,7 @@ New repository secret: CRON_SECRET = same value as on Vercel (above). Used by .g
 
 ## 3. Supabase > SQL Editor
 
-Run every file in supabase/migrations/ that has not been run yet, in number order (0006 through 0016; 0016 = custom AI providers, docs/CUSTOM-PROVIDER.md).
+Done: migrations 0001 through 0016 are applied on the production project (0016 = custom AI providers, applied 2026-11-03, #33). For a future migration: run every file in supabase/migrations/ that has not been run yet, in number order.
 
 ## 4. Worker (free): Hugging Face Space
 

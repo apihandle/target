@@ -16,9 +16,9 @@ the commit hash.
 | [#29](https://github.com/apihandle/target/issues/29) | Deploy the compute worker (target-compute) to Render | owner's Render account |
 | [#30](https://github.com/apihandle/target/issues/30) | Update the Hugging Face Space browser worker | write access to the HF Space |
 | [#31](https://github.com/apihandle/target/issues/31) | On-time scheduled prompts: external cron pinger | cron-job.org or Cloudflare account |
-| [#32](https://github.com/apihandle/target/issues/32) | Supabase: audit and remove leftover test data | Supabase SQL access |
-| [#33](https://github.com/apihandle/target/issues/33) | Apply migration 0016_custom_providers.sql | Supabase SQL access |
-| [#34](https://github.com/apihandle/target/issues/34) | Custom AI provider: verify with a real endpoint | migration 0016 + a provider key |
+| ~~[#32](https://github.com/apihandle/target/issues/32)~~ | Done 2026-11-03: audited, no test data left | - |
+| ~~[#33](https://github.com/apihandle/target/issues/33)~~ | Done 2026-11-03: 0016 applied, RLS + grants verified | - |
+| ~~[#34](https://github.com/apihandle/target/issues/34)~~ | Done 2026-11-03: verified live with OpenRouter (6feee9d) | - |
 
 ## The project in one paragraph
 TARGET is a personal AI app (Next.js 16 App Router + React 19, Supabase auth/DB, deployed on Vercel from `main`,
