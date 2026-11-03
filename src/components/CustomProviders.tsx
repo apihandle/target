@@ -55,9 +55,13 @@ export default function CustomProviders() {
     const badOne = parts.find((m) => !MODEL_RE.test(m));
     if (badOne) { setError(`“${badOne.slice(0, 40)}” isn't a valid model id`); setField("models"); return; }
     setError(""); addModels(parts);
-    if (!testModel && parts[0]) setTestModel(parts[0]);
+    // Test connection follows the model just added, so a new model can be tested right away.
+    if (parts.length) setTestModel(parts[parts.length - 1]);
   }
-  const removeModel = (m: string) => setF((x) => ({ ...x, models: x.models.filter((y) => y !== m) }));
+  const removeModel = (m: string) => {
+    setF((x) => ({ ...x, models: x.models.filter((y) => y !== m) }));
+    if (testModel === m) setTestModel("");
+  };
 
   // For Fetch models / Test connection: the form's URL + key, or the saved provider's key when the key field is empty.
   const target = () => ({ ...(f.id ? { id: f.id } : {}), name: f.name, baseUrl: f.baseUrl, ...(f.apiKey.trim() ? { apiKey: f.apiKey.trim() } : {}) });
@@ -138,7 +142,7 @@ export default function CustomProviders() {
                 <p className="px-1 pb-1 text-xs text-muted">{fetched.length} model{fetched.length === 1 ? "" : "s"} found. Tap to add.</p>
                 <div className="flex flex-wrap gap-1.5">
                   {fetched.map((m) => (
-                    <button key={m} type="button" onClick={() => { addModels([m]); if (!testModel) setTestModel(m); }} disabled={f.models.includes(m)}
+                    <button key={m} type="button" onClick={() => { addModels([m]); setTestModel(m); }} disabled={f.models.includes(m)}
                       className="max-w-full truncate rounded-full border border-line-strong px-2.5 py-1 text-xs text-ink-soft hover:bg-surface-2 disabled:opacity-40">{m}</button>
                   ))}
                 </div>

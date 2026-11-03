@@ -132,6 +132,16 @@ export function parseCustomModelId(v: unknown): { providerId: string; model: str
   return { providerId, model };
 }
 
+/**
+ * Did the provider refuse the request because it doesn't know the model id? 404 always counts; some providers
+ * (OpenRouter: "x is not a valid model ID") answer 400/422 with a message naming the model instead.
+ */
+export function isUnknownModelError(status: number, text: string): boolean {
+  if (status === 404) return true;
+  if (status !== 400 && status !== 422) return false;
+  return /not a valid model|invalid model|unknown model|model[^.]{0,80}(not found|does not exist|doesn't exist|not exist|not supported|is not available)|no (such )?model/i.test(text);
+}
+
 /** Remove anything that looks like the key from upstream text before it reaches the user. */
 export function scrub(text: string, key?: string): string {
   let t = text.replace(/\s+/g, " ").trim().slice(0, 300);

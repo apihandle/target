@@ -56,3 +56,20 @@ Edit: leave the key empty to keep the saved one. Changing the base URL to a diff
 5. Ask something that uses a connector (e.g. "mere GitHub repos dikhao"): works if the model supports tools; otherwise you get a plain reply with the note that connector tools aren't available.
 6. Try base URL `http://localhost:11434/v1` or `https://169.254.169.254/` → refused with a clear message.
 7. Switch the picker back to Auto → normal speed/race as before.
+
+## Verified with
+Live on gettarget.vercel.app, 2026-11-03, throwaway test account (deleted afterwards), OpenRouter free tier
+(`https://openrouter.ai/api/v1`):
+- Add provider in the UI, **Fetch models** → 200 models (14 `:free`), **Test connection** → "Connected in 1.3 s · OK"
+  (`google/gemma-4-31b-it:free`); also green for `liquid/lfm-2.5-2.6b:free`, `nvidia/nemotron-3.5-lightning:free`,
+  `nvidia/nemotron-3.5-super-vl:free`. Save → list shows only `sk-or-••••51cf`; `GET /api/custom-providers` returns
+  no key and no `key_box`.
+- Chat with `custom:<id>:nvidia/nemotron-3.5-lightning:free`: reply streamed in 15 chunks; Server-Timing shows a
+  single `llm` step (no built-in race). `nvidia/nemotron-3.5-super-vl:free` answered "hi" in 2.6 s.
+- Errors: wrong key → "rejected the API key (error 401)"; unknown model → OpenRouter answers **400** "not a valid model
+  ID", now shown as "doesn't know the model" (`isUnknownModelError`); `http://localhost:11434/v1` → "must start with
+  https://"; `https://169.254.169.254/`, `https://127.0.0.1/v1`, `https://10.0.0.1/v1` → "private or local".
+- Free OpenRouter models are often rate-limited upstream (shared pool, 429), especially with `tools` in the request;
+  TARGET shows "… is rate-limiting requests right now (429)". That is the provider's limit, not a TARGET bug.
+- Not run: the connector tool-call check (needs GitHub connected on the test account).
+- Auto after switching back: "hi" answered with `llm;dur=728`.

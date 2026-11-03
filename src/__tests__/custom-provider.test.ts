@@ -14,7 +14,7 @@ vi.mock("@/lib/server/safeFetch", async (orig) => {
 });
 
 import {
-  customModelId, isBlockedHostname, isBlockedIp, maskKey, normalizeBaseUrl, parseCustomModelId, providerInput, scrub,
+  customModelId, isBlockedHostname, isBlockedIp, isUnknownModelError, maskKey, normalizeBaseUrl, parseCustomModelId, providerInput, scrub,
 } from "@/lib/customProvider";
 import { guardedLookup, readCapped, safeFetch, BlockedAddressError } from "@/lib/server/safeFetch";
 import { openKey, resolvePick, sealKey, customOptions } from "@/lib/server/customProviders";
@@ -134,6 +134,17 @@ describe("key handling", () => {
     expect(parseCustomModelId("custom:not-a-uuid:m")).toBeNull();
     expect(parseCustomModelId("nvidia:x")).toBeNull();
     expect(customOptions([{ id: P, name: "Mine", base_url: "", models: ["a/b"], key_preview: "", created_at: "", updated_at: "" }])[0]).toMatchObject({ id: `custom:${P}:a/b`, label: "b · Mine", provider: "custom" });
+  });
+});
+
+describe("unknown model errors", () => {
+  it("treats 404 and OpenRouter-style 400 'not a valid model ID' as an unknown model", () => {
+    expect(isUnknownModelError(404, "")).toBe(true);
+    expect(isUnknownModelError(400, '{"error":{"message":"nonexistent/zzz is not a valid model ID","code":400}}')).toBe(true);
+    expect(isUnknownModelError(422, '{"error":"The model `foo` does not exist"}')).toBe(true);
+    expect(isUnknownModelError(400, '{"error":"tools not supported"}')).toBe(false);
+    expect(isUnknownModelError(429, "model is rate-limited")).toBe(false);
+    expect(isUnknownModelError(500, "model not found")).toBe(false);
   });
 });
 

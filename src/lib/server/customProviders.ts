@@ -1,5 +1,5 @@
 import { decryptWithAny, decryptionKeys, encryptSecret, primaryKey } from "@/lib/connectors/crypto";
-import { customModelId, maskKey, normalizeBaseUrl, parseCustomModelId, scrub, CUSTOM_PREFIX } from "@/lib/customProvider";
+import { customModelId, isUnknownModelError, maskKey, normalizeBaseUrl, parseCustomModelId, scrub, CUSTOM_PREFIX } from "@/lib/customProvider";
 import { chatUrl, resolveModel, type CustomRoute, type ModelOption } from "@/lib/llm";
 import { BlockedAddressError, readCapped, safeFetch } from "@/lib/server/safeFetch";
 
@@ -139,6 +139,7 @@ export async function testConnection(baseUrl: string, apiKey: string, model: str
     if (r.status >= 300 && r.status < 400) return { ok: false, ms, message: "The provider redirected the request. Use the final API URL." };
     if (r.status === 401 || r.status === 403) return { ok: false, ms, message: `${name} rejected the API key (error ${r.status}).` };
     if (r.status === 404) return { ok: false, ms, message: `${name} returned 404: check the base URL and the model id "${model}".` };
+    if (isUnknownModelError(r.status, text)) return { ok: false, ms, message: `${name} doesn't know the model "${model}" (error ${r.status}). Check the model id.` };
     if (!r.ok) return { ok: false, ms, message: `${name} returned error ${r.status}${text ? `: ${scrub(text, apiKey).slice(0, 120)}` : ""}` };
     let reply = "";
     try { const j = JSON.parse(text); reply = String(j.choices?.[0]?.message?.content ?? j.choices?.[0]?.text ?? ""); } catch { return { ok: false, ms, message: "The reply wasn't OpenAI-compatible JSON." }; }
