@@ -36,7 +36,7 @@ const call = <T = unknown>(ctx: ToolContext, path: string, init: Parameters<type
 export const vercel = defineConnector({
   id: "vercel",
   name: "Vercel",
-  icon: "▲",
+  icon: "V",
   description: "See your Vercel projects, deploy, check deployment status and logs, and add domains.",
   auth: "oauth",
   scopes: [],

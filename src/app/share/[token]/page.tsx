@@ -37,7 +37,7 @@ export default async function SharedChatPage(props: { params: Promise<{ token: s
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
           <span className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.svg" alt="" aria-hidden width={28} height={28} className="h-7 w-7" />
+            <img src="/logo-mark.svg" alt="" aria-hidden width={28} height={28} className="h-7 w-7" />
             <span className="text-sm font-extrabold tracking-[0.2em]">TARGET</span>
           </span>
           <span className="rounded-full border border-line-strong px-3 py-1 text-xs text-muted">Read-only shared chat</span>

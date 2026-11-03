@@ -2,9 +2,9 @@
  * (public/sw.js is a separate Monetag file and is not related to this worker.)
  * Minimal on purpose: it never caches API responses or signed-in pages. It only caches the
  * offline page and icons, and shows the offline page when a /app navigation fails. */
-const CACHE = "target-app-v3";
+const CACHE = "target-app-v4";
 const OFFLINE = "/app-offline.html";
-const PRECACHE = [OFFLINE, "/app-icon-192.png", "/app-icon-maskable-512.png"];
+const PRECACHE = [OFFLINE, "/logo-mark.svg", "/app-icon-192.png", "/app-icon-maskable-512.png", "/app-badge-96.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting()));
@@ -40,7 +40,7 @@ self.addEventListener("push", (event) => {
   event.waitUntil(self.registration.showNotification(title, {
     body: data.body || "",
     icon: "/app-icon-192.png",
-    badge: "/app-icon-192.png",
+    badge: "/app-badge-96.png",
     tag: data.tag || undefined,
     data: { url: typeof data.url === "string" && data.url.startsWith("/") ? data.url : "/app" },
   }));
