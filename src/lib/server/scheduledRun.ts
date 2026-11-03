@@ -1,11 +1,12 @@
 import type { Db } from "@/lib/server/auth";
 import { SYSTEM_PROMPT, titleFrom } from "@/lib/ai";
-import { llm, LLMError, resolveModel, type LLMMessage } from "@/lib/llm";
+import { llm, LLMError, type LLMMessage } from "@/lib/llm";
 import { runAgent, type ToolCall } from "@/lib/agent";
 import { executeToolCall, loadToolsForUser, toOpenAITools, toolsPrompt, type LoadedTool } from "@/lib/connectors/loadTools";
 import { UNTRUSTED_RULES } from "@/lib/connectors/safety";
 import { getConnector } from "@/lib/connectors/registry";
 import { loadPreferredModel, loadSettings } from "@/lib/settings";
+import { resolveUserPick } from "@/lib/server/customProviders";
 import { MAX_MEMORIES, memoryBlock } from "@/lib/memory";
 import { projectBlock } from "@/lib/projects";
 import { logActivity } from "@/lib/server/activity";
@@ -66,7 +67,9 @@ export async function runScheduledJob(db: Db, job: ScheduledJob & { user_id: str
     try { loaded = await loadToolsForUser(uid, db); } catch { /* connectors unavailable */ }
     const toolSpecs = toOpenAITools(loaded.tools, loaded.connected);
     const connectorNote = toolSpecs.length ? toolsPrompt(loaded.tools, loaded.connected) + UNTRUSTED_RULES : "";
-    const prefer = resolveModel(await loadPreferredModel(db, uid));
+    const pick = await resolveUserPick(uid, await loadPreferredModel(db, uid));
+    const prefer = pick.builtin;
+    const custom = pick.custom; // the user's own provider, when picked: used alone (no fallback)
     const note = `\n\nSCHEDULED RUN: The user set up this prompt to run automatically (“${job.title}”). They are not watching live, so do the work and write the result directly; ` +
       "don't ask follow-up questions. Anything that needs their approval will wait for them.";
     const messages: LLMMessage[] = [
@@ -76,18 +79,18 @@ export async function runScheduledJob(db: Db, job: ScheduledJob & { user_id: str
     let first: Response;
     let tools = toolSpecs.length ? toolSpecs : undefined;
     try {
-      first = await llm({ messages, stream: true, timeoutMs: 25000, tools, prefer });
+      first = await llm({ messages, stream: true, timeoutMs: 25000, tools, prefer, custom });
     } catch (e) {
       if (!(e instanceof LLMError) || !e.toolsRejected) throw e;
       tools = undefined;
-      first = await llm({ messages: messages.map((m) => (m.role === "system" ? { ...m, content: String(m.content).replace(connectorNote, "") } : m)), stream: true, timeoutMs: 25000, prefer });
+      first = await llm({ messages: messages.map((m) => (m.role === "system" ? { ...m, content: String(m.content).replace(connectorNote, "") } : m)), stream: true, timeoutMs: 25000, prefer, custom });
     }
     if (taskId) await db.from("tasks").update({ status: "in_progress", progress: "TARGET is working on it…", updated_at: now() }).eq("id", taskId).eq("user_id", uid);
 
     let full = "";
     const result = await runAgent({
       messages, first, maxRounds: 3,
-      next: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 25000, tools, prefer }),
+      next: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 25000, tools, prefer, custom }),
       onText: (d) => { full += d; },
       label: (call: ToolCall) => call.function.name.replace("__", " · ").replace(/_/g, " "),
       onTool: (call: ToolCall) => executeToolCall({ db, userId: uid, projectId, conversationId: convId, taskId, autoApproveBrowser: job.allow_browser === true }, call.function.name, call.function.arguments, loaded),

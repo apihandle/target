@@ -3,6 +3,7 @@ import AppShell, { getSessionOrRedirect } from "@/components/AppShell";
 import { AUTO_MODEL, modelOptions, providers, resolveModel } from "@/lib/llm";
 import { loadPreferredModel } from "@/lib/settings";
 import { isUuid } from "@/lib/ids";
+import { customOptions, listCustomProviders } from "@/lib/server/customProviders";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Chat · TARGET" };
@@ -47,8 +48,11 @@ export default async function ChatPage(
     if (t) { taskId = t.id as string; taskTitle = t.title as string; }
   }
   const options = modelOptions();
-  const models = options.length > 1 ? [{ id: AUTO_MODEL, label: "Auto (best available)" }, ...options.map((o) => ({ id: o.id, label: o.label, vision: o.vision }))] : [];
-  const initialModel = models.length ? resolveModel(await loadPreferredModel(supabase, user.id))?.id ?? AUTO_MODEL : AUTO_MODEL;
+  // The user's own custom models (Settings → AI providers) are listed after the built-in ones.
+  const [custom, pref] = await Promise.all([listCustomProviders(supabase, user.id).then(customOptions), loadPreferredModel(supabase, user.id)]);
+  const models = options.length > 1 || custom.length > 0 ? [{ id: AUTO_MODEL, label: "Auto (best available)" },
+    ...options.map((o) => ({ id: o.id, label: o.label, vision: o.vision })), ...custom.map((o) => ({ id: o.id, label: o.label }))] : [];
+  const initialModel = models.length ? (custom.find((o) => o.id === pref)?.id ?? resolveModel(pref)?.id ?? AUTO_MODEL) : AUTO_MODEL;
   const prefill = typeof searchParams.q === "string" ? searchParams.q.slice(0, 2000) : taskTitle ? `Help me with this task: ${taskTitle}` : "";
 
   return (
@@ -61,7 +65,7 @@ export default async function ChatPage(
         </div>
       ) : (
         <Chat key={activeId ?? `new-${projectId ?? ""}-${taskId ?? ""}`} conversationId={activeId} initialMessages={initial}
-          projectId={projectId} projectName={projectName} aiConfigured={providers().length > 0} webAvailable={!!process.env.TAVILY_API_KEY}
+          projectId={projectId} projectName={projectName} aiConfigured={providers().length > 0 || custom.length > 0} webAvailable={!!process.env.TAVILY_API_KEY}
           initialPrompt={prefill} autoSend={!activeId && searchParams.send === "1" && typeof searchParams.q === "string" && !!searchParams.q.trim()} taskId={taskId} taskTitle={taskTitle} models={models} initialModel={initialModel}
           resumeTaskId={activeId && isUuid(searchParams.resume) ? searchParams.resume : undefined} />
       )}

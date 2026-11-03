@@ -6,7 +6,15 @@ type Provider = {
   fastExtra?: Record<string, unknown>;
   /** Quick-turn models on this provider, in order. */
   fastModels?: string[];
+  /** Transport override (custom providers use the SSRF-guarded fetch). Defaults to global fetch. */
+  fetch?: (url: string, init: { method: "POST"; signal: AbortSignal; headers: Record<string, string>; body: string }) => Promise<Response>;
 };
+
+/**
+ * A user's own OpenAI-compatible provider (Settings → AI providers). When set, llm() calls only this endpoint:
+ * no NVIDIA/OpenRouter race, no fallback, no provider-specific extras.
+ */
+export type CustomRoute = { name: string; url: string; key: string; model: string; fetch?: Provider["fetch"] };
 
 const list = (v: string | undefined, d: string) => (v || d).split(",").map((m) => m.trim()).filter(Boolean);
 
@@ -58,6 +66,8 @@ export type LLMOpts = {
    * next model alongside it and keep whichever answers first. Default 8 s (3 s for fast turns).
    */
   firstTokenMs?: number;
+  /** The user picked one of their own custom models: use only that endpoint (see CustomRoute). */
+  custom?: CustomRoute | null;
 };
 
 export type ModelRef = { provider: string; model: string };
@@ -159,7 +169,8 @@ async function attempt(c: Candidate, opts: LLMOpts, ctrl: AbortController): Prom
   const withTools = !!opts.tools?.length;
   const fast = !!opts.fast && !!c.p.fastModels?.includes(c.model);
   try {
-    const r = await fetch(c.p.url, {
+    const doFetch = c.p.fetch ?? ((u: string, i: RequestInit) => fetch(u, i));
+    const r = await doFetch(c.p.url, {
       method: "POST", signal: ctrl.signal,
       headers: { Authorization: `Bearer ${c.p.key}`, "Content-Type": "application/json", ...(c.p.headers ?? {}) },
       body: JSON.stringify({
@@ -219,6 +230,7 @@ const MAX_PARALLEL = 3;
  * time); the first to produce a word wins and the others are cancelled. Returns the raw Response (SSE when stream).
  */
 export async function llm(opts: LLMOpts): Promise<Response> {
+  if (opts.custom) return llmCustom(opts, opts.custom);
   const ps = providers();
   if (!ps.length) throw new LLMError("AI is not configured", 503);
   const withTools = !!opts.tools?.length;
@@ -269,6 +281,27 @@ export async function llm(opts: LLMOpts): Promise<Response> {
   stopAll();
   const e = new LLMError(rateLimited && last === 429 ? "TARGET's free AI quota is used up for now. Try again later." : `AI error ${last}`, rateLimited && last === 429 ? 429 : 502);
   e.toolsRejected = withTools && toolRefusals > 0 && !rateLimited && toolRefusals >= Math.ceil(attempts / 2);
+  throw e;
+}
+
+/** Chat completions URL for a normalised base URL ("https://host/v1" → "https://host/v1/chat/completions"). */
+export const chatUrl = (base: string) => `${base.replace(/\/+$/, "")}/chat/completions`;
+
+/** One attempt against the user's own provider. Same Response contract as llm(); errors say it was their provider. */
+async function llmCustom(opts: LLMOpts, c: CustomRoute): Promise<Response> {
+  const p: Provider = { name: "custom", url: c.url, key: c.key, models: [c.model], fetch: c.fetch };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 45000);
+  const r = await attempt({ p, model: c.model }, opts, ctrl).finally(() => clearTimeout(timer));
+  if ("win" in r) return r.win;
+  const s = r.status;
+  const msg = s === 401 || s === 403 ? `${c.name} rejected the API key (error ${s}). Check it in Settings → AI providers.`
+    : s === 429 ? `${c.name} is rate-limiting requests right now (429). Try again in a bit.`
+    : s === 404 ? `${c.name} doesn't know the model "${c.model}" (404). Check the model id in Settings → AI providers.`
+    : s === 504 ? `${c.name} didn't answer in time (or its address isn't reachable).`
+    : `${c.name} returned error ${s}.`;
+  const e = new LLMError(msg, s === 429 ? 429 : 502);
+  e.toolsRejected = !!opts.tools?.length && r.toolRefused;
   throw e;
 }
 

@@ -25,6 +25,7 @@ import { checkLimit, LIMITS, tooMany } from "@/lib/connectors/rateLimit";
 import { runAgent, type AgentResult, type ToolCall } from "@/lib/agent";
 import { resolveModel, visionModels, type ContentPart, type ModelRef } from "@/lib/llm";
 import { loadPreferredModel } from "@/lib/settings";
+import { resolveUserPick } from "@/lib/server/customProviders";
 import { SIGNIN_PROMPT, loginIntent, signinStatusLine } from "@/lib/signin";
 import { langRule, userLang, type Lang } from "@/lib/lang";
 import { resetIntent, signupIntent } from "@/lib/siteAccount";
@@ -174,8 +175,11 @@ export async function POST(req: Request) {
   mark("context");
   const settings = settingsAndMemory.st;
   const only: ModelRef[] | undefined = files.imageParts.length ? vision : undefined;
-  // Model picker: validated against the configured allow-list; the rest stay as fallback.
-  const picked = resolveModel(pickedRaw);
+  // Model picker: validated against the configured allow-list (the rest stay as fallback), or one of the user's
+  // own custom models, which is then the ONLY endpoint used for this reply (no race, no fallback).
+  const pick = typeof pickedRaw === "string" && pickedRaw.startsWith("custom:") ? await resolveUserPick(user.id, pickedRaw) : { builtin: resolveModel(pickedRaw), custom: null };
+  const picked = pick.builtin;
+  const custom = pick.custom;
   // The user's own model pick always wins; otherwise use a model that is strong at this kind of task.
   const prefer = picked ?? (only ? null : taskModel(kind));
   const maxTokens = isMultiTask(text) ? Math.max(MAX_TOKENS[kind], 6144) : MAX_TOKENS[kind];
@@ -241,7 +245,9 @@ export async function POST(req: Request) {
   ];
   // Quick turns get a short reply budget and the fast models; real work keeps the strong models, with a slow
   // starter raced against the next model after a few seconds (see llm()).
-  const callOpts = quick
+  const callOpts = custom
+    ? { stream: true, timeoutMs: 60000, maxTokens: quick ? 900 : maxTokens, custom }
+    : quick
     ? { stream: true, timeoutMs: 25000, maxTokens: 900, fast: true, prefer: picked }
     : { stream: true, timeoutMs: 60000, maxTokens, prefer, only };
   mark("prompt");

@@ -39,6 +39,7 @@ export default async function SettingsPage() {
           <SettingsGroup title="Apps & accounts">
             <SettingsRow href="/app/connectors" icon="plug" title="Connectors" description="Google, GitHub and more" />
             <SettingsRow href="/app/settings/sessions" icon="lock" title="Website sign-ins" description="Sites TARGET is signed in to, sign out any time" testId="settings-sessions" />
+            <SettingsRow href="/app/settings/ai-providers" icon="bolt" title="AI providers" description="Add your own OpenAI-compatible model" testId="settings-ai-providers" />
             <SettingsRow href="/app/settings/vault" icon="lock" title="Vault" description="Logins, cards and keys, encrypted" testId="settings-vault" />
             <SettingsRow href="/app/settings/browser" icon="apps" title="Browser tasks" description="Approve website tasks and see results" testId="settings-browser" />
           </SettingsGroup>

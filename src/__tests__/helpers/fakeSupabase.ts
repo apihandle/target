@@ -102,11 +102,18 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
     if (!this.db.bypass) {
       if (this.table === "connections" && (this.cols === "*" || /encrypted_credentials/.test(this.cols))) return { data: null, error: { message: "permission denied for column encrypted_credentials" } };
       if (this.table === "connections" && (this.op === "insert" || this.op === "upsert" || this.op === "update")) return { data: null, error: { message: "permission denied for table connections" } };
+      // Migration 0016: custom_providers.key_box is never readable by browser roles; writes are server-only.
+      if (this.table === "custom_providers" && (this.cols === "*" || /key_box/.test(this.cols))) return { data: null, error: { message: "permission denied for column key_box" } };
+      if (this.table === "custom_providers" && (this.op === "insert" || this.op === "upsert" || this.op === "update")) return { data: null, error: { message: "permission denied for table custom_providers" } };
       if (["connection_secrets", "connector_oauth_states", "connector_rate_limits"].includes(this.table)) return { data: null, error: { message: `permission denied for table ${this.table}` } };
     }
     const all = this.db.rows(this.table);
     const match = () => all.filter((r) => this.visible(r) && this.filters.every((f) => f(r)));
-    const finish = (rows: Row[]) => {
+    // custom_providers: return only the selected columns, like PostgREST (so tests can check key_box never leaves).
+    const project = (rows: Row[]) => this.table !== "custom_providers" || !this.cols || this.cols === "*" ? rows
+      : rows.map((r) => Object.fromEntries(this.cols.split(",").map((c) => c.trim()).filter(Boolean).map((c) => [c, r[c]])));
+    const finish = (raw: Row[]) => {
+      const rows = project(raw);
       if (this.mode === "one") return rows.length === 1 ? { data: rows[0], error: null } : { data: null, error: { message: "not single" } };
       if (this.mode === "maybe") return { data: rows[0] ?? null, error: null };
       return { data: rows, error: null };

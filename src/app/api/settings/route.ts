@@ -2,6 +2,8 @@ import { badRequest, dbError, json, readJson, requireUser, unauthorized } from "
 import { loadPreferredModel, loadSettings, validateQuickActions } from "@/lib/settings";
 import { AUTO_MODEL, resolveModel } from "@/lib/llm";
 import { logActivity } from "@/lib/server/activity";
+import { ownsCustomModel } from "@/lib/server/customProviders";
+import { parseCustomModelId } from "@/lib/customProvider";
 
 export const dynamic = "force-dynamic";
 
@@ -40,9 +42,12 @@ export async function PATCH(req: Request) {
     row.hidden_quick_actions = h;
   }
   if (body.preferred_model !== undefined) {
-    // Remembered model choice: must be one of the server's configured models, or "auto"/null.
+    // Remembered model choice: one of the server's configured models, one of this user's own custom models, or "auto"/null.
     if (body.preferred_model === null || body.preferred_model === AUTO_MODEL) row.preferred_model = null;
-    else {
+    else if (parseCustomModelId(body.preferred_model)) {
+      if (!(await ownsCustomModel(a.db, a.user.id, body.preferred_model))) return badRequest("That model isn't available");
+      row.preferred_model = body.preferred_model;
+    } else {
       const m = resolveModel(body.preferred_model);
       if (!m) return badRequest("That model isn't available");
       row.preferred_model = m.id;
