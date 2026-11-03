@@ -2,7 +2,7 @@
  * (public/sw.js is a separate Monetag file and is not related to this worker.)
  * Minimal on purpose: it never caches API responses or signed-in pages. It only caches the
  * offline page and icons, and shows the offline page when a /app navigation fails. */
-const CACHE = "target-app-v2";
+const CACHE = "target-app-v3";
 const OFFLINE = "/app-offline.html";
 const PRECACHE = [OFFLINE, "/app-icon-192.png", "/app-icon-maskable-512.png"];
 

@@ -23,6 +23,7 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://gettarget.vercel.app"),
   title: "TARGET",
   description: "TARGET: your personal AI that gets things done.",
+  manifest: "/app.webmanifest",
   openGraph: {
     title: "TARGET: Ask anything",
     description: "Your personal AI that plans, researches and organizes, and asks before it acts.",
