@@ -24,9 +24,9 @@ const FILTERS = [
   { id: "live", label: "Live data" },
 ] as const;
 
-export default function PanelHome({ initial, name, title = "Panels" }: { initial: Panel[]; name?: string; title?: string }) {
+export default function PanelHome({ initial, name, title = "Panels", startAdding = false }: { initial: Panel[]; name?: string; title?: string; startAdding?: boolean }) {
   const [panels, setPanels] = useState<Panel[]>(initial);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(startAdding);
   const [kind, setKind] = useState<PanelKind>("weather");
   const [value, setValue] = useState("");
   const [unit, setUnit] = useState("");
