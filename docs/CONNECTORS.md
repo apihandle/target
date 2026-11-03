@@ -44,7 +44,7 @@ A user connects their own external accounts once on **Connectors** (`/app/connec
 | Google | `calendar_create_event` | always (kept from the previous Calendar integration) |
 | Slack | `send_message` | always |
 
-No connector has a tool that deletes repositories, sends email or spends money. Gmail only creates drafts.
+No connector has a tool that deletes repositories or spends money. Gmail can create drafts, and `gmail_send` sends an email only after the user approves that exact email on its approval card (requiresApproval: the chat path can never run it; only the approval execution gate does).
 
 ## Security model
 

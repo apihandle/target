@@ -80,7 +80,7 @@ describe("system prompt injection", () => {
     expect(sys.startsWith(SYSTEM_PROMPT)).toBe(true);
     expect(sys).toContain(draft.guidance);
     expect(sys).toContain(BLOCKS_PROMPT);
-    expect(sys).toMatch(/Never send anything yourself/);
+    expect(sys).toMatch(/Never send on your own/);
     const research = coreSystemPrompt("research best laptops under 50k");
     expect(research).toContain(AGENT_PLAYBOOKS.find((x) => x.id === "research")!.guidance);
     expect(research).not.toContain(draft.guidance);

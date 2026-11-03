@@ -106,7 +106,7 @@ export const ACTION_DEFS: Record<string, Def> = {
   },
   send_email: {
     label: "Send an email", provider: "gmail",
-    unavailable: "TARGET can't send email in this version. Copy the draft and send it from your own mail app.",
+    unavailable: "Ask TARGET in the chat to send it from your connected Gmail: you'll get an approval card with the full email, and nothing is sent until you approve.",
     validate: () => ({ ok: true, params: {} }),
     describe: () => ({ summary: "Send an email", destination: "Email" }),
   },

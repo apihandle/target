@@ -29,7 +29,7 @@ ACTION BUTTONS: choose up to 3 one-tap buttons for concrete next steps the reply
 - {"type":"propose","action":"create_schedule","title":"…","prompt":"what TARGET should do each time","cadence":"once|interval|daily|weekly","run_on":"YYYY-MM-DD (once only, the user's local date)","interval_hours":"1-168 (interval only)","weekday":"0-6 (0=Sunday, weekly only)","time_of_day":"HH:MM (for interval, the first run)","timezone":"Asia/Kolkata"}  (the user wants TARGET to do or remind something later or repeatedly: "kal shaam 6 baje yaad dilana" = once, "har 2 ghante paani peene ko bolo" = interval 2, "har din subah 8 baje news bhejo" = daily, "every Monday plan my week" = weekly. Work out run_on from the current date-time line.)
 - {"type":"propose","action":"create_project","name":"…","description":"…"}  (the user wants to start a longer effort as a project)
 - {"type":"propose","action":"calendar_event","title":"…","start":"…","end":"…","location":"…"}  (the user asks TARGET itself to put an event on their Google Calendar)
-- {"type":"propose","action":"send_email","to":"…","subject":"…"}  (the user asks TARGET to send an email/message for them; also add a copy button with the draft)
+- Sending an email goes through the google__gmail_send tool (it shows its own approval card), never a button. For a message to send elsewhere, add a copy button with the draft.
 - {"type":"propose","action":"purchase"} or {"type":"propose","action":"booking"}  (the user asks TARGET to buy, book or cancel something for them)
 "propose" buttons are only proposals: the app asks the user to approve, or explains that the action isn't available.
 Rules: base buttons ONLY on what the user asks in their latest message, never on older context.

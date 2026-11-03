@@ -58,6 +58,45 @@ export function extractVerification(text: string, domain: string): { code?: stri
 
 /** Header injection guard for drafted mail. */
 const oneLine = (s: string) => s.replace(/[\r\n]+/g, " ").trim();
+/** RFC 2047 encoded-word for non-ASCII header text (Hindi subjects, names). */
+const encHeader = (s: string) => (/^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, "utf8").toString("base64")}?=`);
+
+/** Comma/semicolon separated addresses -> a clean, de-duplicated list (null when any entry is not an email). */
+export function parseAddresses(raw: string | undefined, max = 10): string[] | null {
+  if (!raw || !raw.trim()) return [];
+  const list = raw.split(/[,;]/).map((x) => oneLine(x)).filter(Boolean);
+  const email = z.string().email();
+  if (list.length > max || list.some((x) => !email.safeParse(x).success)) return null;
+  return Array.from(new Set(list.map((x) => x.toLowerCase())));
+}
+
+const addressList = (max: number) => z.string().max(2000).refine((v) => { const l = parseAddresses(v, max); return !!l; }, { message: `Up to ${max} valid email addresses, separated by commas` });
+
+/** The raw RFC 5322 message, UTF-8 safe (base64 body), with header injection stripped. */
+export function buildMime(a: { to: string[]; cc?: string[]; subject: string; body: string }): string {
+  const lines = [
+    `To: ${a.to.join(", ")}`,
+    ...(a.cc?.length ? [`Cc: ${a.cc.join(", ")}`] : []),
+    `Subject: ${encHeader(oneLine(a.subject))}`,
+    "MIME-Version: 1.0",
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+  ];
+  const body = Buffer.from(a.body, "utf8").toString("base64").replace(/(.{76})/g, "$1\r\n");
+  return `${lines.join("\r\n")}\r\n\r\n${body}`;
+}
+
+/**
+ * Send one email from the user's Gmail. Only ever reached through the approval gate
+ * (gmail_send has requiresApproval: true, and executeToolCall never runs approval tools).
+ */
+export async function sendMail(token: string, a: { to: string; cc?: string; subject: string; body: string }, f: typeof fetch = fetch): Promise<{ sent: true; message_id?: string; thread_id?: string; to: string[] }> {
+  const to = parseAddresses(a.to), cc = parseAddresses(a.cc);
+  if (!to?.length || !cc) throw new Error("Invalid recipients");
+  const raw = b64url(buildMime({ to, cc, subject: a.subject, body: a.body }));
+  const r = await apiFetch<{ id?: string; threadId?: string }>("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", { method: "POST", f, headers: { Authorization: `Bearer ${token}` }, body: { raw } });
+  return { sent: true, message_id: r.id, thread_id: r.threadId, to };
+}
 
 const ALL_TOOLS: (ToolDef & { scope: string })[] = [
   { scope: SCOPES.gmailRead, ...tool({
@@ -107,9 +146,27 @@ const ALL_TOOLS: (ToolDef & { scope: string })[] = [
     description: "Create a Gmail draft (it is NOT sent; the user sends it from Gmail).",
     input: z.object({ to: z.string().email(), subject: z.string().max(300), body: z.string().max(50000) }),
     async execute(a, ctx) {
-      const raw = b64url(`To: ${oneLine(a.to)}\r\nSubject: ${oneLine(a.subject)}\r\nContent-Type: text/plain; charset="UTF-8"\r\n\r\n${a.body}`);
+      const raw = b64url(buildMime({ to: [oneLine(a.to)], subject: a.subject, body: a.body }));
       const d = await apiFetch<{ id?: string }>("https://gmail.googleapis.com/gmail/v1/users/me/drafts", { method: "POST", f: ctx.fetch, headers: auth(ctx), body: { message: { raw } } });
       return { draft_id: d.id, note: "Draft saved in Gmail. It has not been sent." };
+    },
+  }) },
+  { scope: SCOPES.gmailCompose, ...tool({
+    name: "gmail_send",
+    description:
+      "Send an email from the user's Gmail. ALWAYS needs the user's approval: calling it only shows them an approval card with the full email, and nothing is sent until they tap Approve. " +
+      "Use it only after the user clearly asked to send (bhej do / send it) and gave or confirmed the recipient's address; never guess an address. Pass the final subject and body exactly as shown to the user.",
+    input: z.object({
+      to: addressList(10).describe("Recipient email address(es), comma separated"),
+      cc: addressList(10).optional().describe("Optional CC addresses, comma separated"),
+      subject: z.string().min(1).max(300),
+      body: z.string().min(1).max(20000),
+    }),
+    requiresApproval: true,
+    summarize: (a) => `Send the email “${oneLine(a.subject).slice(0, 120)}” to ${(parseAddresses(a.to) ?? []).join(", ").slice(0, 150)}`,
+    async execute(a, ctx) {
+      const r = await sendMail(ctx.token, a, ctx.fetch);
+      return { ...r, note: "Sent from the user's Gmail." };
     },
   }) },
   { scope: SCOPES.calendar, ...tool({
@@ -172,16 +229,16 @@ export const google = defineConnector({
   id: "google",
   name: "Google",
   icon: "G",
-  description: "Search and read Gmail, write drafts, see and add Calendar events, and search and read Drive files.",
+  description: "Search and read Gmail, write drafts, send email after you approve it, see and add Calendar events, and search and read Drive files.",
   auth: "oauth",
   scopes: ["openid", "email", SCOPES.gmailRead, SCOPES.gmailCompose, SCOPES.calendar, SCOPES.driveRead],
   capabilities: [
-    "Search and read your email; create drafts (never sends)",
+    "Search and read your email; create drafts; send an email only after you approve that exact email",
     "List calendar events; add events (asks you first)",
     "Search Drive and read documents",
   ],
   permissions: [
-    "gmail.readonly: read your email. gmail.compose: create drafts (TARGET has no send tool).",
+    "gmail.readonly: read your email. gmail.compose: create drafts and send email. Every email waits for your approval, showing the recipients, subject and text, before it is sent.",
     "calendar.events: view and edit events on your calendars. New events wait for your approval.",
     "drive.readonly: view (not change) your Drive files.",
     "You can untick permissions on Google's consent screen; TARGET only offers tools for what you grant. Revoke any time at myaccount.google.com/permissions.",
