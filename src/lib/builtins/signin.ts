@@ -3,6 +3,7 @@ import { kickCloudWorker } from "@/lib/server/kickWorker";
 import { SITE } from "@/lib/builtins/helpers";
 import { normalizeSite } from "@/lib/sessions";
 import { googleLogin, matchLogin, signinFailure, signinGoal, type VaultLoginRow } from "@/lib/signin";
+import { isLang, type Lang } from "@/lib/lang";
 import type { BuiltinCtx, BuiltinTool } from "@/lib/builtins/tools";
 
 /** Log line the worker writes while it waits for the user's one-time code. */
@@ -30,9 +31,11 @@ export const siteLoginTool: BuiltinTool = {
     site: z.string().min(3).max(200).describe("Website domain or URL, e.g. timebucks.com"),
     method: z.enum(["password", "google"]).default("password"),
     check: z.string().max(200).optional().describe("Anything specific to read after signing in, e.g. 'the balance'"),
+    lang: z.enum(["hinglish", "hindi", "english"]).optional().describe("The language the user writes in; the page report and status lines use it"),
   }),
   async execute(raw, ctx) {
-    const a = raw as { site: string; method: "password" | "google"; check?: string };
+    const a = raw as { site: string; method: "password" | "google"; check?: string; lang?: Lang };
+    const lang: Lang | null = isLang(a.lang) ? a.lang : null;
     const site = normalizeSite(a.site.replace(/^https?:\/\//i, ""));
     if (!site) throw new Error("Give a website like example.com");
     const { data } = await ctx.db.from("vault_secrets").select("id, kind, label, site").eq("user_id", ctx.userId).eq("kind", "login").limit(50);
@@ -51,10 +54,10 @@ export const siteLoginTool: BuiltinTool = {
     }
     // With only a Google login saved, the browser tries the site's Google button with it.
     const ids = [own?.id, g?.id].filter((x): x is string => !!x);
-    const goal = signinGoal(site, { siteLogin: own?.id ?? null, googleLogin: g?.id ?? null, check: a.check });
+    const goal = signinGoal(site, { siteLogin: own?.id ?? null, googleLogin: g?.id ?? null, check: a.check, lang });
     const { data: job, error } = await ctx.db.from("browser_jobs").insert({
       user_id: ctx.userId, goal: `Sign in to ${site}`.slice(0, 500), start_url: `https://${site}/`, steps: [], mode: "auto", max_steps: 30,
-      allowed_secrets: ids, inputs: { signin: { site, via: own ? "password" : "google", goal } }, status: "queued", conversation_id: ctx.conversationId,
+      allowed_secrets: ids, inputs: { signin: { site, via: own ? "password" : "google", goal, ...(lang ? { lang } : {}) } }, status: "queued", conversation_id: ctx.conversationId,
     }).select("id").single();
     if (error || !job) throw new Error("Couldn't start the sign-in");
     await kickCloudWorker();
@@ -67,10 +70,10 @@ export const siteLoginTool: BuiltinTool = {
       };
     // The browser sometimes "finishes" on the login page with an error showing: that is a failed sign-in.
     if (j?.status === "done" && /\b(login (attempt )?failed|not successful|password is (invalid|incorrect|wrong)|invalid (password|credentials|username))\b/i.test(j.result ?? ""))
-      return { job_id: job.id, status: "failed", site, reason: signinFailure("WRONG_LOGIN", site).line, page: (j.result ?? "").slice(0, 600), note: "Say this in one short line and offer to update the saved login (a form is shown under your reply).", __card: { type: "vault_login", site, for: site } };
+      return { job_id: job.id, status: "failed", site, reason: signinFailure("WRONG_LOGIN", site, lang).line, page: (j.result ?? "").slice(0, 600), note: "Say this in one short line and offer to update the saved login (a form is shown under your reply).", __card: { type: "vault_login", site, for: site } };
     if (j?.status === "done") return { job_id: job.id, status: "signed_in", site, result: (j.result ?? "").slice(0, 4000), note: "Signed in; the session is saved. Report what the page shows in 1-3 lines." };
     if (j?.status === "failed") {
-      const f = signinFailure(j.error, site);
+      const f = signinFailure(j.error, site, lang);
       return {
         job_id: job.id, status: "failed", site, reason: f.line,
         note: f.offerPassword ? `Say this in one short line and offer email + password instead (a form is shown under your reply).` : "Say this in one short line. No lectures.",

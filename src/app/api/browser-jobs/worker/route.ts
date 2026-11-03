@@ -11,6 +11,8 @@ import { decryptWithAny, decryptionKeys } from "@/lib/connectors/crypto";
 import { loadSiteCookies, saveSiteSession } from "@/lib/server/siteSessions";
 import { gmailSigninCode } from "@/lib/server/signinMail";
 import { WAITING_FOR_CODE } from "@/lib/builtins/signin";
+import { isLang, type Lang } from "@/lib/lang";
+import { signinFailure, signinPostHead } from "@/lib/signin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -166,8 +168,9 @@ export async function POST(req: Request) {
       error: ok ? null : String(b.error ?? "The browser task failed").slice(0, 500), finished_at: new Date().toISOString(),
     }).eq("id", id).eq("status", "running");
     if (job.conversation_id) {
-      const head = ok ? `🌐 **Browser task done:** ${job.goal}` : `⚠️ **Browser task failed:** ${job.goal}`;
-      const body = ok ? (result ?? "").slice(0, 6000) : String(b.error ?? "The browser task failed").slice(0, 500);
+      const si = signinOf(job.inputs);
+      const head = si ? signinPostHead(si.site, ok, si.lang) : ok ? `🌐 **Browser task done:** ${job.goal}` : `⚠️ **Browser task failed:** ${job.goal}`;
+      const body = ok ? (result ?? "").slice(0, 6000) : si ? signinFailure(String(b.error ?? ""), si.site, si.lang).line : String(b.error ?? "The browser task failed").slice(0, 500);
       const links = files.map((f) => `- [${f.name}](${f.url})`).join("\n");
       const content = [head, body, links].filter(Boolean).join("\n\n");
       await db.from("messages").insert({ conversation_id: job.conversation_id, user_id: job.user_id, role: "assistant", content });
@@ -179,9 +182,9 @@ export async function POST(req: Request) {
   return badRequest("Unknown action");
 }
 
-function signinOf(inputs: unknown): { site: string; via: string; goal?: string } | null {
+function signinOf(inputs: unknown): { site: string; via: string; goal?: string; lang: Lang | null } | null {
   if (!inputs || typeof inputs !== "object" || Array.isArray(inputs)) return null;
-  const s = (inputs as { signin?: { site?: unknown; via?: unknown; goal?: unknown } }).signin;
+  const s = (inputs as { signin?: { site?: unknown; via?: unknown; goal?: unknown; lang?: unknown } }).signin;
   if (!s || typeof s.site !== "string") return null;
-  return { site: s.site, via: typeof s.via === "string" ? s.via : "password", goal: typeof s.goal === "string" ? s.goal : undefined };
+  return { site: s.site, via: typeof s.via === "string" ? s.via : "password", goal: typeof s.goal === "string" ? s.goal : undefined, lang: isLang(s.lang) ? s.lang : null };
 }

@@ -1,4 +1,5 @@
 import { normalizeSite } from "@/lib/sessions";
+import { reportLangHint, type Lang } from "@/lib/lang";
 
 /**
  * Signing in to websites for the user: pure helpers shared by the chat route, the site_login tool
@@ -40,12 +41,14 @@ export const googleLogin = (items: VaultLoginRow[]) =>
   items.filter((i) => i.kind === "login").find((i) => isGoogleSite(i.site) || isGoogleSite(i.label) || /^google\b/i.test(i.label)) ?? null;
 
 /** The goal handed to the smart browser for a sign-in job. */
-export function signinGoal(site: string, opts: { siteLogin?: string | null; googleLogin?: string | null; check?: string }): string {
+export function signinGoal(site: string, opts: { siteLogin?: string | null; googleLogin?: string | null; check?: string; lang?: Lang | null }): string {
   const how = opts.siteLogin
     ? `Sign in to ${site} with the saved login (vault item ${opts.siteLogin}): put the username/email with fill_secret field "username" and the password with fill_secret field "password".`
     : `Sign in to ${site} with its "Continue with Google" / "Sign in with Google" button, using the saved Google login (vault item ${opts.googleLogin}).`;
   const google = opts.googleLogin && opts.siteLogin ? ` If ${site} only offers Google sign-in, use the saved Google login (vault item ${opts.googleLogin}).` : "";
-  return [
+  const lang = reportLangHint(opts.lang);
+  // The language hint goes last but is kept even when the rest is long.
+  const main = [
     how + google,
     "Open the site's login page first if the start page is not it. If it is already signed in, skip to the report.",
     "If the page asks for a one-time code sent by email/SMS, use need_code on the code box.",
@@ -53,15 +56,38 @@ export function signinGoal(site: string, opts: { siteLogin?: string | null; goog
     "If the site says the username or password is wrong, use fail with a reason starting WRONG_LOGIN.",
     `When signed in, use done and report what the page shows (account name, balance, dashboard headings, key numbers)${opts.check ? ` and ${opts.check}` : ""}. Do not change any settings.`,
   ].join(" ").slice(0, 1400);
+  return lang ? `${main} ${lang}` : main;
 }
 
-/** Turn a failed sign-in job's reason into one short, plain line for the chat. */
-export function signinFailure(error: string | null | undefined, site: string): { line: string; offerPassword: boolean } {
+/** Turn a failed sign-in job's reason into one short, plain line for the chat, in the user's language (Hinglish by default). */
+export function signinFailure(error: string | null | undefined, site: string, lang?: Lang | null): { line: string; offerPassword: boolean } {
   const e = (error ?? "").trim();
-  if (/GOOGLE_BLOCKED/i.test(e)) return { line: `Google ne is browser se sign-in block kar diya, isliye ${site} pe Google se login nahi hua.`, offerPassword: true };
-  if (/WRONG_LOGIN/i.test(e)) return { line: `${site} ne kaha ki saved username ya password galat hai.`, offerPassword: true };
-  if (/captcha/i.test(e)) return { line: `${site} ne captcha dikhaya, isliye sign-in ruk gaya.`, offerPassword: false };
-  return { line: `${site} pe sign-in poora nahi hua: ${e.replace(/^(GOOGLE_BLOCKED|WRONG_LOGIN)[:\s-]*/i, "").slice(0, 200) || "browser ruk gaya"}.`, offerPassword: false };
+  const en = lang === "english";
+  const rest = e.replace(/^(GOOGLE_BLOCKED|WRONG_LOGIN)[:\s-]*/i, "").slice(0, 200);
+  if (/GOOGLE_BLOCKED/i.test(e)) return { line: en ? `Google blocked the sign-in from this browser, so ${site} couldn't be signed in with Google.` : `Google ne is browser se sign-in block kar diya, isliye ${site} pe Google se login nahi hua.`, offerPassword: true };
+  if (/WRONG_LOGIN/i.test(e)) return { line: en ? `${site} says the saved username or password is wrong.` : `${site} ne kaha ki saved username ya password galat hai.`, offerPassword: true };
+  if (/captcha/i.test(e)) return { line: en ? `${site} showed a captcha, so the sign-in stopped.` : `${site} ne captcha dikhaya, isliye sign-in ruk gaya.`, offerPassword: false };
+  return { line: en ? `Sign-in to ${site} didn't finish: ${rest || "the browser stopped"}.` : `${site} pe sign-in poora nahi hua: ${rest || "browser ruk gaya"}.`, offerPassword: false };
+}
+
+/** The fixed status line the chat shows when the model can't write the sign-in reply itself. */
+export function signinStatusLine(j: Record<string, unknown>, site: string, lang?: Lang | null): string {
+  const status = typeof j.status === "string" ? j.status : "";
+  const en = lang === "english";
+  if (status === "needs_login") return en
+    ? `\n\nThere's no saved login for ${site} yet. Save your email/username and password in the secure form below and I'll sign in right after.`
+    : `\n\n${site} ka login abhi vault mein nahi hai. Neeche secure form mein email/username aur password save karo, save hote hi main sign in kar dunga.`;
+  if (status === "needs_code") return en ? `\n\n${site} sent a code. Enter it below and I'll finish signing in.` : `\n\n${site} ne ek code bheja hai. Neeche code daalo, main sign-in poora kar dunga.`;
+  if (status === "signed_in") return `\n\n✓ ${en ? `Signed in to ${site}.` : `${site} pe sign in ho gaya.`}${typeof j.result === "string" && j.result ? `\n\n${j.result.slice(0, 1500)}` : ""}`;
+  if (status === "failed") return `\n\n${typeof j.reason === "string" ? j.reason : en ? `Couldn't sign in to ${site}.` : `${site} pe sign-in nahi hua.`}`;
+  if (status === "queued" || status === "running") return en ? `\n\nSigning in to ${site}; the result will be posted in this chat.` : `\n\n${site} pe sign in chal raha hai; result isi chat mein aa jayega.`;
+  return "";
+}
+
+/** Heading for a sign-in job's result posted into the chat later by the worker. */
+export function signinPostHead(site: string, ok: boolean, lang?: Lang | null): string {
+  if (lang === "english") return ok ? `✓ **Signed in to ${site}**` : `⚠️ **Couldn't sign in to ${site}**`;
+  return ok ? `✓ **${site} pe sign in ho gaya**` : `⚠️ **${site} pe sign in nahi hua**`;
 }
 
 /** Pull a 4-8 character one-time code out of what the user typed ("code 482913", "482-913"). */
