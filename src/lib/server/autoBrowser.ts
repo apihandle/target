@@ -21,6 +21,11 @@ export const autoAction = z.discriminatedUnion("do", [
   z.object({ do: z.literal("goto"), url: z.string().url().max(2000), why: z.string().max(200).default("") }),
   z.object({ do: z.literal("scroll"), why: z.string().max(200).default("") }),
   z.object({ do: z.literal("wait"), why: z.string().max(200).default("") }),
+  z.object({
+    do: z.literal("ready_to_pay"), i: z.number().int().min(0),
+    items: z.array(z.object({ name: z.string().min(1).max(120), qty: z.coerce.number().int().min(1).max(99).optional(), price: z.string().max(30).optional() })).max(20).default([]),
+    total: z.string().min(1).max(40), payment: z.string().max(120).default(""), why: z.string().max(200).default(""),
+  }),
   z.object({ do: z.literal("done"), result: z.string().max(4000) }),
   z.object({ do: z.literal("fail"), reason: z.string().max(400) }),
 ]);
@@ -110,10 +115,23 @@ function submitLogin(snap: Snapshot): AutoAction {
   return submit ? { do: "click", i: submit.i, why: "Submit the login form" } : { do: "press", key: "Enter", why: "Submit the login form" };
 }
 
-export async function decideNext(goal: string, snap: Snapshot, secrets: { id: string; kind: string; label: string; site: string | null }[], history: string[], stepsLeft: number): Promise<AutoAction> {
+/**
+ * A job-specific server check on the model's choice (checkout: never pay before approval). It can pass the action,
+ * swap it, or send the model back with a note ("retry"); after the tries run out the last note becomes a fail.
+ */
+export type StepGuard = (a: AutoAction) => { action: AutoAction } | { retry: string };
+
+export async function decideNext(goal: string, snap: Snapshot, secrets: { id: string; kind: string; label: string; site: string | null }[], history: string[], stepsLeft: number, guard?: StepGuard): Promise<AutoAction> {
   const auto = signinAutofill(goal, snap, secrets, history);
   if (auto) return auto;
-  const sys = autoPrompt(goal, secrets, history, stepsLeft);
+  const notes: string[] = [];
+  const pass = (a: AutoAction): AutoAction | null => {
+    if (!guard) return a;
+    const g = guard(a);
+    if ("retry" in g) { notes.push(g.retry); return null; }
+    return g.action;
+  };
+  const sysBase = autoPrompt(goal, secrets, history, stepsLeft);
   const vision = snap.screenshot && visionModels().length ? visionModels() : null;
   const user: LLMMessage = vision
     ? { role: "user", content: [{ type: "text", text: pageBlock(snap) }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${snap.screenshot}` } }] }
@@ -125,24 +143,31 @@ export async function decideNext(goal: string, snap: Snapshot, secrets: { id: st
   // next model after 10 s and stops at 20 s.
   const started = Date.now();
   for (let attempt = 0; attempt < 3; attempt++) {
-    if (Date.now() - started > 25000) return { do: "wait", why: "The AI was slow; trying this step again" };
+    if (Date.now() - started > 25000) return notes.length ? { do: "fail", reason: notes[notes.length - 1].slice(0, 400) } : { do: "wait", why: "The AI was slow; trying this step again" };
+    const sys = notes.length ? `${sysBase}\nSERVER: your last choice was refused. ${notes[notes.length - 1]}` : sysBase;
     const reply = await llmText({ messages: [{ role: "system", content: sys }, attempt === 0 ? user : plain], maxTokens: 2500, temperature: 0, timeoutMs: 20000, firstTokenMs: 10000, ...(vision && attempt === 0 ? { only: vision } : {}) });
     const a = parseAction(reply);
     if (a) {
-      if ((a.do === "click" || a.do === "fill" || a.do === "fill_secret" || a.do === "select" || a.do === "need_code") && !snap.elements.some((e) => e.i === a.i)) continue;
-      if (a.do === "fill_secret" && !secrets.some((s) => s.id === a.secret_id)) return { do: "fail", reason: "Needed a login or card that isn't in the vault for this task" };
+      if ((a.do === "click" || a.do === "fill" || a.do === "fill_secret" || a.do === "select" || a.do === "need_code" || a.do === "ready_to_pay") && !snap.elements.some((e) => e.i === a.i)) continue;
+      if (a.do === "fill_secret" && !secrets.some((s) => s.id === a.secret_id)) {
+        const g = guard?.(a);
+        if (g && "retry" in g) { notes.push(g.retry); continue; }
+        return { do: "fail", reason: "Needed a login or card that isn't in the vault for this task" };
+      }
       // Re-filling a login field that was already filled from the vault: the form is ready, so submit it.
       if (a.do === "fill_secret" && /\bsign in\b/i.test(goal) && snap.elements.some((e) => e.type === "password")) {
         const since = history.slice(history.map((h) => h.startsWith("click") || h.startsWith("press")).lastIndexOf(true) + 1);
-        if (since.some((h) => h.startsWith("fill_secret") && h.includes(` ${a.field}`)) && since.some((h) => h.startsWith("fill_secret") && h.includes(" password"))) return submitLogin(snap);
+        if (since.some((h) => h.startsWith("fill_secret") && h.includes(` ${a.field}`)) && since.some((h) => h.startsWith("fill_secret") && h.includes(" password"))) { const s = pass(submitLogin(snap)); if (s) return s; continue; }
       }
       // "Signed in" while the login form is still on screen and was never submitted: submit it instead.
       if (a.do === "done" && /\bsign in\b/i.test(goal) && snap.elements.some((e) => e.type === "password") && !history.some((h) => /^(click|press)/.test(h) && /log ?in|sign ?in|submit/i.test(h))) {
-        return submitLogin(snap);
+        const s = pass(submitLogin(snap)); if (s) return s; continue;
       }
-      return secretSafe(a, snap, secrets);
+      const out = pass(secretSafe(a, snap, secrets));
+      if (out) return out;
     }
   }
+  if (notes.length) return { do: "fail", reason: notes[notes.length - 1].slice(0, 400) };
   return { do: "fail", reason: "The AI couldn't decide the next step on this page" };
 }
 

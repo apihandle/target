@@ -58,6 +58,23 @@ async function openBrowser() {
   return { browser, page };
 }
 
+/** Restore cookies, and localStorage before the page's own scripts run on that origin. */
+async function restoreState(ctx, st) {
+  if (st.cookies?.length) await ctx.addCookies(st.cookies).catch(() => {});
+  const origins = (st.origins || []).filter((o) => o.localStorage?.length);
+  if (origins.length) {
+    await ctx.addInitScript((list) => {
+      try {
+        const o = list.find((x) => x.origin === location.origin);
+        if (o && !sessionStorage.getItem("__target_restored")) {
+          for (const kv of o.localStorage) localStorage.setItem(kv.name, kv.value);
+          sessionStorage.setItem("__target_restored", "1");
+        }
+      } catch { /* storage blocked */ }
+    }, origins);
+  }
+}
+
 // ------------------------------------------------------------------ fixed steps
 async function runSteps(job, page) {
   const out = [];
@@ -91,7 +108,7 @@ async function snapshot(page) {
       if (r.width < 2 || r.height < 2 || st.visibility === "hidden" || st.display === "none" || r.bottom < 0 || r.top > innerHeight * 2.5) continue;
       e.setAttribute("data-target-i", String(i));
       const tag = e.tagName.toLowerCase();
-      const text = (e.getAttribute("aria-label") || e.innerText || e.getAttribute("placeholder") || e.getAttribute("title") || e.value || e.getAttribute("alt") || "").replace(/\s+/g, " ").trim().slice(0, 110);
+      const text = (e.getAttribute("aria-label") || e.innerText || e.getAttribute("placeholder") || e.getAttribute("title") || (e.type === "password" || /cc-|card|cvv|cvc|expir|security.?code/i.test(`${e.getAttribute("autocomplete") || ""} ${e.getAttribute("name") || ""} ${e.id || ""}`) ? "" : e.value) || e.getAttribute("alt") || "").replace(/\s+/g, " ").trim().slice(0, 110);
       els.push({ i, tag, type: e.getAttribute("type") || undefined, text, name: (e.getAttribute("name") || "").slice(0, 70) || undefined });
       if (++i >= 180) break;
     }
@@ -111,6 +128,12 @@ async function runAuto(job, page) {
     try {
       if (a.do === "done") return `${a.result}\n\nFinal page: ${await page.title()} (${page.url()})`;
       if (a.do === "fail") throw Object.assign(new Error(a.reason), { final: true });
+      if (a.do === "ready_to_pay") {
+        // Checkout: stop at the pay step and hand TARGET the cart (cookies + localStorage) and this page. Nothing is pressed.
+        const state = await page.context().storageState();
+        await api({ action: "checkout_ready", job_id: job.id, state, url: page.url() });
+        return `Stopped at the pay step. Total on the page: ${a.total}\n\nFinal page: ${await page.title()} (${page.url()})`;
+      }
       if (a.do === "click") await el(a.i).click();
       else if (a.do === "fill") await el(a.i).fill(a.value);
       else if (a.do === "select") await el(a.i).selectOption({ label: a.value }).catch(() => el(a.i).selectOption(a.value));
@@ -211,6 +234,12 @@ async function run(job) {
     } else {
       const { browser, page } = await openBrowser();
       try {
+        if (job.inputs?.checkout?.phase === "pay") {
+          // Approved checkout: put back the cart the prepare job left (cookies + localStorage) before opening the pay page.
+          const { state } = await api({ action: "checkout_state", job_id: job.id });
+          if (!state) throw new Error("The saved cart is missing; prepare the checkout again");
+          await restoreState(page.context(), state);
+        }
         const result = job.mode === "auto" ? await runAuto(job, page) : await runSteps(job, page);
         await api({ action: "finish", job_id: job.id, status: "done", result });
       } finally { await browser.close(); }

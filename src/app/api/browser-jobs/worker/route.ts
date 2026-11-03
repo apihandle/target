@@ -15,6 +15,8 @@ import { isLang, type Lang } from "@/lib/lang";
 import { signinFailure, signinPostHead } from "@/lib/signin";
 import { accountOf, accountPost } from "@/lib/siteAccount";
 import { settleSiteAccount } from "@/lib/server/siteAccountRun";
+import { checkoutOf, guardCheckout, PAY_PRESSED } from "@/lib/checkout";
+import { checkoutReady, checkoutState, finishCheckout } from "@/lib/server/checkoutRun";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -30,6 +32,8 @@ const OUT_MIME: Record<string, string> = { png: "image/png", jpg: "image/jpeg", 
  *  cookies -> sign-in jobs: the saved session for the job's site (so an existing login is reused)
  *  code   -> sign-in jobs: a one-time code, from the user's Gmail or the code form in chat
  *  save_session -> sign-in jobs: store the signed-in cookies (encrypted) in site_sessions
+ *  checkout_ready -> checkout prepare jobs at the pay step: the browser state (sealed) and the pay page URL
+ *  checkout_state -> checkout pay jobs (approved): that sealed state, so a new browser has the same cart
  *  finish -> store the result (done/failed) and notify the owner
  */
 export async function POST(req: Request) {
@@ -74,8 +78,21 @@ export async function POST(req: Request) {
   }
 
   const account = accountOf(job.inputs);
-  // Sign-in and account (register / reset) jobs share the site session, code and link helpers.
-  const signin = signinOf(job.inputs) ?? (account ? { site: account.site, via: "password", goal: account.goal, lang: account.lang ?? null } : null);
+  const checkout = checkoutOf(job.inputs);
+  // Sign-in, account (register / reset) and checkout jobs share the site session, code and link helpers.
+  const signin = signinOf(job.inputs)
+    ?? (account ? { site: account.site, via: "password", goal: account.goal, lang: account.lang ?? null } : null)
+    ?? (checkout ? { site: checkout.site, via: "password", goal: checkout.goal, lang: checkout.lang ?? null } : null);
+  if (b.action === "checkout_ready" || b.action === "checkout_state") {
+    if (!checkout) return badRequest("Not a checkout job");
+    if (b.action === "checkout_ready") {
+      const r = await checkoutReady(db, job as { id: string; user_id: string; inputs: Record<string, unknown> }, checkout, b.state, b.url);
+      return r.ok ? json({ ok: true }) : json({ error: r.error }, 400);
+    }
+    const state = checkoutState(job.user_id as string, id, checkout);
+    if (!state) return json({ error: "No saved checkout state" }, 404);
+    return new Response(JSON.stringify({ state }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  }
   if (b.action === "link") {
     if (!signin) return badRequest("Not a sign-in job");
     const inputs = job.inputs as Record<string, unknown>;
@@ -132,9 +149,27 @@ export async function POST(req: Request) {
     if (left <= 0) return json({ action: { do: "fail", reason: "Ran out of steps before finishing" } });
     const ids = (job.allowed_secrets ?? []) as string[];
     const { data: secrets } = ids.length ? await db.from("vault_secrets").select("id, kind, label, site").eq("user_id", job.user_id).in("id", ids) : { data: [] };
-    const action = await decideNext(signin?.goal ?? (job.goal as string), snap.data, (secrets ?? []) as { id: string; kind: string; label: string; site: string | null }[], log, left);
+    let pays = false;
+    const guard = checkout ? (a: Parameters<typeof guardCheckout>[1]) => {
+      const g = guardCheckout(checkout, a, snap.data, log);
+      if ("action" in g && g.pays) pays = true;
+      return g;
+    } : undefined;
+    let action = await decideNext(signin?.goal ?? (job.goal as string), snap.data, (secrets ?? []) as { id: string; kind: string; label: string; site: string | null }[], log, left, guard);
+    if (action.do === "ready_to_pay") {
+      if (checkout?.phase === "prepare") {
+        // Remember what the pay page showed (already checked against it by the guard); the card is built from this.
+        // The card isn't readable by this job at all; only its label is shown on the card.
+        const { data: vault } = checkout.payment_secret_id
+          ? await db.from("vault_secrets").select("label, preview").eq("id", checkout.payment_secret_id).eq("user_id", job.user_id).maybeSingle()
+          : { data: null };
+        const pending = { items: action.items, total: action.total, payment: action.payment || (vault ? `${`${vault.label ?? ""} ${vault.preview ?? ""}`.trim()} (from your vault, entered after you approve)` : ""), pay_i: action.i };
+        const inputs = job.inputs as Record<string, unknown>;
+        await db.from("browser_jobs").update({ inputs: { ...inputs, checkout: { ...(inputs.checkout as Record<string, unknown>), pending } } }).eq("id", id);
+      } else action = { do: "done", result: `Reached the payment step (total ${action.total}). Stopped before paying.` };
+    }
     const line = action.do === "done" || action.do === "fail" ? action.do : `${action.do}${"i" in action ? ` [${action.i}]` : ""}${action.do === "fill_secret" ? ` ${action.field}` : ""}${"why" in action && action.why ? `: ${action.why}` : ""}`.slice(0, 200);
-    await db.from("browser_jobs").update({ log: [...log, line] }).eq("id", id);
+    await db.from("browser_jobs").update({ log: [...log, line, ...(pays && action.do !== "done" && action.do !== "fail" ? [PAY_PRESSED] : [])] }).eq("id", id);
     return json({ action });
   }
 
@@ -177,6 +212,12 @@ export async function POST(req: Request) {
       if (typeof b.error === "string") b.error = hide(b.error);
     }
     if (account) await settleSiteAccount(db, job.user_id as string, account, ok, ((job.log ?? []) as string[])).catch(() => undefined);
+    if (checkout) {
+      // Checkout jobs post their own message: the approval card after prepare, the outcome after pay.
+      await finishCheckout(db, job as { id: string; user_id: string; conversation_id: string | null; inputs: Record<string, unknown>; goal: string }, checkout, ok, result, typeof b.error === "string" ? b.error : null);
+      try { await sendPushToUser(db, job.user_id as string, { title: checkout.phase === "prepare" ? (ok ? "Checkout ready: approve to pay" : "Checkout stopped") : ok ? "Order placed" : "Payment stopped", body: checkout.merchant, url: "/app", tag: `browser-${id}` }); } catch { /* optional */ }
+      return json({ ok: true });
+    }
     await db.from("browser_jobs").update({
       status: ok ? "done" : "failed", result: result ? result.slice(0, 20000) : null, files,
       error: ok ? null : String(b.error ?? "The browser task failed").slice(0, 500), finished_at: new Date().toISOString(),

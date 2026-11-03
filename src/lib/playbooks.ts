@@ -102,7 +102,7 @@ export const AGENT_PLAYBOOKS: Playbook[] = [
       "- When you do use browser_task, give it one precise goal (what to find or do, what counts as done, what to bring back) and the most direct start URL.",
       "- To sign in to a site use target__site_login (vault login, secure form when none is saved). Other typing or changes on a site wait for the user's approval; say that plainly instead of claiming it is done.",
       "- Report what actually happened: what was found (with the page it came from), where it stopped, and why (login, captcha, page error). Never fill gaps with guesses.",
-      "- For buying or booking, use checkout so the user sees the order card before anything is paid.",
+      "- For buying on a store, use checkout: the browser fills the cart and stops at the pay step, and the user sees the approval card with the page's items, total and payment method before anything is paid.",
     ].join("\n"),
   },
   {

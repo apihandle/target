@@ -2,6 +2,8 @@ import { z } from "zod";
 import { ATTACHMENT_BUCKET } from "@/lib/attachments";
 import { SITE, slugFor } from "@/lib/builtins/helpers";
 import type { BuiltinCtx, BuiltinTool } from "@/lib/builtins/tools";
+import { storeSite, userAskedToBuy } from "@/lib/checkout";
+import { queueCheckout } from "@/lib/server/checkoutRun";
 
 const tool = <S extends z.ZodTypeAny>(t: BuiltinTool<S>): BuiltinTool => t as unknown as BuiltinTool;
 
@@ -174,37 +176,34 @@ export const ROUND2_TOOLS: BuiltinTool[] = [
     },
   }),
   tool({
-    name: "checkout", label: "Preparing the order",
-    description: "Buy or book something on a website for the user (an order, ticket, hotel, table). Give the store, every item with its price, the total exactly as the site shows it, the vault card to pay with (from list_vault), and the start URL. An order card with an Approve button appears in chat; NOTHING is bought until the user taps Approve. Then the browser worker completes the checkout on its own.",
+    name: "checkout", label: "Getting the checkout ready",
+    description: "Buy something on a store website for the user, ONLY when the user asked to buy/order it. The browser adds the items to the cart and goes through checkout up to the pay step, then STOPS: an approval card with the items, total and payment method exactly as the store's page shows them appears in chat. Nothing is paid until the user taps Place order; then the browser pays once, only at that total (a changed total stops it). " +
+      "Give the store name, its start URL (the product page or the store), each item, and from list_vault the card to pay with (payment_secret_id) and the store login (login_secret_id) if any. Pass delivery / form details the user gave; never invent personal details. Never put card numbers in chat.",
     input: z.object({
       merchant: z.string().min(1).max(80), start_url: z.string().url().max(2000),
-      items: z.array(z.object({ name: z.string().min(1).max(120), qty: z.number().int().min(1).max(99).default(1), price: z.string().max(30) })).min(1).max(20),
-      total: z.string().min(1).max(30), payment_secret_id: z.string().uuid().optional(), login_secret_id: z.string().uuid().optional(),
-      deliver_to: z.string().max(200).default(""), instructions: z.string().max(800).default(""),
+      items: z.array(z.object({ name: z.string().min(1).max(120), qty: z.number().int().min(1).max(99).default(1) })).min(1).max(20),
+      payment_secret_id: z.string().uuid().optional(), login_secret_id: z.string().uuid().optional(),
+      deliver_to: z.string().max(300).default(""), details: z.string().max(400).default(""),
+      lang: z.enum(["hinglish", "hindi", "english"]).optional(),
     }),
     async execute(a, ctx) {
       if (!/^https?:\/\//.test(a.start_url)) throw new Error("Only http(s) sites");
+      if (!userAskedToBuy(ctx.userTexts)) return { status: "not_requested", note: "Only start a checkout when the user's own message asks to buy / order something. Ask them first; do not retry." };
+      const site = storeSite(a.start_url);
+      if (!site) throw new Error("Give the store's web address");
       const secrets = [a.payment_secret_id, a.login_secret_id].filter((x): x is string => !!x);
-      let payLabel = "";
       if (secrets.length) {
-        const { data } = await ctx.db.from("vault_secrets").select("id, kind, label, preview").eq("user_id", ctx.userId).in("id", secrets);
-        if ((data ?? []).length !== new Set(secrets).size) throw new Error("A vault item doesn't exist");
-        const card = (data ?? []).find((d) => d.id === a.payment_secret_id);
-        if (a.payment_secret_id && card?.kind !== "card") throw new Error("payment_secret_id must be a saved card");
-        payLabel = card ? `${card.label} ${card.preview}`.trim() : "";
+        const { data } = await ctx.db.from("vault_secrets").select("id, kind").eq("user_id", ctx.userId).in("id", secrets);
+        const rows = (data ?? []) as { id: string; kind: string }[];
+        if (rows.length !== new Set(secrets).size) throw new Error("A vault item doesn't exist");
+        if (a.payment_secret_id && rows.find((d) => d.id === a.payment_secret_id)?.kind !== "card") throw new Error("payment_secret_id must be a saved card");
+        if (a.login_secret_id && rows.find((d) => d.id === a.login_secret_id)?.kind !== "login") throw new Error("login_secret_id must be a saved login");
       }
-      const goal = `Buy at ${a.merchant}: ${a.items.map((i) => `${i.qty} x ${i.name}`).join(", ")}. Total must be ${a.total}. ${a.deliver_to ? `Deliver to ${a.deliver_to}. ` : ""}${a.instructions}`.slice(0, 500);
-      const { data: job, error } = await ctx.db.from("browser_jobs").insert({
-        user_id: ctx.userId, mode: "auto", goal, start_url: a.start_url, allowed_secrets: secrets, max_steps: 35, status: "needs_approval", conversation_id: ctx.conversationId,
-      }).select("id").single();
-      if (error || !job) throw new Error("Couldn't prepare the order");
-      const summary = `Buy from ${a.merchant} for ${a.total}`.slice(0, 300);
-      const { data: ap, error: e2 } = await ctx.db.from("approval_requests").insert({
-        user_id: ctx.userId, action_type: "purchase", summary, destination: a.merchant, status: "pending", conversation_id: ctx.conversationId,
-        payload: { browser_job_id: job.id, items: a.items, total: a.total, payment: payLabel, deliver_to: a.deliver_to },
-      }).select("id").single();
-      if (e2 || !ap) throw new Error("Couldn't prepare the order card");
-      return { __approval: { id: ap.id as string, summary } };
+      const id = await queueCheckout(ctx.db, ctx.userId, ctx.conversationId, {
+        phase: "prepare", merchant: a.merchant, site, items: a.items, deliver_to: a.deliver_to, details: a.details,
+        login_secret_id: a.login_secret_id ?? null, payment_secret_id: a.payment_secret_id ?? null, lang: a.lang ?? null,
+      }, a.start_url);
+      return { job_id: id, status: "started", note: "The browser is adding the items and going through checkout now. It stops at the pay step and posts an approval card in this chat with the items, total and payment method as the store shows them. Tell the user briefly: nothing is paid until they tap Place order." };
     },
   }),
   tool({

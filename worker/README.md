@@ -26,7 +26,7 @@ TARGET_URL=https://gettarget.vercel.app SESSION_WORKER_SECRET=... node worker/br
 Code and video jobs stay off here, because code must run as a separate unprivileged user.
 
 ## Safety
-- Anything that clicks or types waits for your approval (an Approve button in chat or Settings, Browser tasks). Orders show an order card first.
+- Anything that clicks or types waits for your approval (an Approve button in chat or Settings, Browser tasks). Store checkouts stop at the pay step and show an approval card (items, total, payment as the page shows them); the pay button is pressed only after the tap, once, and only at that total.
 - Private and internal addresses are blocked for pages and every request they make.
 - Vault values are fetched one field at a time, only for a running job that lists that item; they are typed into the page and never logged or shown to the AI.
 - Code runs as user `nobody` with a clean environment, so it can't read the worker's secret.

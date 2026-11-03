@@ -1,4 +1,4 @@
-import type { Browser, Page } from "playwright-core";
+import type { Browser, BrowserContext, Page } from "playwright-core";
 import { configuredProviders, redact, startSession, type CdpSession } from "./remoteBrowser";
 import { SITE } from "@/lib/builtins/helpers";
 import { readUrl } from "@/lib/urlReader";
@@ -17,9 +17,34 @@ type Job = { id: string; mode: string; goal?: string; start_url: string; steps?:
  * reuse a saved session first and save the new one after.
  */
 export function signinSite(job: Job): string | null {
-  const i = job.inputs as { signin?: { site?: unknown }; account?: { site?: unknown } } | undefined;
+  const i = job.inputs as { signin?: { site?: unknown }; account?: { site?: unknown }; checkout?: { site?: unknown } } | undefined;
   if (!i || Array.isArray(i)) return null;
-  return typeof i.signin?.site === "string" ? i.signin.site : typeof i.account?.site === "string" ? i.account.site : null;
+  return typeof i.signin?.site === "string" ? i.signin.site : typeof i.account?.site === "string" ? i.account.site : typeof i.checkout?.site === "string" ? i.checkout.site : null;
+}
+
+/** Checkout jobs: "prepare" stops at the pay step; "pay" (approved) starts from the cart the prepare job left. */
+export function checkoutPhase(job: Job): "prepare" | "pay" | null {
+  const c = (job.inputs as { checkout?: { phase?: unknown } } | undefined)?.checkout;
+  return c?.phase === "prepare" || c?.phase === "pay" ? c.phase : null;
+}
+
+type StorageState = { cookies: Parameters<BrowserContext["addCookies"]>[0]; origins: { origin: string; localStorage: { name: string; value: string }[] }[] };
+
+/** Put a saved cart back: cookies, plus localStorage written before the page's own scripts run on that origin. */
+export async function restoreState(ctx: BrowserContext, st: StorageState): Promise<void> {
+  if (st.cookies?.length) await ctx.addCookies(st.cookies).catch(() => {});
+  const origins = (st.origins ?? []).filter((o) => o.localStorage?.length);
+  if (origins.length) {
+    await ctx.addInitScript((list: { origin: string; localStorage: { name: string; value: string }[] }[]) => {
+      try {
+        const o = list.find((x) => x.origin === location.origin);
+        if (o && !sessionStorage.getItem("__target_restored")) {
+          for (const kv of o.localStorage) localStorage.setItem(kv.name, kv.value);
+          sessionStorage.setItem("__target_restored", "1");
+        }
+      } catch { /* storage blocked */ }
+    }, origins);
+  }
 }
 
 /** Wait for a verification / reset link the site emailed (read from Gmail), checking every few seconds. */
@@ -90,7 +115,7 @@ async function snapshot(page: Page) {
       const st = getComputedStyle(e);
       if (r.width < 2 || r.height < 2 || st.visibility === "hidden" || st.display === "none" || r.bottom < 0 || r.top > innerHeight * 2.5) continue;
       e.setAttribute("data-target-i", String(i));
-      const text = (e.getAttribute("aria-label") || e.innerText || e.getAttribute("placeholder") || e.getAttribute("title") || ((e as HTMLInputElement).type === "password" ? "" : (e as HTMLInputElement).value) || e.getAttribute("alt") || "").replace(/\s+/g, " ").trim().slice(0, 110);
+      const text = (e.getAttribute("aria-label") || e.innerText || e.getAttribute("placeholder") || e.getAttribute("title") || ((e as HTMLInputElement).type === "password" || /cc-|card|cvv|cvc|expir|security.?code/i.test(`${e.getAttribute("autocomplete") || ""} ${e.getAttribute("name") || ""} ${e.id || ""}`) ? "" : (e as HTMLInputElement).value) || e.getAttribute("alt") || "").replace(/\s+/g, " ").trim().slice(0, 110);
       els.push({ i, tag: e.tagName.toLowerCase(), type: e.getAttribute("type") || undefined, text, name: (e.getAttribute("name") || "").slice(0, 70) || undefined });
       if (++i >= 180) break;
     }
@@ -100,7 +125,7 @@ async function snapshot(page: Page) {
   return { url: page.url().slice(0, 2000), title: (await page.title()).slice(0, 290), text: data.text, elements: data.els, ...(shot && shot.length < 390000 ? { screenshot: shot } : {}) };
 }
 
-async function runAuto(job: Job, page: Page, api: Api, deadline: number): Promise<string> {
+export async function runAuto(job: Job, page: Page, api: Api, deadline: number): Promise<string> {
   await page.goto(safeUrl(job.start_url), { waitUntil: "domcontentloaded" });
   for (let n = 0; n < (job.max_steps || 20) + 2; n++) {
     if (Date.now() > deadline) throw Object.assign(new Error("Took too long in the cloud browser; try a shorter task"), { final: true });
@@ -112,6 +137,12 @@ async function runAuto(job: Job, page: Page, api: Api, deadline: number): Promis
     try {
       if (a.do === "done") return `${a.result}\n\nFinal page: ${await page.title()} (${page.url()})`;
       if (a.do === "fail") throw Object.assign(new Error(a.reason), { final: true });
+      if (a.do === "ready_to_pay") {
+        // Stop at the pay step: hand the cart (cookies + localStorage) and this page to TARGET; nothing is pressed.
+        const state = await page.context().storageState();
+        await api({ action: "checkout_ready", job_id: job.id, state, url: page.url() });
+        return `Stopped at the pay step. Total on the page: ${a.total}\n\nFinal page: ${await page.title()} (${page.url()})`;
+      }
       if (a.do === "click") await el(a.i).click();
       else if (a.do === "fill") await el(a.i).fill(a.value);
       else if (a.do === "need_code") {
@@ -162,6 +193,7 @@ export async function connectCloudBrowser(env: Record<string, string | undefined
 
 /** A job that only reads (no sign-in, no typing steps) can still be answered without a cloud browser. */
 export function canReadWithoutBrowser(job: Job): boolean {
+  if (checkoutPhase(job)) return false;
   if (job.mode === "auto") return !(job.allowed_secrets ?? []).length;
   if (job.mode === "steps") return (job.steps ?? []).every((s) => ["goto", "wait", "extract"].includes(s.action));
   return false;
@@ -214,7 +246,11 @@ export async function runQueuedJobs(opts: { budgetMs: number; secret: string; ba
         const page = ctx.pages()[0] ?? (await ctx.newPage());
         page.setDefaultTimeout(15000);
         const site = signinSite(job);
-        if (site) {
+        if (checkoutPhase(job) === "pay") {
+          const { state } = (await api({ action: "checkout_state", job_id: job.id })) as { state?: StorageState };
+          if (!state) throw Object.assign(new Error("The saved cart is missing; prepare the checkout again"), { final: true });
+          await restoreState(ctx, state);
+        } else if (site) {
           const { cookies } = (await api({ action: "cookies", job_id: job.id }).catch(() => ({ cookies: [] }))) as { cookies?: Parameters<typeof ctx.addCookies>[0] };
           if (cookies?.length) await ctx.addCookies(cookies).catch(() => {});
         }

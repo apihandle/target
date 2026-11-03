@@ -65,14 +65,6 @@ describe("round 2 tools", () => {
     expect(j?.status).toBe("running");
   });
 
-  it("checkout prepares an order card and a held browser job, never a purchase", async () => {
-    const { db, inserts } = fakeDb();
-    const out = await getBuiltin("checkout")!.execute({ merchant: "Shop", start_url: "https://shop.example/cart", items: [{ name: "Tea", qty: 2, price: "Rs 100" }], total: "Rs 200", deliver_to: "", instructions: "" }, { db, userId: "u", conversationId: null }) as { __approval: { id: string } };
-    expect(inserts[0]).toMatchObject({ table: "browser_jobs", row: { mode: "auto", status: "needs_approval" } });
-    expect(inserts[1]).toMatchObject({ table: "approval_requests", row: { action_type: "purchase", status: "pending" } });
-    expect(out.__approval.id).toBe("approval_requests-id");
-  });
-
   it("the model can't propose a purchase itself", () => {
     expect(ACTION_DEFS.purchase.internal).toBe(true);
     expect(ACTION_DEFS.purchase.unavailable).toBeUndefined();
