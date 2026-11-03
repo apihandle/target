@@ -12,10 +12,25 @@ import { llmText } from "@/lib/llm";
  */
 type Job = { id: string; mode: string; goal?: string; start_url: string; steps?: Step[]; max_steps?: number; allowed_secrets?: string[]; inputs?: unknown };
 
-/** Sign-in jobs carry { signin: { site } } in inputs: reuse a saved session first and save the new one after. */
+/**
+ * Sign-in jobs carry { signin: { site } } in inputs (account create / reset jobs { account: { site } }):
+ * reuse a saved session first and save the new one after.
+ */
 export function signinSite(job: Job): string | null {
-  const i = job.inputs as { signin?: { site?: unknown } } | undefined;
-  return i && !Array.isArray(i) && typeof i.signin?.site === "string" ? i.signin.site : null;
+  const i = job.inputs as { signin?: { site?: unknown }; account?: { site?: unknown } } | undefined;
+  if (!i || Array.isArray(i)) return null;
+  return typeof i.signin?.site === "string" ? i.signin.site : typeof i.account?.site === "string" ? i.account.site : null;
+}
+
+/** Wait for a verification / reset link the site emailed (read from Gmail), checking every few seconds. */
+export async function waitForLink(job: Job, api: Api, until: number, pause: (ms: number) => Promise<unknown>): Promise<string | null> {
+  while (Date.now() < until) {
+    const r = (await api({ action: "link", job_id: job.id }).catch(() => ({}))) as { link?: string | null; error?: string };
+    if (r.link) return String(r.link);
+    if (r.error) throw Object.assign(new Error(r.error), { final: true });
+    await pause(5000);
+  }
+  return null;
 }
 
 /** Wait for a one-time code (Gmail or the code form in chat), checking every few seconds. */
@@ -105,6 +120,12 @@ async function runAuto(job: Job, page: Page, api: Api, deadline: number): Promis
         if (!code) throw Object.assign(new Error("No one-time code arrived in time"), { final: true });
         await el(a.i).fill(code);
         await page.keyboard.press("Enter").catch(() => {});
+      }
+      else if (a.do === "need_link") {
+        await api({ action: "progress", job_id: job.id, line: "Looking for the emailed link in Gmail" }).catch(() => {});
+        const link = await waitForLink(job, api, Math.min(deadline - 20000, Date.now() + 150000), (ms) => page.waitForTimeout(ms));
+        if (!link) throw Object.assign(new Error("The site's email with the link didn't arrive in time"), { final: true });
+        await page.goto(safeUrl(link), { waitUntil: "domcontentloaded" });
       }
       else if (a.do === "select") await el(a.i).selectOption({ label: a.value }).catch(() => el(a.i).selectOption(a.value));
       else if (a.do === "fill_secret") {

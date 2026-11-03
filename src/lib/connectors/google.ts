@@ -49,7 +49,7 @@ export function extractVerification(text: string, domain: string): { code?: stri
   const link = links.find((l) => {
     try {
       const h = new URL(l).hostname.toLowerCase();
-      return (h === domain || h.endsWith("." + domain)) && /verif|confirm|activate|magic|token|login|auth/i.test(l);
+      return (h === domain || h.endsWith("." + domain)) && /verif|confirm|activate|magic|token|login|auth|reset|password|recover/i.test(l);
     } catch { return false; }
   });
   if (link) out.link = link.slice(0, 1000);

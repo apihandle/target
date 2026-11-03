@@ -8,11 +8,12 @@ import { searchBlock, tavilySearch } from "@/lib/search";
 import { readUrl } from "@/lib/urlReader";
 import { ROUND2_TOOLS } from "@/lib/builtins/round2";
 import { siteLoginTool } from "@/lib/builtins/signin";
+import { sitePasswordResetTool, siteRegisterTool } from "@/lib/builtins/siteAccount";
 import {
   FILE_FORMATS, SITE, browserStep, captionsToText, chartInput, chartUrl, fileName, imageUrl, makePdf, slugFor, stepsNeedApproval, youtubeId, type FileFormat,
 } from "@/lib/builtins/helpers";
 
-export type BuiltinCtx = { db: Db; userId: string; conversationId: string | null; fetch?: typeof fetch; autoApproveBrowser?: boolean };
+export type BuiltinCtx = { db: Db; userId: string; conversationId: string | null; fetch?: typeof fetch; autoApproveBrowser?: boolean; userTexts?: string[] };
 export type BuiltinTool<S extends z.ZodTypeAny = z.ZodTypeAny> = {
   name: string; label: string; description: string; input: S;
   execute: (args: z.infer<S>, ctx: BuiltinCtx) => Promise<unknown>;
@@ -168,6 +169,8 @@ export const BUILTIN_TOOLS: BuiltinTool[] = [
     },
   }),
   siteLoginTool,
+  sitePasswordResetTool,
+  siteRegisterTool,
   ...ROUND2_TOOLS,
 ];
 

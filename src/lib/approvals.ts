@@ -120,6 +120,16 @@ export const ACTION_DEFS: Record<string, Def> = {
     },
     describe: () => ({ summary: "Place an order", destination: "Store" }),
   },
+  /** Created only by site_register / site_password_reset: approving it generates the password into the vault and starts the browser. */
+  site_account: {
+    label: "Website account", provider: null, internal: true,
+    validate(r) {
+      const id = typeof r.browser_job_id === "string" ? r.browser_job_id : "";
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, error: "Bad request" };
+      return { ok: true, params: { browser_job_id: id } };
+    },
+    describe: () => ({ summary: "Website account", destination: "Website" }),
+  },
   booking: {
     label: "Book or cancel something", provider: null,
     unavailable: "TARGET can't book or cancel reservations in this version. It can prepare the details for you to use.",

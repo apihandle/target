@@ -80,7 +80,7 @@ export function toolsPrompt(tools: LoadedTool[], connected: Set<string>): string
     "Never claim an action happened unless a tool result says so.";
 }
 
-export type ToolCtx = { db: Db; userId: string; projectId: string | null; conversationId: string | null; taskId: string | null; f?: typeof fetch; autoApproveBrowser?: boolean };
+export type ToolCtx = { db: Db; userId: string; projectId: string | null; conversationId: string | null; taskId: string | null; f?: typeof fetch; autoApproveBrowser?: boolean; /** The user's own recent messages (latest last), for tools that only run on an explicit ask. */ userTexts?: string[] };
 
 export type ToolOutcome =
   | { kind: "result"; content: string; connector: string; tool: string }
@@ -152,10 +152,10 @@ async function runBuiltin(ctx: ToolCtx, tname: string, args: Record<string, unkn
   let db = ctx.db;
   try { db = createAdminClient() as unknown as Db; } catch { /* fall back to the user's own client */ }
   try {
-    const out = await b.execute(parsed.data, { db, userId: ctx.userId, conversationId: ctx.conversationId, fetch: ctx.f, autoApproveBrowser: ctx.autoApproveBrowser });
+    const out = await b.execute(parsed.data, { db, userId: ctx.userId, conversationId: ctx.conversationId, fetch: ctx.f, autoApproveBrowser: ctx.autoApproveBrowser, userTexts: ctx.userTexts });
     // A built-in that prepared something for approval (an order card): pause exactly like a connector approval.
     const ap = (out as { __approval?: { id: string; summary: string } } | null)?.__approval;
-    if (ap) return { kind: "approval", connector: BUILTIN_ID, tool: tname, approvalId: ap.id, summary: ap.summary, content: err({ status: "approval_required", approval_id: ap.id, message: "The order card is waiting for the user to tap Approve. Nothing was bought. Do not retry." }) };
+    if (ap) return { kind: "approval", connector: BUILTIN_ID, tool: tname, approvalId: ap.id, summary: ap.summary, content: err({ status: "approval_required", approval_id: ap.id, message: "The approval card is waiting for the user to tap Approve. Nothing has been done yet (nothing bought, nothing changed). Do not retry." }) };
     return { kind: "result", connector: BUILTIN_ID, tool: tname, content: untrusted(BUILTIN_ID, tname, safeJson(out, [], 32000)) };
   } catch (e) {
     const message = e instanceof Error ? e.message.slice(0, 200) : "The tool failed";

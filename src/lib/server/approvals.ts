@@ -43,6 +43,14 @@ export const EXECUTORS: Record<string, Executor> = {
     await kickCloudWorker();
     return { browser_job_id: p.browser_job_id, note: "The browser is placing the order now. You'll get a notification when it's done." };
   },
+  /**
+   * Account creation / password reset on a website, approved by the user: only now is a strong password generated
+   * and sealed into the vault, and the prepared browser job queued with that one vault item.
+   */
+  async site_account(p, { userId }) {
+    const { runSiteAccount } = await import("@/lib/server/siteAccountRun");
+    return await runSiteAccount(userId, p.browser_job_id);
+  },
   /** A connector tool marked requiresApproval, proposed by the agent loop. Payload is immutable after creation. */
   async connector_tool(p, { userId }) {
     const { runApprovedTool } = await import("@/lib/connectors/loadTools");

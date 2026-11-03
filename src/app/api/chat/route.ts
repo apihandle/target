@@ -27,6 +27,7 @@ import { resolveModel, visionModels, type ContentPart, type ModelRef } from "@/l
 import { loadPreferredModel } from "@/lib/settings";
 import { SIGNIN_PROMPT, loginIntent, signinStatusLine } from "@/lib/signin";
 import { langRule, userLang, type Lang } from "@/lib/lang";
+import { resetIntent, signupIntent } from "@/lib/siteAccount";
 import { cardFromToolOutput, toolJson } from "@/lib/builtins/signin";
 import { attachmentContext, claimableAttachments, conversationAttachments, linkAttachments, parseAttachmentIds } from "@/lib/server/attachments";
 
@@ -140,7 +141,8 @@ export async function POST(req: Request) {
   // Everything the reply needs is fetched at the same time rather than one query after another.
   const vision = visionModels();
   const kind = detectTask(text);
-  const intent = loginIntent(text);
+  // "Create an account" / "reset my password" asks are not sign-in turns, even when they mention login.
+  const intent = resetIntent(text) || signupIntent(text) ? null : loginIntent(text);
   const tavilyKey = process.env.TAVILY_API_KEY;
   const links = extractUrls(text);
   const searchQ = tavilyKey && (body.web === true || needsSearch(text) || wantsResearch(text)) ? searchQuery(text) : null;
@@ -282,7 +284,7 @@ export async function POST(req: Request) {
       let paused = false;
       try {
         if (toolsOff && loaded.connected.size) { const n = "_(Connector tools aren't available with the AI model answering right now, so this reply can't use your connected apps.)_\n\n"; full += n; send(n); }
-        const ctx = { db, userId: user.id, projectId, conversationId: convId, taskId: task?.id ?? null };
+        const ctx = { db, userId: user.id, projectId, conversationId: convId, taskId: task?.id ?? null, userTexts: [...history.filter((m) => m.role === "user").slice(-2).map((m) => m.content), text] };
         const result: AgentResult = intent ? await (async (): Promise<AgentResult> => {
           const step = "\n\n> Signing in\n\n"; full += step; send(step);
           const out = await executeToolCall(ctx, SITE_LOGIN, { site: intent.site, method: intent.google ? "google" : "password", check: text.slice(0, 200), ...(lang ? { lang } : {}) }, loaded);

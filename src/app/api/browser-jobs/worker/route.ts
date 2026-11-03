@@ -9,10 +9,12 @@ import { decideNext, describeVideo, snapshotSchema } from "@/lib/server/autoBrow
 import { SITE } from "@/lib/builtins/helpers";
 import { decryptWithAny, decryptionKeys } from "@/lib/connectors/crypto";
 import { loadSiteCookies, saveSiteSession } from "@/lib/server/siteSessions";
-import { gmailSigninCode } from "@/lib/server/signinMail";
+import { gmailSigninCode, gmailSiteLink } from "@/lib/server/signinMail";
 import { WAITING_FOR_CODE } from "@/lib/builtins/signin";
 import { isLang, type Lang } from "@/lib/lang";
 import { signinFailure, signinPostHead } from "@/lib/signin";
+import { accountOf, accountPost } from "@/lib/siteAccount";
+import { settleSiteAccount } from "@/lib/server/siteAccountRun";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -71,7 +73,18 @@ export async function POST(req: Request) {
     return new Response(JSON.stringify({ value: fields[field] }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
   }
 
-  const signin = signinOf(job.inputs);
+  const account = accountOf(job.inputs);
+  // Sign-in and account (register / reset) jobs share the site session, code and link helpers.
+  const signin = signinOf(job.inputs) ?? (account ? { site: account.site, via: "password", goal: account.goal, lang: account.lang ?? null } : null);
+  if (b.action === "link") {
+    if (!signin) return badRequest("Not a sign-in job");
+    const inputs = job.inputs as Record<string, unknown>;
+    const askedAt = typeof inputs.link_asked_at === "number" ? inputs.link_asked_at : Date.now();
+    if (inputs.link_asked_at === undefined) await db.from("browser_jobs").update({ inputs: { ...inputs, link_asked_at: askedAt } }).eq("id", id);
+    const link = await gmailSiteLink(job.user_id as string, signin.site, askedAt - 120000).catch(() => null);
+    if (link === "unavailable") return json({ link: null, error: "Gmail isn't connected, so the emailed link can't be opened" });
+    return new Response(JSON.stringify({ link: link ?? null }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  }
   if (b.action === "cookies" || b.action === "code" || b.action === "save_session") {
     if (!signin) return badRequest("Not a sign-in job");
     if (b.action === "cookies") {
@@ -163,13 +176,14 @@ export async function POST(req: Request) {
       if (result) result = hide(result);
       if (typeof b.error === "string") b.error = hide(b.error);
     }
+    if (account) await settleSiteAccount(db, job.user_id as string, account, ok, ((job.log ?? []) as string[])).catch(() => undefined);
     await db.from("browser_jobs").update({
       status: ok ? "done" : "failed", result: result ? result.slice(0, 20000) : null, files,
       error: ok ? null : String(b.error ?? "The browser task failed").slice(0, 500), finished_at: new Date().toISOString(),
     }).eq("id", id).eq("status", "running");
     if (job.conversation_id) {
       const si = signinOf(job.inputs);
-      const head = si ? signinPostHead(si.site, ok, si.lang) : ok ? `🌐 **Browser task done:** ${job.goal}` : `⚠️ **Browser task failed:** ${job.goal}`;
+      const head = account ? accountPost(account, ok) : si ? signinPostHead(si.site, ok, si.lang) : ok ? `🌐 **Browser task done:** ${job.goal}` : `⚠️ **Browser task failed:** ${job.goal}`;
       const body = ok ? (result ?? "").slice(0, 6000) : si ? signinFailure(String(b.error ?? ""), si.site, si.lang).line : String(b.error ?? "The browser task failed").slice(0, 500);
       const links = files.map((f) => `- [${f.name}](${f.url})`).join("\n");
       const content = [head, body, links].filter(Boolean).join("\n\n");

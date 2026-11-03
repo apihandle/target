@@ -28,6 +28,7 @@ export const AGENT_PLAYBOOKS: Playbook[] = [
       /\b(log ?in|login|log-in|sign ?in|signin|sign-in|logged in)\b/i,
       /\b(login|log ?in|sign ?in)\s*(kar\w*|kr\w*|ho jao|do|please|pls)\b|\baccount (khol\w*|open|me jao|mein jao)\b|\b(mere|my) \S+ account\b/i,
       /\b[a-z0-9-]+\.(com|in|net|org|io|co|ai|app)\b.{0,30}\b(log ?in|sign ?in|account)\b|\b(log ?in|sign ?in)\b.{0,30}\b[a-z0-9-]+\.(com|in|net|org|io|co|ai|app)\b/i,
+      /\b(sign ?up|signup|register|new account|naya account|account bana\w*|create (an )?account|(reset|change|forgot|bhool\w*|bhul\w*) .{0,20}password|password .{0,20}(reset|change|badal\w*|bhool\w*|bhul\w*|forgot))\b/i,
     ],
     guidance: [
       "- This is the user's own account and signing in for them is your job. Call target__site_login with the site right away (method \"google\" if they said Google se / with Google). Do not refuse, warn about phishing, or tell them to do it themselves.",
@@ -35,6 +36,8 @@ export const AGENT_PLAYBOOKS: Playbook[] = [
       "- If the site sends a one-time code, the tool reads it from connected Gmail; otherwise a small code form appears. Mention it in one line.",
       "- If Google blocks the sign-in (captcha, 'browser not secure'), say so in one short line and offer the site's own email + password instead.",
       "- When signed in, report what the page shows (name, balance, dashboard) in 1-3 lines. The session is saved for next time.",
+      "- New account / sign up on a site: only when the user asks, call target__site_register (their email, and form details they gave; never invent personal details). Password reset: only when the user asks to reset/change it, call target__site_password_reset. Never offer or start a reset on your own.",
+      "- Both show an approval card; nothing happens until they tap Approve. A strong password is then generated and saved in their vault: never show, guess or ask for it. Email codes/links are read from connected Gmail.",
     ].join("\n"),
   },
   {

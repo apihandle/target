@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { ACTION_DEFS, STATUS_TEXT, type Approval } from "@/lib/approvals";
 
-const FIELD_LABEL: Record<string, string> = { connector: "App", tool: "Action", args: "Details", title: "Title", notes: "Notes", name: "Name", description: "Purpose", start: "Starts", end: "Ends", location: "Location", details: "Details", items: "Items", total: "Total", payment: "Pay with", deliver_to: "Deliver to", to: "To", cc: "Cc", subject: "Subject", body: "Message" };
+const FIELD_LABEL: Record<string, string> = { connector: "App", tool: "Action", args: "Details", title: "Title", notes: "Notes", name: "Name", description: "Purpose", start: "Starts", end: "Ends", location: "Location", details: "Details", items: "Items", total: "Total", payment: "Pay with", deliver_to: "Deliver to", to: "To", cc: "Cc", subject: "Subject", body: "Message", flow: "Action", site: "Website", email: "Email" };
 const HIDDEN = new Set(["browser_job_id"]);
 
 /** An email waiting to be sent: the card shows the exact recipients, subject and text instead of raw JSON. */
@@ -19,6 +19,7 @@ function fmt(k: string, v: unknown) {
   if ((k === "start" || k === "end") && typeof v === "string" && !isNaN(Date.parse(v)))
     return new Date(v).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) + " IST";
   if (k === "items" && Array.isArray(v)) return v.map((i: { name?: string; qty?: number; price?: string }) => `${i.qty ?? 1} x ${i.name ?? ""}${i.price ? `  ${i.price}` : ""}`).join("\n");
+  if (k === "flow" && (v === "reset" || v === "register")) return v === "reset" ? "Reset the password (a new one is generated and saved in your vault, never shown)" : "Create a new account (the password is generated and saved in your vault, never shown)";
   if (v && typeof v === "object") return JSON.stringify(v, null, 2);
   return String(v);
 }
