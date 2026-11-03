@@ -4,6 +4,8 @@
  * approved jobs and runs them:
  *   steps -> fixed browser steps          auto  -> smart browser: TARGET's AI picks every click from the screen
  *   code  -> Python / Node sandbox run     video -> download a video, take frames + captions for TARGET to describe
+ * Same abilities as TARGET's built-in cloud worker: one-time codes (Gmail or the code form in chat), emailed
+ * verify / reset links (Gmail), saved site sessions, and checkouts / bookings that stop before the final button.
  *
  * Easiest: docker build -t target-worker worker && docker run -e SESSION_WORKER_SECRET=... target-worker
  * Without Docker: npm i playwright && npx playwright install --with-deps chromium
@@ -75,6 +77,24 @@ async function restoreState(ctx, st) {
   }
 }
 
+/** Poll `check` until it returns something (or throws a final error), up to `ms`. */
+async function waitFor(check, ms, every) {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    try { const v = await check(); if (v) return v; }
+    catch (e) { if (e.final) throw e; }
+    await new Promise((r) => setTimeout(r, every));
+  }
+  return null;
+}
+
+/** Sign-in, account (register / reset) and checkout jobs work on one site: reuse its saved session, save the new one. */
+function jobSite(job) {
+  const i = job.inputs;
+  if (!i || typeof i !== "object" || Array.isArray(i)) return null;
+  return i.signin?.site || i.account?.site || i.checkout?.site || null;
+}
+
 // ------------------------------------------------------------------ fixed steps
 async function runSteps(job, page) {
   const out = [];
@@ -141,6 +161,23 @@ async function runAuto(job, page) {
       }
       if (a.do === "click") await el(a.i).click();
       else if (a.do === "fill") await el(a.i).fill(a.value);
+      else if (a.do === "need_code") {
+        // One-time code: TARGET reads it from the user's Gmail, or the user types it in the code form in chat.
+        await api({ action: "progress", job_id: job.id, line: "Looking for the one-time code" }).catch(() => {});
+        const code = await waitFor(() => api({ action: "code", job_id: job.id }).then((r) => r.code || null), 200000, 4000);
+        if (!code) throw Object.assign(new Error("No one-time code arrived in time"), { final: true });
+        await el(a.i).fill(String(code));
+        await page.keyboard.press("Enter").catch(() => {});
+      } else if (a.do === "need_link") {
+        // Emailed verify / reset link: TARGET finds it in the user's Gmail (only links on the site's own domain).
+        await api({ action: "progress", job_id: job.id, line: "Looking for the emailed link in Gmail" }).catch(() => {});
+        const link = await waitFor(() => api({ action: "link", job_id: job.id }).then((r) => {
+          if (r.error) throw Object.assign(new Error(r.error), { final: true });
+          return r.link || null;
+        }), 150000, 5000);
+        if (!link) throw Object.assign(new Error("The site's email with the link didn't arrive in time"), { final: true });
+        await page.goto(safeUrl(String(link)), { waitUntil: "domcontentloaded" });
+      }
       else if (a.do === "select") await el(a.i).selectOption({ label: a.value }).catch(() => el(a.i).selectOption(a.value));
       else if (a.do === "fill_secret") {
         const { value } = await api({ action: "secret", job_id: job.id, secret_id: a.secret_id, field: a.field });
@@ -239,13 +276,25 @@ async function run(job) {
     } else {
       const { browser, page } = await openBrowser();
       try {
+        const site = jobSite(job);
+        await api({ action: "progress", job_id: job.id, line: `Opening ${new URL(job.start_url).hostname.replace(/^www\./, "")}` }).catch(() => {});
         if (job.inputs?.checkout?.phase === "pay") {
-          // Approved checkout: put back the cart the prepare job left (cookies + localStorage) before opening the pay page.
+          // Approved checkout / booking: put back the cart or session the prepare job left (cookies + localStorage).
           const { state } = await api({ action: "checkout_state", job_id: job.id });
           if (!state) throw new Error("The saved cart is missing; prepare the checkout again");
           await restoreState(page.context(), state);
+        } else if (site) {
+          const { cookies } = await api({ action: "cookies", job_id: job.id }).catch(() => ({ cookies: [] }));
+          if (cookies?.length) await page.context().addCookies(cookies).catch(() => {});
         }
         const result = job.mode === "auto" ? await runAuto(job, page) : await runSteps(job, page);
+        if (site) {
+          const cookies = await page.context().cookies().catch(() => []);
+          if (cookies.length) {
+            const saved = await api({ action: "save_session", job_id: job.id, cookies }).catch(() => ({}));
+            if (saved.ok) await api({ action: "progress", job_id: job.id, line: "Saved the sign-in for next time" }).catch(() => {});
+          }
+        }
         await api({ action: "finish", job_id: job.id, status: "done", result });
       } finally { await browser.close(); }
     }
