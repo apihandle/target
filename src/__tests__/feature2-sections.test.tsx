@@ -15,9 +15,9 @@ describe("Feature 2: Sections + footer", () => {
     expect(document.getElementById("features")).not.toBeNull();
     expect(document.getElementById("signup")).not.toBeNull();
   });
-  it("footer has 4 columns and copyright", () => {
+  it("footer has 3 columns (no placeholder links) and copyright", () => {
     render(<Home />);
-    expect(document.querySelectorAll("footer h4")).toHaveLength(4);
+    expect(document.querySelectorAll("footer h4")).toHaveLength(3);
     expect(screen.getByTestId("copyright")).toHaveTextContent(`TARGET © ${new Date().getFullYear()}`);
     expect(document.getElementById("privacy")).not.toBeNull();
   });

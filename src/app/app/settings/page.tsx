@@ -32,10 +32,6 @@ export default async function SettingsPage() {
             </div>
           </section>
 
-          <SettingsGroup title="Earn">
-            <SettingsRow href="/work" icon="coin" title="Work" description="Watch ads and earn coins" testId="settings-work" />
-          </SettingsGroup>
-
           <SettingsGroup title="Apps & accounts">
             <SettingsRow href="/app/connectors" icon="plug" title="Connectors" description="Google, GitHub and more" />
             <SettingsRow href="/app/settings/sessions" icon="lock" title="Website sign-ins" description="Sites TARGET is signed in to, sign out any time" testId="settings-sessions" />
@@ -55,7 +51,6 @@ export default async function SettingsPage() {
           <SettingsGroup title="Privacy">
             <SettingsRow href="/app/settings/privacy" icon="shield" title="Privacy & memory" description="Review or clear memories" testId="settings-privacy" />
             <SettingsRow href="/app/activity" icon="activity" title="Activity" description="Everything TARGET did for you" />
-            {isAdminEmail(email) && <SettingsRow href="/app/settings/work-links" icon="coin" title="Work links" description="Ad links and coins (owner only)" testId="settings-work-links" />}
             {isAdminEmail(email) && <SettingsRow href="/app/settings/errors" icon="alert" title="Site errors" description="Errors from the live site (owner only)" testId="settings-errors" />}
           </SettingsGroup>
 
