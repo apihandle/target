@@ -32,7 +32,7 @@ New repository secret: CRON_SECRET = same value as on Vercel (above). Used by .g
 
 ## 3. Supabase > SQL Editor
 
-Run every file in supabase/migrations/ that has not been run yet, in number order (0006 through 0015).
+Run every file in supabase/migrations/ that has not been run yet, in number order (0006 through 0016; 0016 = custom AI providers, docs/CUSTOM-PROVIDER.md).
 
 ## 4. Worker (free): Hugging Face Space
 
