@@ -57,16 +57,16 @@ export default function PanelTile({ p }: { p: Panel }) {
     <Link href="/app/panels" data-testid="home-panel" data-kind={p.kind} aria-label={p.title}
       className={`${TILE} border-line bg-surface/80 hover:border-line-strong hover:bg-surface-2/80`}>
       <h3 className="truncate text-[13px] font-medium text-muted">{p.title}</h3>
+      {g.pct !== undefined && (
+        <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-surface-3" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={g.pct} aria-label="Goal progress">
+          <div className="h-full rounded-full bg-accent" style={{ width: `${g.pct}%` }} />
+        </div>
+      )}
       {g.text !== undefined ? (
         <p className="mt-2 line-clamp-3 text-sm leading-snug text-ink-soft sm:line-clamp-4">{g.text}</p>
       ) : (
         <div className="mt-auto min-w-0">
           <p className="truncate text-[26px] font-semibold leading-none tracking-tight text-ink sm:text-3xl">{g.value}</p>
-          {g.pct !== undefined && (
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-3" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={g.pct} aria-label="Goal progress">
-              <div className="h-full rounded-full bg-accent" style={{ width: `${g.pct}%` }} />
-            </div>
-          )}
           {g.sub && <p className="mt-1.5 truncate text-xs text-muted">{g.sub}</p>}
         </div>
       )}
