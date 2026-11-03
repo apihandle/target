@@ -7,6 +7,10 @@ Vercel can't run a browser or code, so these jobs run here:
 - **Code sandbox**: Python (pandas, Pillow, matplotlib) or Node, 60 seconds, files saved to `out/` come back as downloads. Photo edits (crop, resize, filters) use this too.
 - **Video**: downloads a video link, takes 6 frames and captions; TARGET describes it.
 
+## Separate compute worker (optional, recommended for code)
+`compute-worker.mjs` runs only code and video jobs, with its own `COMPUTE_WORKER_SECRET` that can't read the vault.
+When that secret is set on Vercel, code/video jobs go only to it. Setup and limits: `docs/COMPUTE-WORKER.md`.
+
 ## Run it 24x7 (recommended: Render)
 
 1. render.com > New > Blueprint > pick this repo (it reads `render.yaml`).

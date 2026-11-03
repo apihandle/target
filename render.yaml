@@ -11,3 +11,15 @@ services:
         sync: false
       - key: TARGET_URL
         value: https://gettarget.vercel.app
+  # Optional: separate compute worker for code + video jobs (off unless COMPUTE_WORKER_SECRET is set on Vercel too).
+  - type: worker
+    name: target-compute
+    runtime: docker
+    dockerfilePath: ./worker/compute/Dockerfile
+    dockerContext: ./worker
+    plan: starter
+    envVars:
+      - key: COMPUTE_WORKER_SECRET
+        sync: false
+      - key: TARGET_URL
+        value: https://gettarget.vercel.app
