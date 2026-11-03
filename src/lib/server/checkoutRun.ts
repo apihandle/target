@@ -4,7 +4,7 @@ import { checkoutPost, payGoal, type CheckoutInputs } from "@/lib/checkout";
 import { kickCloudWorker } from "@/lib/server/kickWorker";
 
 /**
- * Server side of a store checkout (see lib/checkout.ts). The browser state captured at the pay step (cookies +
+ * Server side of a store checkout (see lib/checkout.ts); bookings use the same two steps. The browser state captured at the pay step (cookies +
  * localStorage = the cart) is sealed with the server key, bound to the user, and only handed back to the approved pay job.
  */
 type BrowserState = { cookies: Record<string, unknown>[]; origins: { origin: string; localStorage: { name: string; value: string }[] }[] };
@@ -91,16 +91,19 @@ export async function finishCheckout(
     const payInputs: CheckoutInputs = { ...cur, phase: "pay", approved, pending: null, prepare_job_id: job.id };
     payInputs.goal = payGoal(payInputs);
     const secrets = [cur.payment_secret_id, cur.login_secret_id].filter((x): x is string => !!x);
+    const booking = cur.kind === "booking";
     const { data: payJob } = await db.from("browser_jobs").insert({
-      user_id: job.user_id, mode: "auto", goal: `Pay ${approved.total} at ${cur.merchant}`.slice(0, 500), start_url: cur.pay_url!,
+      user_id: job.user_id, mode: "auto", goal: (booking ? `Confirm the booking at ${cur.merchant}: ${approved.when ?? ""}` : `Pay ${approved.total} at ${cur.merchant}`).slice(0, 500), start_url: cur.pay_url!,
       steps: [], allowed_secrets: secrets, max_steps: 20, status: "needs_approval", conversation_id: job.conversation_id,
       inputs: { checkout: payInputs },
     }).select("id").single();
     if (!payJob) { await post(db, job.user_id, job.conversation_id, checkoutPost(cur, false, "Couldn't prepare the payment step.")); return; }
-    const summary = `Pay ${approved.total} at ${cur.merchant}`.slice(0, 300);
+    const summary = (booking ? `Book ${approved.what || cur.what || ""} at ${cur.merchant}, ${approved.when ?? ""}` : `Pay ${approved.total} at ${cur.merchant}`).replace(/\s+/g, " ").slice(0, 300);
+    const payload = booking
+      ? { browser_job_id: payJob.id, what: approved.what || cur.what || "", when: approved.when ?? "", details: approved.details ?? "", price: approved.total || "", payment: approved.total && cur.payment_secret_id ? approved.payment || "Card from your vault (entered after you approve)" : "" }
+      : { browser_job_id: payJob.id, items: approved.items, total: approved.total, payment: approved.payment || "As selected on the store's page", deliver_to: cur.deliver_to ?? "" };
     const { data: ap } = await db.from("approval_requests").insert({
-      user_id: job.user_id, action_type: "purchase", summary, destination: cur.merchant, status: "pending", conversation_id: job.conversation_id,
-      payload: { browser_job_id: payJob.id, items: approved.items, total: approved.total, payment: approved.payment || "As selected on the store's page", deliver_to: cur.deliver_to ?? "" },
+      user_id: job.user_id, action_type: booking ? "reservation" : "purchase", summary, destination: cur.merchant, status: "pending", conversation_id: job.conversation_id, payload,
     }).select("id").single();
     if (!ap) { await post(db, job.user_id, job.conversation_id, checkoutPost(cur, false, "Couldn't prepare the approval card.")); return; }
     const block = `\`\`\`actions\n${JSON.stringify([{ type: "approval", id: ap.id }])}\n\`\`\``;
@@ -120,7 +123,7 @@ export async function queueCheckout(db: Db, userId: string, conversationId: stri
   inputs.goal = prepareGoal(inputs);
   const secrets = [c.login_secret_id].filter((x): x is string => !!x);
   const { data, error } = await db.from("browser_jobs").insert({
-    user_id: userId, mode: "auto", goal: `Get ${c.merchant} checkout ready (stop before paying)`.slice(0, 500), start_url: startUrl, steps: [],
+    user_id: userId, mode: "auto", goal: (c.kind === "booking" ? `Get the booking at ${c.merchant} ready (stop before confirming)` : `Get ${c.merchant} checkout ready (stop before paying)`).slice(0, 500), start_url: startUrl, steps: [],
     allowed_secrets: secrets, max_steps: 40, status: "queued", conversation_id: conversationId, inputs: { checkout: inputs },
   }).select("id").single();
   if (error || !data) throw new Error("Couldn't start the checkout");

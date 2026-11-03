@@ -12,7 +12,7 @@ vi.mock("@/lib/server/kickWorker", () => ({ kickCloudWorker: () => Promise.resol
 vi.mock("@/lib/server/push", () => ({ sendPushToUser: () => Promise.resolve() }));
 vi.mock("@/lib/llm", () => ({ llmText: async () => h.replies.shift() ?? "", visionModels: () => [] }));
 
-import { checkoutOf, guardCheckout, isPayElement, PAY_PRESSED, prepareGoal, totalMatches, totalsOnPage, userAskedToBuy, type CheckoutInputs } from "@/lib/checkout";
+import { checkoutOf, guardCheckout, isConfirmElement, isPayElement, slotOnPage, slotTokens, PAY_PRESSED, prepareGoal, totalMatches, totalsOnPage, userAskedToBuy, type CheckoutInputs } from "@/lib/checkout";
 import { getBuiltin } from "@/lib/builtins/tools";
 import { decideApproval } from "@/lib/server/approvals";
 import { canReadWithoutBrowser } from "@/lib/server/cloudWorker";
@@ -182,5 +182,72 @@ describe("end to end through the worker API", () => {
     await call({ action: "finish", job_id: JOB, status: "done", result: "Thank you for your order!\n\nFinal page: Swag Labs (https://www.saucedemo.com/checkout-complete.html)" });
     expect(String(h.db.rows("messages").at(-1)!.content)).toMatch(/order place ho gaya[\s\S]*Thank you for your order/);
     expect(job(JOB).inputs).toMatchObject({ checkout: { state_box: null } });
+  });
+});
+
+// ------------------------------------------------------------------ bookings
+
+const FORM: Snapshot = {
+  url: "https://book.example/table", title: "Book a table",
+  text: "Table for 2\nFri 7 Nov 2026\n7:30 PM\nYour details",
+  elements: [
+    { i: 0, tag: "input", type: "text", text: "Name = Vikash" }, { i: 1, tag: "input", type: "tel", text: "Phone = 98xxxxxx10" },
+    { i: 2, tag: "button", text: "7:30 PM" }, { i: 3, tag: "button", text: "Book now" }, { i: 4, tag: "button", text: "Confirm booking" },
+  ],
+};
+const bprep: CheckoutInputs = { phase: "prepare", kind: "booking", merchant: "Cafe X", site: "book.example", items: [], what: "table for 2", when: "Fri 7 Nov, 7:30 pm" };
+const bconf: CheckoutInputs = { ...bprep, phase: "pay", approved: { items: [], total: "", payment: "", what: "Table for 2", when: "7 Nov 2026, 7:30 PM", details: "Vikash" } };
+
+describe("bookings", () => {
+  it("reads times and dates in many formats", () => {
+    expect([...slotTokens("Fri 7 Nov, 7:30 pm").times]).toEqual(["19:30"]);
+    expect([...slotTokens("19:30").times]).toEqual(["19:30"]);
+    expect(slotTokens("Nov 7th at 7 PM").dates.has("7/11")).toBe(true);
+    expect(slotTokens("2026-11-07").dates.has("7/11")).toBe(true);
+    expect(slotOnPage(FORM, "7 Nov, 19:30")).toBe("yes");
+    expect(slotOnPage(FORM, "7 Nov, 8:00 PM")).toBe("no");
+    expect(slotOnPage(FORM, "tonight")).toBe("unknown");
+  });
+  it("knows the final confirm button; 'Book now' only counts on a details form", () => {
+    expect(isConfirmElement({ tag: "button", text: "Confirm booking" }, FORM)).toBe(true);
+    expect(isConfirmElement({ tag: "button", text: "Book Appointment" }, { elements: [] })).toBe(true);
+    expect(isConfirmElement({ tag: "button", text: "Book now" }, FORM)).toBe(true);
+    expect(isConfirmElement({ tag: "button", text: "Book now" }, { elements: [{ tag: "button", text: "Book now" }] })).toBe(false);
+    expect(isConfirmElement({ tag: "button", text: "7:30 PM" }, FORM)).toBe(false);
+  });
+  it("prepare refuses the final button and checks the slot; confirm presses once and only for the same slot", () => {
+    expect(guardCheckout(bprep, { do: "click", i: 4, why: "" }, FORM, [])).toHaveProperty("retry");
+    expect(guardCheckout(bprep, { do: "click", i: 2, why: "" }, FORM, [])).toHaveProperty("action.do", "click");
+    expect(guardCheckout(bprep, { do: "ready_to_confirm", i: 4, what: "Table for 2", when: "Fri 7 Nov, 8:30 PM", details: "", price: "", why: "" }, FORM, [])).toHaveProperty("retry");
+    expect(guardCheckout(bprep, { do: "ready_to_confirm", i: 4, what: "Table for 2", when: "Fri 7 Nov 2026, 7:30 PM", details: "Vikash", price: "", why: "" }, FORM, [])).toHaveProperty("action.do", "ready_to_confirm");
+    expect(guardCheckout(bprep, { do: "ready_to_pay", i: 4, items: [], total: "1", payment: "", why: "" }, FORM, [])).toHaveProperty("retry");
+    expect(guardCheckout(bconf, { do: "click", i: 4, why: "" }, FORM, [])).toMatchObject({ pays: true });
+    const gone = { ...FORM, text: FORM.text.replace("7:30 PM", "8:00 PM"), elements: FORM.elements.filter((e) => e.i !== 2) };
+    expect(guardCheckout(bconf, { do: "click", i: 4, why: "" }, gone, [])).toEqual({ action: { do: "fail", reason: "SLOT_CHANGED" } });
+    expect(guardCheckout(bconf, { do: "click", i: 4, why: "" }, FORM, [PAY_PRESSED])).toHaveProperty("action.do", "done");
+  });
+  it("book tool: only on an explicit ask; prepare job holds no card", async () => {
+    const ctx = (userTexts: string[]) => ({ db: h.db.admin() as unknown as Db, userId: U, conversationId: "c1", userTexts });
+    const args = { business: "Cafe X", start_url: "https://book.example/", what: "table for 2", when: "Fri 7 Nov, 7:30 pm", details: "name Vikash", payment_secret_id: CARD };
+    expect(await getBuiltin("book")!.execute(args, ctx(["cafe x kaisa hai?"]))).toMatchObject({ status: "not_requested" });
+    expect(await getBuiltin("book")!.execute(args, ctx(["Cafe X pe Friday 7:30 ka table book karo"]))).toMatchObject({ status: "started" });
+    const j = h.db.rows("browser_jobs")[0];
+    expect(j).toMatchObject({ status: "queued", allowed_secrets: [] });
+    expect(checkoutOf(j.inputs)).toMatchObject({ kind: "booking", when: "Fri 7 Nov, 7:30 pm" });
+  });
+  it("end to end: ready_to_confirm -> Confirm booking card -> approve queues the confirm job", async () => {
+    h.db.rows("browser_jobs").push({ id: JOB, user_id: U, mode: "auto", goal: "Get the booking ready", status: "running", start_url: "https://book.example/", steps: [], allowed_secrets: [], max_steps: 40, log: [], conversation_id: "c1", claimed_at: new Date().toISOString(), inputs: { checkout: { ...bprep, goal: prepareGoal(bprep) } } });
+    h.replies = ['{"do":"ready_to_confirm","i":4,"what":"Table for 2","when":"Fri 7 Nov 2026, 7:30 PM","details":"Vikash, 2 people","price":""}'];
+    expect((await (await call({ action: "next", job_id: JOB, snapshot: FORM })).json()).action.do).toBe("ready_to_confirm");
+    await call({ action: "checkout_ready", job_id: JOB, state: { cookies: [{ name: "s", value: "1", domain: "book.example", path: "/" }], origins: [] }, url: FORM.url });
+    await call({ action: "finish", job_id: JOB, status: "done", result: "Stopped before the final confirm" });
+    const ap = h.db.rows("approval_requests")[0];
+    expect(ap).toMatchObject({ action_type: "reservation", summary: "Book Table for 2 at Cafe X, Fri 7 Nov 2026, 7:30 PM" });
+    expect(ap.payload).toMatchObject({ when: "Fri 7 Nov 2026, 7:30 PM", details: "Vikash, 2 people" });
+    expect(String(h.db.rows("messages").at(-1)!.content)).toMatch(/booking ready hai[\s\S]*"type":"approval"/);
+    const confirmJob = h.db.rows("browser_jobs").find((r) => r.id !== JOB)!;
+    expect(confirmJob.status).toBe("needs_approval");
+    expect((await decideApproval(h.db as unknown as Db, U, ap.id as string, "approve")).status).toBe(200);
+    expect(job(confirmJob.id as string).status).toBe("queued");
   });
 });

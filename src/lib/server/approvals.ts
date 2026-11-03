@@ -43,6 +43,13 @@ export const EXECUTORS: Record<string, Executor> = {
     await kickCloudWorker();
     return { browser_job_id: p.browser_job_id, note: "The browser is placing the order now. You'll get a notification when it's done." };
   },
+  /** A booking that stopped before the final confirm: the user's tap queues the confirm job. */
+  async reservation(p, { db, userId }) {
+    const { data } = await db.from("browser_jobs").update({ status: "queued" }).eq("id", p.browser_job_id).eq("user_id", userId).in("status", ["needs_approval", "failed"]).select("id");
+    if (!data?.length) throw new Error("This booking can't be started again.");
+    await kickCloudWorker();
+    return { browser_job_id: p.browser_job_id, note: "The browser is confirming the booking now. You'll get a notification when it's done." };
+  },
   /**
    * Account creation / password reset on a website, approved by the user: only now is a strong password generated
    * and sealed into the vault, and the prepared browser job queued with that one vault item.

@@ -168,6 +168,13 @@ export async function POST(req: Request) {
         await db.from("browser_jobs").update({ inputs: { ...inputs, checkout: { ...(inputs.checkout as Record<string, unknown>), pending } } }).eq("id", id);
       } else action = { do: "done", result: `Reached the payment step (total ${action.total}). Stopped before paying.` };
     }
+    if (action.do === "ready_to_confirm") {
+      if (checkout?.phase === "prepare" && checkout.kind === "booking") {
+        const pending = { items: [], total: action.price, payment: "", what: action.what || checkout.what || "", when: action.when, details: action.details, pay_i: action.i };
+        const inputs = job.inputs as Record<string, unknown>;
+        await db.from("browser_jobs").update({ inputs: { ...inputs, checkout: { ...(inputs.checkout as Record<string, unknown>), pending } } }).eq("id", id);
+      } else action = { do: "done", result: `Reached the final confirm step (${action.when}). Stopped before confirming.` };
+    }
     const line = action.do === "done" || action.do === "fail" ? action.do : `${action.do}${"i" in action ? ` [${action.i}]` : ""}${action.do === "fill_secret" ? ` ${action.field}` : ""}${"why" in action && action.why ? `: ${action.why}` : ""}`.slice(0, 200);
     await db.from("browser_jobs").update({ log: [...log, line, ...(pays && action.do !== "done" && action.do !== "fail" ? [PAY_PRESSED] : [])] }).eq("id", id);
     return json({ action });

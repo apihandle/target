@@ -26,6 +26,10 @@ export const autoAction = z.discriminatedUnion("do", [
     items: z.array(z.object({ name: z.string().min(1).max(120), qty: z.coerce.number().int().min(1).max(99).optional(), price: z.string().max(30).optional() })).max(20).default([]),
     total: z.string().min(1).max(40), payment: z.string().max(120).default(""), why: z.string().max(200).default(""),
   }),
+  z.object({
+    do: z.literal("ready_to_confirm"), i: z.number().int().min(0),
+    what: z.string().max(200).default(""), when: z.string().min(1).max(120), details: z.string().max(300).default(""), price: z.string().max(40).default(""), why: z.string().max(200).default(""),
+  }),
   z.object({ do: z.literal("done"), result: z.string().max(4000) }),
   z.object({ do: z.literal("fail"), reason: z.string().max(400) }),
 ]);
@@ -148,7 +152,7 @@ export async function decideNext(goal: string, snap: Snapshot, secrets: { id: st
     const reply = await llmText({ messages: [{ role: "system", content: sys }, attempt === 0 ? user : plain], maxTokens: 2500, temperature: 0, timeoutMs: 20000, firstTokenMs: 10000, ...(vision && attempt === 0 ? { only: vision } : {}) });
     const a = parseAction(reply);
     if (a) {
-      if ((a.do === "click" || a.do === "fill" || a.do === "fill_secret" || a.do === "select" || a.do === "need_code" || a.do === "ready_to_pay") && !snap.elements.some((e) => e.i === a.i)) continue;
+      if ((a.do === "click" || a.do === "fill" || a.do === "fill_secret" || a.do === "select" || a.do === "need_code" || a.do === "ready_to_pay" || a.do === "ready_to_confirm") && !snap.elements.some((e) => e.i === a.i)) continue;
       if (a.do === "fill_secret" && !secrets.some((s) => s.id === a.secret_id)) {
         const g = guard?.(a);
         if (g && "retry" in g) { notes.push(g.retry); continue; }

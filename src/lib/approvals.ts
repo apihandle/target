@@ -130,9 +130,19 @@ export const ACTION_DEFS: Record<string, Def> = {
     },
     describe: () => ({ summary: "Website account", destination: "Website" }),
   },
+  /** Created only after a booking job stopped before the final confirm: approving it lets the browser press it once. */
+  reservation: {
+    label: "Booking", provider: null, internal: true,
+    validate(r) {
+      const id = typeof r.browser_job_id === "string" ? r.browser_job_id : "";
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, error: "Bad booking" };
+      return { ok: true, params: { browser_job_id: id } };
+    },
+    describe: () => ({ summary: "Confirm a booking", destination: "Website" }),
+  },
   booking: {
     label: "Book or cancel something", provider: null,
-    unavailable: "TARGET can't book or cancel reservations in this version. It can prepare the details for you to use.",
+    unavailable: "Ask TARGET in the chat to book it: the browser finds the slot, fills your details and shows an approval card before the final confirm. Cancelling isn't supported yet.",
     validate: () => ({ ok: true, params: {} }),
     describe: () => ({ summary: "Book or cancel", destination: "External service" }),
   },

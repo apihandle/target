@@ -5,6 +5,8 @@
  * The real worker loop (runAuto) and the real worker API route (server guard, sealed cart, approval card) run;
  * only the AI is replaced by a scripted chooser. It goes to the pay page, gets refused on Finish, reports the page,
  * then a fresh browser restores the cart from the sealed state and reaches the same pay page. It NEVER presses Finish.
+ * A second test books an appointment on the CURA demo (katalon-demo-cura.herokuapp.com, demo login shown on its page)
+ * up to the final "Book Appointment" button, which it never presses.
  * Skipped in normal test runs.
  */
 import { describe, it, expect, vi } from "vitest";
@@ -69,7 +71,7 @@ function scripted(sys: string, page: string): string {
   return JSON.stringify({ do: "click", i: find(/Login/), why: "login" });
 }
 
-describe.skipIf(!LIVE)("live checkout on saucedemo.com (stops before paying)", () => {
+describe.skipIf(!LIVE)("live checkout + booking on demo sites (stop before the final button)", () => {
   it("reaches the pay page, shows the card, and a fresh browser gets the same cart back", async () => {
     process.env.SESSION_WORKER_SECRET = SECRET;
     process.env.CONNECTOR_ENCRYPTION_KEY ??= Buffer.alloc(32, 3).toString("base64");
@@ -118,4 +120,73 @@ describe.skipIf(!LIVE)("live checkout on saucedemo.com (stops before paying)", (
       await ctx2.close();
     } finally { await browser.close(); }
   }, 240000);
+
+  it("booking: fills the appointment, is refused on Book Appointment, shows the card, and the confirm job gets the session back", async () => {
+    process.env.SESSION_WORKER_SECRET = SECRET;
+    process.env.CONNECTOR_ENCRYPTION_KEY ??= Buffer.alloc(32, 3).toString("base64");
+    h.choose = curaScripted;
+    h.db = new FakeDb({ browser_jobs: [], approval_requests: [], messages: [], conversations: [], vault_secrets: [], tasks: [], activity_events: [], connections: [] });
+    h.db.as(U);
+    const c: CheckoutInputs = { phase: "prepare", kind: "booking", merchant: "CURA Healthcare", site: "katalon-demo-cura.herokuapp.com", items: [], what: "appointment at Hongkong CURA Healthcare Center", when: "10/12/2026", details: "comment: Test booking" };
+    const start = "https://katalon-demo-cura.herokuapp.com/";
+    h.db.rows("browser_jobs").push({ id: JOB, user_id: U, mode: "auto", goal: "Get the booking ready", status: "running", start_url: start, steps: [], allowed_secrets: [], max_steps: 40, log: [], conversation_id: "c1", claimed_at: new Date().toISOString(), inputs: { checkout: { ...c, goal: prepareGoal(c) } } });
+    const { chromium } = await import("playwright-core");
+    const px = process.env.HTTPS_PROXY || process.env.https_proxy;
+    const proxy = px ? (() => { const u = new URL(px); return { server: `${u.protocol}//${u.host}`, username: decodeURIComponent(u.username), password: decodeURIComponent(u.password) }; })() : undefined;
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true, proxy });
+    try {
+      const last: { snap?: Snapshot } = {};
+      const ctx1 = await browser.newContext({ ignoreHTTPSErrors: true });
+      const page1 = await ctx1.newPage();
+      page1.setDefaultTimeout(15000);
+      const out = await runAuto({ id: JOB, mode: "auto", start_url: start, max_steps: 40 }, page1, api(last), Date.now() + 120000)
+        .catch((e) => { console.log("log:", (h.db.rows("browser_jobs").find((r) => r.id === JOB)!.log as string[]).slice(0, 12).join(" | "), "\nlast page:", JSON.stringify(last.snap?.elements.slice(0, 25))); throw e; });
+      await api(last)({ action: "finish", job_id: JOB, status: "done", result: out });
+      console.log("booking prepare log:", (h.db.rows("browser_jobs").find((r) => r.id === JOB)!.log as string[]).join(" | "));
+      expect(out).toMatch(/Stopped before the final confirm/);
+      expect(page1.url()).toContain("#appointment"); // Book Appointment was never pressed
+      const ap = h.db.rows("approval_requests")[0];
+      expect(ap).toMatchObject({ action_type: "reservation" });
+      expect(ap.payload).toMatchObject({ when: "10/12/2026" });
+      console.log("booking card:", ap.summary, JSON.stringify(ap.payload));
+      await ctx1.close();
+
+      expect((await decideApproval(h.db as unknown as Db, U, ap.id as string, "approve")).status).toBe(200);
+      const confirmJob = h.db.rows("browser_jobs").find((r) => r.id !== JOB)!;
+      Object.assign(confirmJob, { status: "running", claimed_at: new Date().toISOString() });
+      const { state } = await api(last)({ action: "checkout_state", job_id: confirmJob.id }) as { state: Parameters<typeof restoreState>[1] };
+      const ctx2 = await browser.newContext({ ignoreHTTPSErrors: true });
+      await restoreState(ctx2, state);
+      const page2 = await ctx2.newPage();
+      page2.setDefaultTimeout(15000);
+      await expect(runAuto({ id: confirmJob.id as string, mode: "auto", start_url: confirmJob.start_url as string, max_steps: 20 }, page2, api(last), Date.now() + 60000)).rejects.toThrow(/LIVE TEST STOP/);
+      expect(page2.url()).toContain("#appointment"); // still signed in (session restored), on the form
+      const cur = checkoutOf(confirmJob.inputs)!;
+      const btn = last.snap!.elements.find((e) => /Book Appointment/.test(e.text))!;
+      expect(guardCheckout(cur, { do: "click", i: btn.i, why: "" }, last.snap!, [])).toMatchObject({ pays: true });
+      await ctx2.close();
+    } finally { await browser.close(); }
+  }, 240000);
 });
+
+/** Stand-in for the model on the CURA demo. */
+function curaScripted(sys: string, page: string): string {
+  const url = page.match(/url="([^"]+)"/)?.[1] ?? "";
+  const find = (re: RegExp) => { for (const l of page.split("\n")) { const m = l.match(/^\[(\d+)\] (.*)$/); if (m && re.test(m[2])) return Number(m[1]); } return -1; };
+  const confirm = /approved booking/.test(sys);
+  if (/#appointment/.test(url)) {
+    if (find(/facility = Hongkong/) < 0) return JSON.stringify({ do: "select", i: find(/^select/), value: "Hongkong CURA Healthcare Center", why: "facility" });
+    if (find(/= 10\/12\/2026/) < 0) return JSON.stringify({ do: "fill", i: find(/dd\/mm\/yyyy/), value: "10/12/2026", why: "date" });
+    if (!confirm && find(/Comment = Test booking/) < 0) return JSON.stringify({ do: "fill", i: find(/^textarea/), value: "Test booking", why: "comment" });
+    if (confirm) return '{"do":"fail","reason":"LIVE TEST STOP before Book Appointment"}';
+    if (/SERVER: your last choice was refused/.test(sys)) return JSON.stringify({ do: "ready_to_confirm", i: find(/Book Appointment/), what: "Hongkong CURA Healthcare Center appointment", when: "10/12/2026", details: "Comment: Test booking", price: "" });
+    return JSON.stringify({ do: "click", i: find(/Book Appointment/), why: "book" });
+  }
+  if (/profile\.php/.test(url)) {
+    const done = sys.match(/Done so far: (.*)/)?.[1] ?? "";
+    if (!/fill \[\d+\]: user/.test(done)) return JSON.stringify({ do: "fill", i: find(/name=username/), value: "John Doe", why: "user (demo login shown on the page)" });
+    if (!/fill \[\d+\]: pass/.test(done)) return JSON.stringify({ do: "fill", i: find(/name=password/), value: "ThisIsNotAPassword", why: "pass (demo login shown on the page)" });
+    return JSON.stringify({ do: "click", i: find(/^button.*Login/), why: "login" });
+  }
+  return JSON.stringify({ do: "click", i: find(/Make Appointment/), why: "open the form" });
+}

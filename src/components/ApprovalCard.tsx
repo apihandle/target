@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { ACTION_DEFS, STATUS_TEXT, type Approval } from "@/lib/approvals";
 
-const FIELD_LABEL: Record<string, string> = { connector: "App", tool: "Action", args: "Details", title: "Title", notes: "Notes", name: "Name", description: "Purpose", start: "Starts", end: "Ends", location: "Location", details: "Details", items: "Items", total: "Total", payment: "Pay with", deliver_to: "Deliver to", to: "To", cc: "Cc", subject: "Subject", body: "Message", flow: "Action", site: "Website", email: "Email" };
+const FIELD_LABEL: Record<string, string> = { connector: "App", tool: "Action", args: "Details", title: "Title", notes: "Notes", name: "Name", description: "Purpose", start: "Starts", end: "Ends", location: "Location", details: "Details", items: "Items", total: "Total", payment: "Pay with", deliver_to: "Deliver to", to: "To", cc: "Cc", subject: "Subject", body: "Message", flow: "Action", site: "Website", email: "Email", what: "Booking", when: "When", price: "Price" };
 const HIDDEN = new Set(["browser_job_id"]);
 
 /** An email waiting to be sent: the card shows the exact recipients, subject and text instead of raw JSON. */
@@ -87,7 +87,7 @@ export default function ApprovalCard({ id, initial, onChange }: { id: string; in
       {canDecide && (
         <div className="mt-3 flex flex-wrap gap-2">
           <Button size="sm" variant="approve" data-testid="approve-btn" disabled={!!busy} onClick={() => decide("approve")}>
-            {busy === "approve" ? "Running…" : a.status === "failed" ? "Approve & retry" : a.action_type === "purchase" ? "Place order" : email ? "Approve & send" : "Approve"}
+            {busy === "approve" ? "Running…" : a.status === "failed" ? "Approve & retry" : a.action_type === "purchase" ? "Place order" : a.action_type === "reservation" ? "Confirm booking" : email ? "Approve & send" : "Approve"}
           </Button>
           <Button size="sm" variant="secondary" data-testid="reject-btn" disabled={!!busy} onClick={() => decide("reject")}>
             {busy === "reject" ? "…" : a.status === "failed" ? "Cancel" : "Reject"}

@@ -108,7 +108,12 @@ async function snapshot(page) {
       if (r.width < 2 || r.height < 2 || st.visibility === "hidden" || st.display === "none" || r.bottom < 0 || r.top > innerHeight * 2.5) continue;
       e.setAttribute("data-target-i", String(i));
       const tag = e.tagName.toLowerCase();
-      const text = (e.getAttribute("aria-label") || e.innerText || e.getAttribute("placeholder") || e.getAttribute("title") || (e.type === "password" || /cc-|card|cvv|cvc|expir|security.?code/i.test(`${e.getAttribute("autocomplete") || ""} ${e.getAttribute("name") || ""} ${e.id || ""}`) ? "" : e.value) || e.getAttribute("alt") || "").replace(/\s+/g, " ").trim().slice(0, 110);
+      const secret = e.type === "password" || /cc-|card|cvv|cvc|expir|security.?code/i.test(`${e.getAttribute("autocomplete") || ""} ${e.getAttribute("name") || ""} ${e.id || ""}`);
+      // Form fields show their label and what is filled in ("Visit Date = 10/12/2026"), never a password or card value.
+      const field = (e.tagName === "INPUT" && !/^(button|submit|reset|image|checkbox|radio|file)$/i.test(e.type)) || e.tagName === "TEXTAREA" || e.tagName === "SELECT";
+      const val = !field || secret ? "" : e.tagName === "SELECT" ? (e.selectedOptions?.[0]?.text ?? "") : e.value;
+      const label = e.getAttribute("aria-label") || (field ? "" : e.innerText) || e.getAttribute("placeholder") || e.getAttribute("title") || (field ? e.getAttribute("name") || "" : "") || (!field && !secret ? e.value : "") || e.getAttribute("alt") || "";
+      const text = (val ? `${label} = ${val}` : label).replace(/\s+/g, " ").trim().slice(0, 110);
       els.push({ i, tag, type: e.getAttribute("type") || undefined, text, name: (e.getAttribute("name") || "").slice(0, 70) || undefined });
       if (++i >= 180) break;
     }
@@ -128,11 +133,11 @@ async function runAuto(job, page) {
     try {
       if (a.do === "done") return `${a.result}\n\nFinal page: ${await page.title()} (${page.url()})`;
       if (a.do === "fail") throw Object.assign(new Error(a.reason), { final: true });
-      if (a.do === "ready_to_pay") {
+      if (a.do === "ready_to_pay" || a.do === "ready_to_confirm") {
         // Checkout: stop at the pay step and hand TARGET the cart (cookies + localStorage) and this page. Nothing is pressed.
         const state = await page.context().storageState();
         await api({ action: "checkout_ready", job_id: job.id, state, url: page.url() });
-        return `Stopped at the pay step. Total on the page: ${a.total}\n\nFinal page: ${await page.title()} (${page.url()})`;
+        return `${a.do === "ready_to_pay" ? `Stopped at the pay step. Total on the page: ${a.total}` : `Stopped before the final confirm. Slot on the page: ${a.when}`}\n\nFinal page: ${await page.title()} (${page.url()})`;
       }
       if (a.do === "click") await el(a.i).click();
       else if (a.do === "fill") await el(a.i).fill(a.value);

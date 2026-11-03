@@ -23,3 +23,14 @@ TARGET can buy something on a real store for the user. It never pays without a t
 ## Tests
 - `src/__tests__/checkout.test.tsx`: guard, totals, tool, full worker-API flow.
 - `src/__tests__/checkout-live.test.ts` (skipped unless `LIVE_CHECKOUT=1`): real saucedemo.com in a local Chromium with a scripted chooser in place of the AI. Reaches the pay page, is refused on *Finish*, shows the card ($32.39, SauceCard #31337), then a fresh browser restores the cart and reaches the same pay page. It never presses Finish.
+
+# Bookings (reservations / appointments)
+
+Same two steps, with the final confirm button instead of pay. Tool: `target__book` (business, booking page URL, what, when, details the user gave, optional vault login / deposit card).
+
+1. Only when the user asked to book and chose the place and the time (or a rule like "any time after 6"). The agent never picks another time: if nothing fits it fails and lists the nearest slots.
+2. **Prepare job**: finds the slot, fills the details, stops before the final confirm. It reports `ready_to_confirm` with what, when, details and price as the page shows; the server checks the date/time (and price) are on the page. Final buttons ("Confirm booking", "Book appointment", "Complete reservation", and "Book now"/"Reserve" on a page with a details form) are refused here.
+3. **Approval card** (`reservation`): what, when, details, price. Button: *Confirm booking*.
+4. **Confirm job** (after the tap): restores the session, refills cleared fields, and presses the final button once, only while the page still shows the approved date/time (and price). A gone/changed slot stops it ("slot isn't on the page any more") and nothing is booked.
+
+Live test: CURA Healthcare demo (katalon-demo-cura.herokuapp.com, demo login printed on its page) — facility, date and comment filled, refused on *Book Appointment*, card shows 10/12/2026, the confirm job is back on the form signed in. It never presses Book Appointment.

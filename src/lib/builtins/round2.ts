@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ATTACHMENT_BUCKET } from "@/lib/attachments";
 import { SITE, slugFor } from "@/lib/builtins/helpers";
 import type { BuiltinCtx, BuiltinTool } from "@/lib/builtins/tools";
-import { storeSite, userAskedToBuy } from "@/lib/checkout";
+import { storeSite, userAskedToBook, userAskedToBuy } from "@/lib/checkout";
 import { queueCheckout } from "@/lib/server/checkoutRun";
 
 const tool = <S extends z.ZodTypeAny>(t: BuiltinTool<S>): BuiltinTool => t as unknown as BuiltinTool;
@@ -204,6 +204,37 @@ export const ROUND2_TOOLS: BuiltinTool[] = [
         login_secret_id: a.login_secret_id ?? null, payment_secret_id: a.payment_secret_id ?? null, lang: a.lang ?? null,
       }, a.start_url);
       return { job_id: id, status: "started", note: "The browser is adding the items and going through checkout now. It stops at the pay step and posts an approval card in this chat with the items, total and payment method as the store shows them. Tell the user briefly: nothing is paid until they tap Place order." };
+    },
+  }),
+  tool({
+    name: "book", label: "Getting the booking ready",
+    description: "Book a reservation or appointment on a website (restaurant table, doctor/salon/service appointment, room), ONLY when the user asked to book it and chose the place and the time (or gave a rule like 'any time after 6 pm'). The browser finds the slots, picks only one that fits, fills the details the user gave and STOPS before the final confirm button: an approval card with what, when, details and price as the page shows appears in chat. Nothing is booked until the user taps Confirm booking; then the browser confirms once, only if the same slot is still on the page. " +
+      "Give the business, its booking page URL, what (service / table for 2), when (the user's chosen date + time or rule, in the place's local time), the details the user gave (name, phone, email), and from list_vault login_secret_id / payment_secret_id (deposit card) if needed. Never invent details or pick a time yourself.",
+    input: z.object({
+      business: z.string().min(1).max(80), start_url: z.string().url().max(2000),
+      what: z.string().min(1).max(200), when: z.string().min(1).max(120),
+      details: z.string().max(400).default(""),
+      login_secret_id: z.string().uuid().optional(), payment_secret_id: z.string().uuid().optional(),
+      lang: z.enum(["hinglish", "hindi", "english"]).optional(),
+    }),
+    async execute(a, ctx) {
+      if (!/^https?:\/\//.test(a.start_url)) throw new Error("Only http(s) sites");
+      if (!userAskedToBook(ctx.userTexts)) return { status: "not_requested", note: "Only start a booking when the user's own message asks to book / reserve something. Ask them first; do not retry." };
+      const site = storeSite(a.start_url);
+      if (!site) throw new Error("Give the booking page's web address");
+      const secrets = [a.payment_secret_id, a.login_secret_id].filter((x): x is string => !!x);
+      if (secrets.length) {
+        const { data } = await ctx.db.from("vault_secrets").select("id, kind").eq("user_id", ctx.userId).in("id", secrets);
+        const rows = (data ?? []) as { id: string; kind: string }[];
+        if (rows.length !== new Set(secrets).size) throw new Error("A vault item doesn't exist");
+        if (a.payment_secret_id && rows.find((d) => d.id === a.payment_secret_id)?.kind !== "card") throw new Error("payment_secret_id must be a saved card");
+        if (a.login_secret_id && rows.find((d) => d.id === a.login_secret_id)?.kind !== "login") throw new Error("login_secret_id must be a saved login");
+      }
+      const id = await queueCheckout(ctx.db, ctx.userId, ctx.conversationId, {
+        phase: "prepare", kind: "booking", merchant: a.business, site, items: [], what: a.what, when: a.when, details: a.details,
+        login_secret_id: a.login_secret_id ?? null, payment_secret_id: a.payment_secret_id ?? null, lang: a.lang ?? null,
+      }, a.start_url);
+      return { job_id: id, status: "started", note: "The browser is finding the slot and filling the details now. It stops before the final confirm and posts an approval card in this chat with what, when, details and price as the site shows them. Tell the user briefly: nothing is booked until they tap Confirm booking." };
     },
   }),
   tool({

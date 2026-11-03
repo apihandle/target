@@ -139,7 +139,7 @@ export const BUILTIN_TOOLS: BuiltinTool[] = [
   }),
   tool({
     name: "browser_task", label: "Planning a browser task",
-    description: "Do something on a website in a real browser. Smart mode (auto: true, the usual choice): give only the goal and start URL; the browser looks at the screen itself and decides each click and keystroke, signing in with vault items you list in secret_ids. Fixed mode: give exact steps (goto, click, fill, fill_secret, press, wait, extract). Read-only fixed steps run at once; anything that can click or type waits for the user's approval. For buying or booking use checkout instead. Needs TARGET's browser worker to be running.",
+    description: "Do something on a website in a real browser. Smart mode (auto: true, the usual choice): give only the goal and start URL; the browser looks at the screen itself and decides each click and keystroke, signing in with vault items you list in secret_ids. Fixed mode: give exact steps (goto, click, fill, fill_secret, press, wait, extract). Read-only fixed steps run at once; anything that can click or type waits for the user's approval. For buying use checkout, for reservations / appointments use book. Needs TARGET's browser worker to be running.",
     input: z.object({ goal: z.string().min(3).max(500), start_url: z.string().url().max(2000), auto: z.boolean().default(true), secret_ids: z.array(z.string().uuid()).max(4).default([]), steps: z.array(browserStep).max(30).default([]) }),
     async execute(a, ctx) {
       if (!/^https?:\/\//.test(a.start_url)) throw new Error("Only http(s) sites");
