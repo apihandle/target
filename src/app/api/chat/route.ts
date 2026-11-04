@@ -246,7 +246,7 @@ export async function POST(req: Request) {
   const signinNote = intent ? SIGNIN_PROMPT + ` The user wants to sign in to ${intent.site}${intent.google ? " with Google" : ""}.` : "";
   const system = quick
     ? SYSTEM_PROMPT + QUICK_PROMPT + nowLine() + projectBlock(project) + memoryBlock(known) + memNote + webNote + files.block + (taskMode ? TASK_MODE_PROMPT : "")
-    : coreSystemPrompt(text) + signinNote + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + pageNote + files.block + connectorNote + resumeNote + (taskMode ? TASK_MODE_PROMPT : "");
+    : coreSystemPrompt(text, taskMode) + signinNote + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + pageNote + files.block + connectorNote + resumeNote + (taskMode ? TASK_MODE_PROMPT : "");
   const messages: LLMMessage[] = [
     { role: "system", content: system },
     ...history,

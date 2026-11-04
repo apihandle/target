@@ -193,3 +193,13 @@ describe("turning it on", () => {
     expect(TASK_MODE_PROMPT).toMatch(/never tell the user to tap Approve/);
   });
 });
+
+describe("reminder wording in Task mode", () => {
+  it("the playbook never asks to tap Approve for a schedule when Task mode is on", async () => {
+    const { coreSystemPrompt, SCHEDULE_APPROVE } = await import("@/lib/playbooks");
+    const msg = "remind me every Monday at 9am to check my emails";
+    expect(coreSystemPrompt(msg)).toContain(SCHEDULE_APPROVE);
+    expect(coreSystemPrompt(msg, true)).not.toContain(SCHEDULE_APPROVE);
+    expect(coreSystemPrompt(msg, true)).toMatch(/Task mode sets it automatically/);
+  });
+});

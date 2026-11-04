@@ -164,7 +164,12 @@ export function playbookPrompt(message: string): string {
 }
 
 /** The fixed part of the chat system prompt for one message: base rules, domain mode, playbooks, features and cards. */
-export function coreSystemPrompt(message: string): string {
+/** The reminder rule's approval wording, which Task mode swaps: there the schedule card is approved in code. */
+export const SCHEDULE_APPROVE = "and that it starts once they tap Approve";
+const SCHEDULE_AUTO = "and that it is set (Task mode sets it automatically, nothing to approve); never ask them to approve it";
+
+export function coreSystemPrompt(message: string, taskMode = false): string {
   const kind = detectTask(message);
-  return SYSTEM_PROMPT + PLAYBOOKS[kind] + (isMultiTask(message) ? MULTI_PLAYBOOK : "") + playbookPrompt(message) + CAPABILITIES + BLOCKS_PROMPT;
+  const p = SYSTEM_PROMPT + PLAYBOOKS[kind] + (isMultiTask(message) ? MULTI_PLAYBOOK : "") + playbookPrompt(message) + CAPABILITIES + BLOCKS_PROMPT;
+  return taskMode ? p.split(SCHEDULE_APPROVE).join(SCHEDULE_AUTO) : p;
 }
