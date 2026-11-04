@@ -17,6 +17,7 @@ import { accountOf, accountPost } from "@/lib/siteAccount";
 import { settleSiteAccount } from "@/lib/server/siteAccountRun";
 import { checkoutOf, guardCheckout, PAY_PRESSED } from "@/lib/checkout";
 import { checkoutReady, checkoutState, finishCheckout } from "@/lib/server/checkoutRun";
+import { CHECK_LINE, nextControl, PAUSE_MS, safeLiveUrl, STOPPED, type Control } from "@/lib/liveView";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -33,6 +34,11 @@ export const maxDuration = 60;
  *  save_session -> sign-in jobs: store the signed-in cookies (encrypted) in site_sessions
  *  checkout_ready -> checkout prepare jobs at the pay step: the browser state (sealed) and the pay page URL
  *  checkout_state -> checkout pay jobs (approved): that sealed state, so a new browser has the same cart
+ *  live   -> the provider's interactive live-view URL for the chat panel (allow-listed hosts only)
+ *  frame  -> the latest screenshot + page URL for the chat panel; answers who is in control
+ *  control -> who is in control (agent / paused / user / stop)
+ *  pause  -> the agent waits for the user (Cloudflare check, captcha); resume -> the agent carries on
+ *  handoff -> a paused job's time ran out in this run: back to queued with the open session, for the next run
  *  finish -> store the result (done/failed) and notify the owner
  */
 export async function POST(req: Request) {
@@ -56,14 +62,56 @@ export async function POST(req: Request) {
     const { data: next } = await db.from("browser_jobs").select("id").eq("status", "queued").in("mode", modes).order("created_at", { ascending: true }).limit(1);
     if (!next?.length) return json({ job: null });
     const { data } = await db.from("browser_jobs").update({ status: "running", claimed_at: new Date().toISOString() })
-      .eq("id", next[0].id).eq("status", "queued").select("id, user_id, goal, start_url, steps, mode, max_steps, language, code, inputs, allowed_secrets");
+      .eq("id", next[0].id).eq("status", "queued").select("id, user_id, goal, start_url, steps, mode, max_steps, language, code, inputs, allowed_secrets, resume");
     return json({ job: data?.[0] ?? null });
   }
 
   const id = typeof b.job_id === "string" && UUID_RE.test(b.job_id) ? b.job_id : null;
   if (!id) return badRequest("job_id required");
-  const { data: job } = await db.from("browser_jobs").select("id, user_id, goal, status, steps, mode, allowed_secrets, max_steps, log, conversation_id, inputs, claimed_at").eq("id", id).maybeSingle();
+  const { data: job } = await db.from("browser_jobs").select("id, user_id, goal, status, steps, mode, allowed_secrets, max_steps, log, conversation_id, inputs, claimed_at, live, control, paused_until").eq("id", id).maybeSingle();
   if (!job || job.status !== "running") return json({ error: "Job is not running" }, 409);
+
+  // ---- live view and control (the chat panel)
+  const ctl = () => ({ control: (job.control as Control | null) ?? "agent", paused_until: job.paused_until ? new Date(job.paused_until as string).getTime() : 0 });
+  if (b.action === "live") {
+    const l = b.live as { provider?: unknown; url?: unknown; interactive?: unknown } | undefined;
+    const url = safeLiveUrl(l?.url);
+    if (!url) return badRequest("Live view URL not allowed");
+    await db.from("browser_jobs").update({ live: { provider: String(l?.provider ?? "").slice(0, 30), url, interactive: l?.interactive === true } }).eq("id", id);
+    return json({ ok: true });
+  }
+  if (b.action === "frame") {
+    const shot = typeof b.shot === "string" && b.shot.length < 390000 && /^[A-Za-z0-9+/=]+$/.test(b.shot) ? b.shot : null;
+    const url = typeof b.url === "string" ? b.url.slice(0, 2000) : null;
+    await db.from("browser_jobs").update({ ...(shot ? { frame: shot } : {}), frame_url: url, frame_at: new Date().toISOString() }).eq("id", id);
+    return json(ctl());
+  }
+  if (b.action === "control") return json(ctl());
+  if (b.action === "pause" || b.action === "resume") {
+    const interactive = !!(job.live as { interactive?: boolean } | null)?.interactive;
+    const to = nextControl(job.control as Control | null, b.action === "pause" ? "pause" : "passed", { interactive });
+    if (!to) return json(ctl());
+    const reason = typeof b.reason === "string" ? b.reason.replace(/\s+/g, " ").trim().slice(0, 180) : CHECK_LINE;
+    // One pause window per wait: a pause that is still open keeps its deadline (also across a worker handoff).
+    const open = job.paused_until && new Date(job.paused_until as string).getTime() > Date.now();
+    const until = b.action === "pause" ? (open ? (job.paused_until as string) : new Date(Date.now() + PAUSE_MS).toISOString()) : null;
+    const log = ((job.log ?? []) as string[]).slice(-40);
+    await db.from("browser_jobs").update({
+      control: to, control_reason: b.action === "pause" ? reason : null, paused_until: until,
+      ...(b.action === "pause" && job.control !== to ? { log: [...log, `Paused: ${reason}`.slice(0, 200)] } : {}),
+    }).eq("id", id);
+    if (b.action === "pause" && job.control !== to) {
+      try { await sendPushToUser(db, job.user_id as string, { title: "The browser needs you", body: reason, url: "/app", tag: `browser-${id}` }); } catch { /* optional */ }
+    }
+    return json({ control: to, paused_until: until ? new Date(until).getTime() : 0 });
+  }
+  if (b.action === "handoff") {
+    const r = b.resume as { provider?: unknown; id?: unknown } | undefined;
+    if (typeof r?.provider !== "string" || typeof r?.id !== "string" || !/^[A-Za-z0-9-]{6,80}$/.test(r.id)) return badRequest("Bad resume");
+    if (job.control !== "paused" && job.control !== "user") return json({ error: "Only a paused job is handed over" }, 409);
+    await db.from("browser_jobs").update({ status: "queued", claimed_at: null, resume: { provider: r.provider.slice(0, 20), id: r.id } }).eq("id", id).eq("status", "running");
+    return json({ ok: true });
+  }
 
   if (b.action === "secret") {
     const sid = typeof b.secret_id === "string" ? b.secret_id : "";
@@ -193,6 +241,9 @@ export async function POST(req: Request) {
 
   if (b.action === "finish") {
     let ok = b.status === "done";
+    const finalShot = typeof b.shot === "string" && b.shot.length < 390000 && /^[A-Za-z0-9+/=]+$/.test(b.shot) ? b.shot : null;
+    const stoppedByUser = job.control === "stop" || (typeof b.error === "string" && b.error.startsWith(STOPPED));
+    await db.from("browser_jobs").update({ ...(finalShot ? { frame: finalShot, frame_at: new Date().toISOString() } : {}), control: null, control_reason: null, paused_until: null, resume: null }).eq("id", id);
     // Defense in depth: a sign-in "done" whose own report says the login didn't happen is a failure.
     if (ok && signinOf(job.inputs) && resultSaysFailed(typeof b.result === "string" ? b.result : "")) {
       ok = false;
@@ -227,13 +278,13 @@ export async function POST(req: Request) {
       return json({ ok: true });
     }
     await db.from("browser_jobs").update({
-      status: ok ? "done" : "failed", result: result ? result.slice(0, 20000) : null, files,
+      status: ok ? "done" : stoppedByUser ? "cancelled" : "failed", result: result ? result.slice(0, 20000) : null, files,
       error: ok ? null : String(b.error ?? "The browser task failed").slice(0, 500), finished_at: new Date().toISOString(),
     }).eq("id", id).eq("status", "running");
     if (job.conversation_id) {
       const si = signinOf(job.inputs);
-      const head = account ? accountPost(account, ok) : si ? signinPostHead(si.site, ok, si.lang) : ok ? `🌐 **Browser task done:** ${job.goal}` : `⚠️ **Browser task failed:** ${job.goal}`;
-      const body = ok ? (result ?? "").slice(0, 6000) : si ? signinFailure(String(b.error ?? ""), si.site, si.lang).line : String(b.error ?? "The browser task failed").slice(0, 500);
+      const head = account ? accountPost(account, ok) : stoppedByUser ? `⏹ **Browser task stopped:** ${job.goal}` : si ? signinPostHead(si.site, ok, si.lang) : ok ? `🌐 **Browser task done:** ${job.goal}` : `⚠️ **Browser task failed:** ${job.goal}`;
+      const body = ok ? (result ?? "").slice(0, 6000) : stoppedByUser ? "Stopped by you." : si ? signinFailure(String(b.error ?? ""), si.site, si.lang).line : String(b.error ?? "The browser task failed").slice(0, 500);
       const links = files.map((f) => `- [${f.name}](${f.url})`).join("\n");
       const content = [head, body, links].filter(Boolean).join("\n\n");
       await db.from("messages").insert({ conversation_id: job.conversation_id, user_id: job.user_id, role: "assistant", content });

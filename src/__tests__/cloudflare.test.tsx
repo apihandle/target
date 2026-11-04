@@ -148,7 +148,7 @@ describe("retrying the job on the next cloud browser", () => {
     const calls = workerApi([job()]);
     const r = await runQueuedJobs({ budgetMs: 200000, secret: "s".repeat(40), base: "https://t.test" });
     expect(r).toEqual([{ id: "j1", ok: true, provider: "steel" }]);
-    expect(h.connects).toEqual(["wss://connect.steel.dev?apiKey=***", "wss://connect.steel.dev?sessionId=s1"]);
+    expect(h.connects).toEqual(["wss://connect.steel.dev?sessionId=s1", "wss://connect.steel.dev?sessionId=s1"]);
     expect(calls.some((c) => c.action === "progress" && /Cloudflare blocked steel; retrying on steel in stealth mode/.test(String(c.line)))).toBe(true);
     expect(calls.find((c) => c.action === "finish")).toMatchObject({ status: "done" });
   });

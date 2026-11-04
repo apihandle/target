@@ -1,5 +1,7 @@
 import type { Browser, BrowserContext, Page } from "playwright-core";
-import { configuredProviders, redact, startSession, STEALTH_ORDER, type CdpSession, type ProviderId, type SessionOpts } from "./remoteBrowser";
+import { configuredProviders, redact, resumeSession, RESUMABLE, startSession, STEALTH_ORDER, type CdpSession, type ProviderId, type SessionOpts } from "./remoteBrowser";
+import { CHECK_LINE, liveViewFrom, PAUSE_MS, PAUSE_TIMEOUT, STOPPED, type Control, type LiveView } from "@/lib/liveView";
+import { kickCloudWorker } from "./kickWorker";
 import { CLOUDFLARE_BLOCKED, detectBotCheck, type BotCheck, type BotSignals } from "@/lib/loginCheck";
 import { SITE } from "@/lib/builtins/helpers";
 import { readUrl } from "@/lib/urlReader";
@@ -11,7 +13,99 @@ import { llmText } from "@/lib/llm";
  * It talks to /api/browser-jobs/worker exactly like the external worker, so claim/next/secret/finish
  * logic, limits, and secret handling stay in one place.
  */
-type Job = { id: string; mode: string; goal?: string; start_url: string; steps?: Step[]; max_steps?: number; allowed_secrets?: string[]; inputs?: unknown };
+type Job = { id: string; mode: string; goal?: string; start_url: string; steps?: Step[]; max_steps?: number; allowed_secrets?: string[]; inputs?: unknown; resume?: { provider?: string; id?: string } | null };
+
+/**
+ * The chat's live panel for one job: the provider's interactive live view (sent once), screenshots every few
+ * seconds (the fallback view, and the final picture), and who is in control (the user can take over or stop).
+ */
+export class LiveLink {
+  control: Control = "agent";
+  until = 0;
+  lastShot: string | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private busy = false;
+  constructor(private job: Job, private api: Api, private page: Page, public live: LiveView | null) {}
+  get interactive() { return !!this.live?.interactive; }
+  private take(r: Record<string, unknown>) {
+    if (typeof r.control === "string") this.control = r.control as Control;
+    if (typeof r.paused_until === "number") this.until = r.paused_until;
+  }
+  async start(everyMs = this.interactive ? 5000 : 2000) {
+    if (this.live) await this.api({ action: "live", job_id: this.job.id, live: this.live }).catch(() => {});
+    const tick = async () => {
+      if (this.busy) return;
+      this.busy = true;
+      try { await this.frame(); } finally { this.busy = false; }
+    };
+    void tick();
+    this.timer = setInterval(() => { void tick(); }, everyMs);
+  }
+  async shot(): Promise<string | null> {
+    const b = await Promise.race([
+      this.page.screenshot({ type: "jpeg", quality: 40 }).catch(() => null),
+      new Promise<null>((r) => setTimeout(() => r(null), 4000)),
+    ]);
+    const s = b ? Buffer.from(b).toString("base64") : null;
+    if (s && s.length < 390000) this.lastShot = s;
+    return this.lastShot;
+  }
+  async frame() {
+    const shot = await this.shot();
+    let url = "";
+    try { url = this.page.url().slice(0, 2000); } catch { /* closed */ }
+    const r = await this.api({ action: "frame", job_id: this.job.id, url, ...(shot ? { shot } : {}) }).catch(() => ({}));
+    this.take(r as Record<string, unknown>);
+  }
+  async refresh(): Promise<Control> {
+    const r = await this.api({ action: "control", job_id: this.job.id }).catch(() => ({}));
+    this.take(r as Record<string, unknown>);
+    return this.control;
+  }
+  async pause(reason: string): Promise<void> {
+    const r = await this.api({ action: "pause", job_id: this.job.id, reason }).catch(() => ({}));
+    this.take(r as Record<string, unknown>);
+    if (!this.until) this.until = Date.now() + PAUSE_MS;
+  }
+  async resume() {
+    const r = await this.api({ action: "resume", job_id: this.job.id }).catch(() => ({}));
+    this.take(r as Record<string, unknown>);
+  }
+  stop() { if (this.timer) clearInterval(this.timer); this.timer = null; }
+}
+
+/** The worker run's time is nearly up while the job waits for the user: the next run picks the session up. */
+export class Handoff extends Error { handoff = true; constructor() { super("Handing the paused browser to the next worker run"); } }
+export const isHandoff = (e: unknown) => !!(e as { handoff?: boolean })?.handoff;
+const stopped = () => Object.assign(new Error(`${STOPPED}: Stopped by you`), { final: true });
+
+/**
+ * Wait while the user has the browser: after a pause (Cloudflare check, captcha) or when they tapped Take control.
+ * Returns when they tap Continue (or the check passes on its own); throws when they stop the job, when nobody acts
+ * within the pause window, or (Handoff) when this run's time is nearly up.
+ */
+export async function holdForUser(link: LiveLink, page: Page, deadline: number, opts: { reason?: string; check?: () => Promise<boolean>; every?: number } = {}): Promise<void> {
+  const every = opts.every ?? 2000;
+  if (opts.reason) await link.pause(opts.reason);
+  for (;;) {
+    if (link.control === "stop") throw stopped();
+    if (link.control === "agent") {
+      // Continue tapped: if the check is still there, keep waiting (same window); otherwise carry on.
+      if (opts.check && !(await opts.check().catch(() => false))) { await link.pause(opts.reason ?? CHECK_LINE); }
+      else return;
+    } else if (opts.check && link.control === "paused" && (await opts.check().catch(() => false))) {
+      await link.resume();
+      return;
+    }
+    if (link.until && Date.now() > link.until) {
+      if (link.control === "user") { await link.resume(); return; } // the user's own take-over ran out: hand back
+      throw Object.assign(new Error(`${PAUSE_TIMEOUT}: ${opts.check ? "The check wasn't completed" : "Nobody took over"} within ${Math.round(PAUSE_MS / 60000)} minutes`), { final: true, cloudflare: !!opts.check });
+    }
+    if (Date.now() > deadline - 25000) throw new Handoff();
+    await page.waitForTimeout(every).catch(() => {});
+    await link.refresh();
+  }
+}
 
 /**
  * Sign-in jobs carry { signin: { site } } in inputs (account create / reset jobs { account: { site } }):
@@ -170,7 +264,7 @@ export class CloudflareBlocked extends Error {
  * Cloudflare on the page: wait for it to pass, then reload, at most twice per browser. Throws CloudflareBlocked
  * when it still hasn't passed (the caller then retries on another cloud browser in stealth mode).
  */
-export async function passBotCheck(page: Page, job: Job, api: Api, state: { reloads: number }, waitMs = 6000): Promise<void> {
+export async function passBotCheck(page: Page, job: Job, api: Api, state: { reloads: number }, waitMs = 6000, hold?: (check: () => Promise<boolean>) => Promise<void>): Promise<void> {
   let check = blockingCheck(await botSignals(page).catch(() => ({ title: "", text: "", frames: [], widget: false, solved: false, password: false })));
   if (!check) return;
   let host = "";
@@ -180,7 +274,20 @@ export async function passBotCheck(page: Page, job: Job, api: Api, state: { relo
     await page.waitForTimeout(waitMs);
     check = blockingCheck(await botSignals(page).catch(() => ({ title: "", text: "", frames: [], widget: false, solved: false, password: false })));
     if (!check) return;
-    if (state.reloads >= 2) throw new CloudflareBlocked(check.line, host);
+    if (state.reloads >= 2) {
+      // With a live view the user can finish the check on their own device: pause and wait instead of failing.
+      if (hold) {
+        await api({ action: "progress", job_id: job.id, line: `Cloudflare check on ${host} needs you. ${CHECK_LINE}` }).catch(() => {});
+        try {
+          await hold(async () => !blockingCheck(await botSignals(page)));
+          return;
+        } catch (e) {
+          if (String((e as Error).message).startsWith(PAUSE_TIMEOUT)) throw Object.assign(new CloudflareBlocked(`${check.line}; nobody completed it within ${Math.round(PAUSE_MS / 60000)} minutes`, host), { paused: true });
+          throw e;
+        }
+      }
+      throw new CloudflareBlocked(check.line, host);
+    }
     state.reloads++;
     await api({ action: "progress", job_id: job.id, line: `Cloudflare check didn't pass, reloading the page (${state.reloads}/2)` }).catch(() => {});
     await page.reload({ waitUntil: "domcontentloaded" }).catch(() => {});
@@ -192,20 +299,35 @@ export async function passBotCheck(page: Page, job: Job, api: Api, state: { relo
 
 export const isCloudflareBlock = (e: unknown) => !!(e as { cloudflare?: boolean })?.cloudflare || String((e as Error)?.message ?? "").startsWith(CLOUDFLARE_BLOCKED);
 
-export async function runAuto(job: Job, page: Page, api: Api, deadline: number): Promise<string> {
-  await page.goto(safeUrl(job.start_url), { waitUntil: "domcontentloaded" });
+export async function runAuto(job: Job, page: Page, api: Api, deadline: number, link?: LiveLink | null, opts: { resumed?: boolean } = {}): Promise<string> {
+  if (!opts.resumed) await page.goto(safeUrl(job.start_url), { waitUntil: "domcontentloaded" });
   const cf = { reloads: 0 };
+  const canPause = !!link?.interactive;
+  const hold = canPause ? (check?: () => Promise<boolean>, reason?: string) => holdForUser(link!, page, deadline, { check, reason: reason ?? CHECK_LINE }) : undefined;
   for (let n = 0; n < (job.max_steps || 20) + 2; n++) {
+    // The user tapped Take control (or Stop): wait for Continue, then read the page again.
+    if (link) {
+      const c = await link.refresh();
+      if (c === "stop") throw stopped();
+      if (c === "user" || c === "paused") await holdForUser(link, page, deadline);
+    }
     if (Date.now() > deadline) throw Object.assign(new Error("Took too long in the cloud browser; try a shorter task"), { final: true });
     await page.waitForLoadState("domcontentloaded").catch(() => {});
     await page.waitForTimeout(700);
-    await passBotCheck(page, job, api, cf);
-    const { action } = (await api({ action: "next", job_id: job.id, snapshot: await snapshot(page) })) as { action: Record<string, string & number> };
+    await passBotCheck(page, job, api, cf, 6000, hold ? (check) => hold(check) : undefined);
+    const snap = { ...(await snapshot(page)), ...(canPause ? { can_pause: true } : {}) };
+    const { action } = (await api({ action: "next", job_id: job.id, snapshot: snap })) as { action: Record<string, string & number> };
     const a = action;
     const el = (i: number) => page.locator(`[data-target-i="${i}"]`).first();
     try {
       if (a.do === "done") return `${a.result}\n\nFinal page: ${await page.title()} (${page.url()})`;
       if (a.do === "fail") throw Object.assign(new Error(a.reason), { final: true });
+      if (a.do === "need_user") {
+        // A captcha or a step only the user can do: pause with the live view (only offered when there is one).
+        if (!hold) throw Object.assign(new Error(a.why || "This step needs you, and this cloud browser has no live view"), { final: true });
+        await hold(undefined, String(a.why || CHECK_LINE).slice(0, 180));
+        continue;
+      }
       if (a.do === "ready_to_pay" || a.do === "ready_to_confirm") {
         // Stop at the pay step: hand the cart (cookies + localStorage) and this page to TARGET; nothing is pressed.
         const state = await page.context().storageState();
@@ -236,7 +358,7 @@ export async function runAuto(job: Job, page: Page, api: Api, deadline: number):
       else if (a.do === "scroll") await page.mouse.wheel(0, 800);
       else if (a.do === "wait") await page.waitForTimeout(2500);
     } catch (e) {
-      if ((e as { final?: boolean }).final) throw e;
+      if ((e as { final?: boolean }).final || isHandoff(e)) throw e;
     }
   }
   throw new Error("Ran out of steps before finishing");
@@ -288,45 +410,70 @@ export async function readWithoutBrowser(job: Job, api: Api, f: typeof fetch = f
   return `${answer}\n\nFinal page: ${page.title} (${page.url}) [read without a browser]`;
 }
 
+/** Browserless: its live view comes from a CDP command on the page (null when the plan doesn't offer it). */
+export async function browserlessLive(page: Page): Promise<LiveView | null> {
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    const r = (await cdp.send("Browserless.liveURL" as never, { timeout: PAUSE_MS * 2, interactable: true } as never)) as { liveURL?: string };
+    return liveViewFrom("browserless", r as Record<string, unknown>);
+  } catch { return null; }
+}
+
 /** One run of a job on an open cloud browser: restore the saved session / cart, run it, save the new session. */
-async function runOnce(job: Job, browser: Browser, api: Api, deadline: number): Promise<string> {
-  await api({ action: "progress", job_id: job.id, line: `Opening ${new URL(job.start_url).hostname.replace(/^www\./, "")}` }).catch(() => {});
+async function runOnce(job: Job, browser: Browser, session: CdpSession, api: Api, deadline: number, out: { link?: LiveLink }): Promise<string> {
+  const resumed = !!job.resume;
+  if (!resumed) await api({ action: "progress", job_id: job.id, line: `Opening ${new URL(job.start_url).hostname.replace(/^www\./, "")}` }).catch(() => {});
   const ctx = browser.contexts()[0] ?? (await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "en-IN" }));
   const page = ctx.pages()[0] ?? (await ctx.newPage());
   page.setDefaultTimeout(15000);
-  const site = signinSite(job);
-  if (checkoutPhase(job) === "pay") {
-    const { state } = (await api({ action: "checkout_state", job_id: job.id })) as { state?: StorageState };
-    if (!state) throw Object.assign(new Error("The saved cart is missing; prepare the checkout again"), { final: true });
-    await restoreState(ctx, state);
-  } else if (site) {
-    const { cookies } = (await api({ action: "cookies", job_id: job.id }).catch(() => ({ cookies: [] }))) as { cookies?: Parameters<typeof ctx.addCookies>[0] };
-    if (cookies?.length) await ctx.addCookies(cookies).catch(() => {});
-  }
-  const result = job.mode === "auto" ? await runAuto(job, page, api, deadline - 15000) : await runSteps(job, page, api);
-  if (site) {
-    const cookies = await ctx.cookies().catch(() => []);
-    if (cookies.length) {
-      const saved = (await api({ action: "save_session", job_id: job.id, cookies }).catch(() => ({}))) as { ok?: boolean };
-      if (saved.ok) await api({ action: "progress", job_id: job.id, line: "Saved the sign-in for next time" }).catch(() => {});
+  const live = session.live ?? (session.provider === "browserless" ? await browserlessLive(page) : null);
+  const link = new LiveLink(job, api, page, live);
+  out.link = link;
+  await link.start();
+  try {
+    const site = signinSite(job);
+    if (resumed) { /* the page and its cookies are still in the browser */ }
+    else if (checkoutPhase(job) === "pay") {
+      const { state } = (await api({ action: "checkout_state", job_id: job.id })) as { state?: StorageState };
+      if (!state) throw Object.assign(new Error("The saved cart is missing; prepare the checkout again"), { final: true });
+      await restoreState(ctx, state);
+    } else if (site) {
+      const { cookies } = (await api({ action: "cookies", job_id: job.id }).catch(() => ({ cookies: [] }))) as { cookies?: Parameters<typeof ctx.addCookies>[0] };
+      if (cookies?.length) await ctx.addCookies(cookies).catch(() => {});
     }
+    const result = job.mode === "auto" ? await runAuto(job, page, api, deadline - 15000, link, { resumed }) : await runSteps(job, page, api);
+    if (site) {
+      const cookies = await ctx.cookies().catch(() => []);
+      if (cookies.length) {
+        const saved = (await api({ action: "save_session", job_id: job.id, cookies }).catch(() => ({}))) as { ok?: boolean };
+        if (saved.ok) await api({ action: "progress", job_id: job.id, line: "Saved the sign-in for next time" }).catch(() => {});
+      }
+    }
+    return result;
+  } finally {
+    link.stop();
   }
-  return result;
 }
 
 /** Claim and run queued browser jobs until the time budget runs out. Returns a short summary per job. */
-export async function runQueuedJobs(opts: { budgetMs: number; secret: string; base?: string }): Promise<{ id: string; ok: boolean; provider?: string; error?: string }[]> {
+export async function runQueuedJobs(opts: { budgetMs: number; secret: string; base?: string }): Promise<{ id: string; ok: boolean; provider?: string; error?: string; handoff?: boolean }[]> {
   const api = workerApi(opts.secret, opts.base);
   const deadline = Date.now() + opts.budgetMs;
-  const results: { id: string; ok: boolean; provider?: string; error?: string }[] = [];
+  const results: { id: string; ok: boolean; provider?: string; error?: string; handoff?: boolean }[] = [];
   while (Date.now() < deadline - 30000) {
     const { job } = (await api({ action: "claim", modes: ["steps", "auto"] })) as { job: Job | null };
     if (!job) break;
     let provider: string | undefined;
+    const out: { link?: LiveLink } = {};
+    const finalShot = async () => (out.link ? (await out.link.shot()) : null);
     try {
       let conn: Awaited<ReturnType<typeof connectCloudBrowser>>;
-      try { conn = await connectCloudBrowser(); }
-      catch (e) {
+      try {
+        conn = job.resume?.provider && job.resume.id
+          ? await reconnectCloudBrowser(job.resume.provider as ProviderId, job.resume.id)
+          : await connectCloudBrowser();
+      } catch (e) {
+        if (job.resume) throw Object.assign(new Error(`The paused browser session ended before it could continue (${redact(String((e as Error).message)).slice(0, 120)})`), { final: true });
         if (!canReadWithoutBrowser(job)) throw e;
         const result = await readWithoutBrowser(job, api);
         await api({ action: "finish", job_id: job.id, status: "done", result });
@@ -342,30 +489,52 @@ export async function runQueuedJobs(opts: { budgetMs: number; secret: string; ba
         tried.push(`${session.provider}${session.stealth ? " (stealth)" : ""}`);
         if (session.stealth && stealthLeft.includes(session.provider)) stealthLeft.splice(stealthLeft.indexOf(session.provider), 1);
         let result: string;
+        let keepOpen = false;
         try {
-          result = await runOnce(job, browser, api, deadline);
+          result = await runOnce(job, browser, session, api, deadline, out);
         } catch (e) {
-          if (!isCloudflareBlock(e)) throw e;
+          if (isHandoff(e) && session.id && RESUMABLE.includes(session.provider)) {
+            // The job is waiting for the user and this run's time is up: leave the session open for the next run.
+            const r = (await api({ action: "handoff", job_id: job.id, resume: { provider: session.provider, id: session.id } }).catch(() => ({}))) as { ok?: boolean };
+            if (r.ok) { keepOpen = true; throw e; }
+          }
+          if (isHandoff(e)) throw Object.assign(new Error("Took too long waiting for you in the cloud browser"), { final: true });
+          if (!isCloudflareBlock(e) || (e as { paused?: boolean }).paused) throw e;
           const next = stealthLeft[0];
           if (!next || tried.length >= 3 || Date.now() > deadline - 90000) {
             throw Object.assign(new Error(`${String((e as Error).message).slice(0, 250)} (tried ${tried.length} cloud browser${tried.length === 1 ? "" : "s"}: ${tried.join(", ")})`), { final: true });
           }
           await api({ action: "progress", job_id: job.id, line: `Cloudflare blocked ${session.provider}; retrying on ${next} in stealth mode` }).catch(() => {});
+          await out.link?.shot();
           conn = await connectCloudBrowser(process.env, { stealth: true, only: stealthLeft }).catch((err) => { throw Object.assign(new Error(`${String((e as Error).message).slice(0, 250)} (tried ${tried.join(", ")}; no other cloud browser started: ${redact(String((err as Error).message)).slice(0, 120)})`), { final: true }); });
           continue;
         } finally {
-          await browser.close().catch(() => {});
-          await session.release().catch(() => {});
+          if (!keepOpen) {
+            if (out.link) await finalShot().catch(() => null);
+            await browser.close().catch(() => {});
+            await session.release().catch(() => {});
+          }
         }
-        await api({ action: "finish", job_id: job.id, status: "done", result });
+        await api({ action: "finish", job_id: job.id, status: "done", result, ...(out.link?.lastShot ? { shot: out.link.lastShot } : {}) });
         results.push({ id: job.id, ok: true, provider });
         break;
       }
     } catch (e) {
+      if (isHandoff(e)) { results.push({ id: job.id, ok: true, provider, handoff: true }); continue; }
       const error = redact(String((e as Error)?.message || e)).slice(0, 400);
-      await api({ action: "finish", job_id: job.id, status: "failed", error }).catch(() => {});
+      await api({ action: "finish", job_id: job.id, status: "failed", error, ...(out.link?.lastShot ? { shot: out.link.lastShot } : {}) }).catch(() => {});
       results.push({ id: job.id, ok: false, provider, error });
     }
   }
+  // A paused job was handed over: start the next run now (the scheduled tick is the backstop).
+  if (results.some((r) => r.handoff)) await kickCloudWorker();
   return results;
+}
+
+/** Reconnect to a cloud browser session a previous run left open for a paused job. */
+export async function reconnectCloudBrowser(p: ProviderId, id: string, env: Record<string, string | undefined> = process.env): Promise<{ browser: Browser; session: CdpSession }> {
+  const { chromium } = await import("playwright-core");
+  const session = await resumeSession(p, id, env);
+  const browser = await chromium.connectOverCDP(session.wsUrl, { timeout: 25000 });
+  return { browser, session };
 }

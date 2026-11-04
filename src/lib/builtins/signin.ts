@@ -18,7 +18,7 @@ async function pollSignin(ctx: BuiltinCtx, id: string, ms: number, every = 3000)
   for (;;) {
     const { data } = await ctx.db.from("browser_jobs").select("id, status, result, error, log").eq("id", id).eq("user_id", ctx.userId).maybeSingle();
     last = (data as JobRow | null) ?? last;
-    if (!last || ["done", "failed", "cancelled"].includes(last.status) || (last.log ?? []).includes(WAITING_FOR_CODE) || Date.now() + every > until) return last;
+    if (!last || ["done", "failed", "cancelled"].includes(last.status) || (last.log ?? []).includes(WAITING_FOR_CODE) || (last.log ?? []).some((l) => l.startsWith("Paused:")) || Date.now() + every > until) return last;
     await new Promise((r) => setTimeout(r, every));
   }
 }
@@ -71,6 +71,8 @@ export const siteLoginTool: BuiltinTool = {
       };
     // The browser sometimes "finishes" on the login page with an error showing, or reports a blocked login as done:
     // that is a failed sign-in. ok:false + reason is what the chat renders; the model's wording can't change it.
+    if (j && j.status === "running" && (j.log ?? []).some((l) => l.startsWith("Paused:")))
+      return { job_id: job.id, status: "needs_you", site, note: "The browser paused at a check it can't pass. Tell the user in one short line to complete it in the live browser panel below, then tap Continue. Never say signed in; the result is posted in this chat when it finishes." };
     if (j?.status === "done" && /\b(login (attempt )?failed|not successful|password is (invalid|incorrect|wrong)|invalid (password|credentials|username))\b/i.test(j.result ?? ""))
       return { ok: false, job_id: job.id, status: "failed", site, reason: signinFailure("WRONG_LOGIN", site, lang).line, page: (j.result ?? "").slice(0, 600), note: "The sign-in did NOT happen. Say this in one short line and offer to update the saved login (a form is shown under your reply). Never say signed in.", __card: { type: "vault_login", site, for: site } };
     if (j?.status === "done" && resultSaysFailed(j.result))

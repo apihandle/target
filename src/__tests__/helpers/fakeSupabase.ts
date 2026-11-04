@@ -76,6 +76,7 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
   in(k: string, v: unknown[]) { this.filters.push((r) => v.includes(r[k])); return this; }
   lte(k: string, v: string) { this.filters.push((r) => r[k] != null && String(r[k]) <= v); return this; }
   lt(k: string, v: string) { this.filters.push((r) => r[k] != null && String(r[k]) < v); return this; }
+  gte(k: string, v: string) { this.filters.push((r) => r[k] != null && String(r[k]) >= v); return this; }
   is(k: string, v: unknown) { this.filters.push((r) => (r[k] ?? null) === v); return this; }
   ilike(k: string, pattern: string) {
     // Translate a SQL ILIKE pattern (with \ escapes) into a case-insensitive regex.

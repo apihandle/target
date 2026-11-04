@@ -10,10 +10,16 @@
  *   ANCHOR_API_KEY                              Anchor Browser
  *   BROWSER_PROVIDERS="steel,browserless,..."   optional custom order
  */
+import { liveViewFrom, type LiveView } from "@/lib/liveView";
+
 type Env = Record<string, string | undefined>;
 
 export type ProviderId = "steel" | "browserless" | "browserbase" | "hyperbrowser" | "anchor";
-export interface CdpSession { provider: ProviderId; wsUrl: string; release: () => Promise<void>; stealth?: boolean }
+/**
+ * id: the provider's session id when the session was created through its API (it outlives our connection, so a paused
+ * job can hand it to the next worker run). live: the provider's interactive live view, when it has one.
+ */
+export interface CdpSession { provider: ProviderId; wsUrl: string; release: () => Promise<void>; stealth?: boolean; id?: string; live?: LiveView | null }
 export interface SessionOpts { stealth?: boolean }
 
 /**
@@ -52,8 +58,19 @@ export function configuredProviders(env: Env = process.env): ProviderId[] {
 export async function startSession(p: ProviderId, env: Env = process.env, opts: SessionOpts = {}): Promise<CdpSession> {
   if (opts.stealth) return { ...(await startStealthSession(p, env)), stealth: true };
   switch (p) {
-    case "steel":
-      return { provider: p, wsUrl: `wss://connect.steel.dev?apiKey=${encodeURIComponent(env.STEEL_API_KEY!)}`, release: noop };
+    case "steel": {
+      // A session made through the API has a live view (debugUrl) and survives a dropped connection; the bare connect
+      // URL is the fallback when the API refuses.
+      const key = env.STEEL_API_KEY!;
+      try {
+        const j = await postJson("https://api.steel.dev/v1/sessions", { "steel-api-key": key }, { timeout: 900000 });
+        const id = String(j.id ?? "");
+        if (!id) throw new Error("no session id");
+        return { provider: p, id, live: liveViewFrom(p, j), wsUrl: String(j.websocketUrl || `wss://connect.steel.dev?apiKey=${encodeURIComponent(key)}&sessionId=${id}`), release: steelRelease(key, id) };
+      } catch {
+        return { provider: p, wsUrl: `wss://connect.steel.dev?apiKey=${encodeURIComponent(key)}`, release: noop };
+      }
+    }
     case "browserless": {
       const host = env.BROWSERLESS_HOST || "production-sfo.browserless.io";
       return { provider: p, wsUrl: `wss://${host}?token=${encodeURIComponent(env.BROWSERLESS_TOKEN!)}`, release: noop };
@@ -65,22 +82,20 @@ export async function startSession(p: ProviderId, env: Env = process.env, opts: 
       const release = async () => {
         await fetch(`https://api.browserbase.com/v1/sessions/${id}`, { method: "POST", headers: { "Content-Type": "application/json", "X-BB-API-Key": key }, body: JSON.stringify({ projectId: env.BROWSERBASE_PROJECT_ID, status: "REQUEST_RELEASE" }) }).catch(() => {});
       };
-      return { provider: p, wsUrl: String(j.connectUrl), release };
+      return { provider: p, id, live: await browserbaseLive(key, id), wsUrl: String(j.connectUrl), release };
     }
     case "hyperbrowser": {
       const key = env.HYPERBROWSER_API_KEY!;
       const j = await postJson("https://api.hyperbrowser.ai/api/session", { "x-api-key": key }, {});
       const id = String(j.id ?? "");
-      const release = async () => { await fetch(`https://api.hyperbrowser.ai/api/session/${id}/stop`, { method: "PUT", headers: { "x-api-key": key } }).catch(() => {}); };
-      return { provider: p, wsUrl: String(j.wsEndpoint), release };
+      return { provider: p, id, live: liveViewFrom(p, j), wsUrl: String(j.wsEndpoint), release: hyperRelease(key, id) };
     }
     case "anchor": {
       const key = env.ANCHOR_API_KEY!;
       const j = await postJson("https://api.anchorbrowser.io/v1/sessions", { "anchor-api-key": key }, {});
       const d = (j.data ?? j) as Record<string, unknown>;
       const id = String(d.id ?? "");
-      const release = async () => { await fetch(`https://api.anchorbrowser.io/v1/sessions/${id}`, { method: "DELETE", headers: { "anchor-api-key": key } }).catch(() => {}); };
-      return { provider: p, wsUrl: String(d.cdp_url ?? `wss://connect.anchorbrowser.io?apiKey=${encodeURIComponent(key)}&sessionId=${id}`), release };
+      return { provider: p, id, live: liveViewFrom(p, d), wsUrl: String(d.cdp_url ?? `wss://connect.anchorbrowser.io?apiKey=${encodeURIComponent(key)}&sessionId=${id}`), release: anchorRelease(key, id) };
     }
   }
 }
@@ -94,8 +109,7 @@ async function startStealthSession(p: ProviderId, env: Env): Promise<CdpSession>
         stealthConfig: { humanizeInteractions: true }, timeout: 300000, ...(on(env.STEEL_SOLVE_CAPTCHA) ? { solveCaptcha: true } : {}),
       });
       const id = String(j.id ?? "");
-      const release = async () => { await fetch(`https://api.steel.dev/v1/sessions/${id}/release`, { method: "POST", headers: { "steel-api-key": key } }).catch(() => {}); };
-      return { provider: p, wsUrl: String(j.websocketUrl || `wss://connect.steel.dev?apiKey=${encodeURIComponent(key)}&sessionId=${id}`), release };
+      return { provider: p, id, live: liveViewFrom(p, j), wsUrl: String(j.websocketUrl || `wss://connect.steel.dev?apiKey=${encodeURIComponent(key)}&sessionId=${id}`), release: steelRelease(key, id) };
     }
     case "browserless": {
       const host = env.BROWSERLESS_HOST || "production-sfo.browserless.io";
@@ -105,8 +119,7 @@ async function startStealthSession(p: ProviderId, env: Env): Promise<CdpSession>
       const key = env.HYPERBROWSER_API_KEY!;
       const j = await postJson("https://api.hyperbrowser.ai/api/session", { "x-api-key": key }, { useStealth: true, ...(on(env.HYPERBROWSER_SOLVE_CAPTCHAS) ? { solveCaptchas: true } : {}) });
       const id = String(j.id ?? "");
-      const release = async () => { await fetch(`https://api.hyperbrowser.ai/api/session/${id}/stop`, { method: "PUT", headers: { "x-api-key": key } }).catch(() => {}); };
-      return { provider: p, wsUrl: String(j.wsEndpoint), release };
+      return { provider: p, id, live: liveViewFrom(p, j), wsUrl: String(j.wsEndpoint), release: hyperRelease(key, id) };
     }
     case "anchor": {
       const key = env.ANCHOR_API_KEY!;
@@ -117,12 +130,60 @@ async function startStealthSession(p: ProviderId, env: Env): Promise<CdpSession>
       });
       const d = (j.data ?? j) as Record<string, unknown>;
       const id = String(d.id ?? "");
-      const release = async () => { await fetch(`https://api.anchorbrowser.io/v1/sessions/${id}`, { method: "DELETE", headers: { "anchor-api-key": key } }).catch(() => {}); };
-      return { provider: p, wsUrl: String(d.cdp_url ?? `wss://connect.anchorbrowser.io?apiKey=${encodeURIComponent(key)}&sessionId=${id}`), release };
+      return { provider: p, id, live: liveViewFrom(p, d), wsUrl: String(d.cdp_url ?? `wss://connect.anchorbrowser.io?apiKey=${encodeURIComponent(key)}&sessionId=${id}`), release: anchorRelease(key, id) };
     }
     case "browserbase":
       // Browserbase's basic stealth is always on; its captcha solving is on by default where the plan has it.
       return startSession(p, env);
+  }
+}
+
+const steelRelease = (key: string, id: string) => async () => { await fetch(`https://api.steel.dev/v1/sessions/${id}/release`, { method: "POST", headers: { "steel-api-key": key } }).catch(() => {}); };
+const hyperRelease = (key: string, id: string) => async () => { await fetch(`https://api.hyperbrowser.ai/api/session/${id}/stop`, { method: "PUT", headers: { "x-api-key": key } }).catch(() => {}); };
+const anchorRelease = (key: string, id: string) => async () => { await fetch(`https://api.anchorbrowser.io/v1/sessions/${id}`, { method: "DELETE", headers: { "anchor-api-key": key } }).catch(() => {}); };
+
+async function getJson(url: string, headers: Record<string, string>): Promise<Record<string, unknown>> {
+  const r = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return j;
+}
+
+async function browserbaseLive(key: string, id: string): Promise<LiveView | null> {
+  try { return liveViewFrom("browserbase", await getJson(`https://api.browserbase.com/v1/sessions/${id}/debug`, { "X-BB-API-Key": key })); } catch { return null; }
+}
+
+/** Providers whose API sessions outlive our connection, so a paused job can continue in the next worker run. */
+export const RESUMABLE: ProviderId[] = ["steel", "hyperbrowser", "anchor", "browserbase"];
+
+/** Reconnect to a session a previous worker run left open (a paused job handed over at the end of its time budget). */
+export async function resumeSession(p: ProviderId, id: string, env: Env = process.env): Promise<CdpSession> {
+  if (!/^[A-Za-z0-9-]{6,80}$/.test(id) || !RESUMABLE.includes(p)) throw new Error("Can't resume this browser session");
+  switch (p) {
+    case "steel": {
+      const key = env.STEEL_API_KEY!;
+      const j = await getJson(`https://api.steel.dev/v1/sessions/${id}`, { "steel-api-key": key });
+      if (j.status && j.status !== "live") throw new Error("The browser session has ended");
+      return { provider: p, id, live: liveViewFrom(p, j), wsUrl: `wss://connect.steel.dev?apiKey=${encodeURIComponent(key)}&sessionId=${id}`, release: steelRelease(key, id) };
+    }
+    case "hyperbrowser": {
+      const key = env.HYPERBROWSER_API_KEY!;
+      const j = await getJson(`https://api.hyperbrowser.ai/api/session/${id}`, { "x-api-key": key });
+      if (j.status && j.status !== "active") throw new Error("The browser session has ended");
+      return { provider: p, id, live: liveViewFrom(p, j), wsUrl: String(j.wsEndpoint), release: hyperRelease(key, id) };
+    }
+    case "anchor": {
+      const key = env.ANCHOR_API_KEY!;
+      return { provider: p, id, live: null, wsUrl: `wss://connect.anchorbrowser.io?apiKey=${encodeURIComponent(key)}&sessionId=${id}`, release: anchorRelease(key, id) };
+    }
+    default: {
+      const key = env.BROWSERBASE_API_KEY!;
+      const j = await getJson(`https://api.browserbase.com/v1/sessions/${id}`, { "X-BB-API-Key": key });
+      const release = async () => {
+        await fetch(`https://api.browserbase.com/v1/sessions/${id}`, { method: "POST", headers: { "Content-Type": "application/json", "X-BB-API-Key": key }, body: JSON.stringify({ projectId: env.BROWSERBASE_PROJECT_ID, status: "REQUEST_RELEASE" }) }).catch(() => {});
+      };
+      return { provider: p, id, live: await browserbaseLive(key, id), wsUrl: String(j.connectUrl), release };
+    }
   }
 }
 

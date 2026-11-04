@@ -81,6 +81,14 @@ export function signinFailure(error: string | null | undefined, site: string, la
   if (/GOOGLE_BLOCKED/i.test(e)) return { line: en ? `Google blocked the sign-in from this browser, so ${site} couldn't be signed in with Google.` : `Google ne is browser se sign-in block kar diya, isliye ${site} pe Google se login nahi hua.`, offerPassword: true };
   if (/WRONG_LOGIN/i.test(e)) return { line: en ? `${site} says the saved username or password is wrong.` : `${site} ne kaha ki saved username ya password galat hai.`, offerPassword: true };
   const tried = e.match(/\(tried (\d+) cloud browser/)?.[1];
+  if (/STOPPED_BY_USER/.test(e)) return { line: en ? `You stopped the sign-in to ${site}.` : `Aapne ${site} ka sign-in rok diya.`, offerPassword: false };
+  // The job paused with the live view and nobody finished the check in time.
+  if (/nobody completed it within \d+ minutes/i.test(e)) return {
+    line: en
+      ? `${site}'s Cloudflare check needed you, and it wasn't completed within 5 minutes, so the sign-in did not happen. Ask again and tap Take control when the check shows.`
+      : `${site} ka Cloudflare check aapke liye ruka tha, 5 minute mein poora nahi hua, isliye sign in nahi hua. Dobara bolo aur check dikhte hi Take control dabao.`,
+    offerPassword: false,
+  };
   if (/CLOUDFLARE_BLOCKED/i.test(e) || /cloudflare|turnstile|security check could not load|verify you are human/i.test(e)) return {
     line: en
       ? `${site}'s Cloudflare security check blocked the cloud browser, so the sign-in did not happen.${tried ? ` I waited, reloaded and tried ${tried} cloud browser sessions (stealth mode included); the check still didn't pass.` : ""} Free cloud browsers can't get past this check. Want me to try again later?`
@@ -100,6 +108,7 @@ export function signinStatusLine(j: Record<string, unknown>, site: string, lang?
     ? `\n\nThere's no saved login for ${site} yet. Save your email/username and password in the secure form below and I'll sign in right after.`
     : `\n\n${site} ka login abhi vault mein nahi hai. Neeche secure form mein email/username aur password save karo, save hote hi main sign in kar dunga.`;
   if (status === "needs_code") return en ? `\n\n${site} sent a code. Enter it below and I'll finish signing in.` : `\n\n${site} ne ek code bheja hai. Neeche code daalo, main sign-in poora kar dunga.`;
+  if (status === "needs_you") return en ? `\n\n${site} shows a security check. Complete the check in the browser panel below, then tap Continue.` : `\n\n${site} pe security check aaya hai. Neeche browser panel mein check poora karo, phir Continue dabao.`;
   if (status === "signed_in") return `\n\n✓ ${en ? `Signed in to ${site}.` : `${site} pe sign in ho gaya.`}${typeof j.result === "string" && j.result ? `\n\n${j.result.slice(0, 1500)}` : ""}`;
   if (status === "failed") return `\n\n${typeof j.reason === "string" ? j.reason : en ? `Couldn't sign in to ${site}.` : `${site} pe sign-in nahi hua.`}`;
   if (status === "queued" || status === "running") return en ? `\n\nSigning in to ${site}; the result will be posted in this chat.` : `\n\n${site} pe sign in chal raha hai; result isi chat mein aa jayega.`;

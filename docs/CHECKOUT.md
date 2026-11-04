@@ -45,9 +45,30 @@ Live test: CURA Healthcare demo (katalon-demo-cura.herokuapp.com, demo login pri
 - Cloudflare / Turnstile (`src/lib/server/cloudWorker.ts`): the worker detects challenge pages and Turnstile boxes on
   login forms (challenge iframes, `cf-turnstile-response` token), waits, reloads at most twice, then retries the job on
   the next cloud browser in its stealth mode (order Steel > Browserless > Hyperbrowser > Anchor > Browserbase, at most
-  3 sessions per job). When it still doesn't pass, the job fails with `CLOUDFLARE_BLOCKED` and the chat says so plainly.
-  The user is never asked to solve a captcha inside TARGET's browser.
+  3 sessions per job). When the browser has an interactive live view, it does not fail: it pauses, the chat panel says
+  "Complete the check, then tap Continue", and it waits up to 5 minutes (the user may finish the check in the live view on
+  their own device). Only after that does the job fail with `CLOUDFLARE_BLOCKED` and an honest line. Without a live
+  view the old path stays (stealth retries, then `CLOUDFLARE_BLOCKED`).
 - Free tiers (checked 2026-11-04): Steel `stealthConfig` works, `solveCaptcha` needs a paid balance; Hyperbrowser
   `useStealth` works, `solveCaptchas` is paid only; Browserless accepts `stealth=true` but its shared IPs get
   Cloudflare's block page on some sites; Anchor's solver needs its paid proxy. With a paid plan, switch the solver on
   with `STEEL_SOLVE_CAPTCHA=1`, `HYPERBROWSER_SOLVE_CAPTCHAS=1`, `BROWSERLESS_SOLVE_CAPTCHAS=1` or `ANCHOR_SOLVE_CAPTCHA=1`.
+
+# Live browser view and Take control
+
+- While a browser job runs (sign-in, auto jobs, checkout, account creation) the chat shows a live panel
+  (`src/components/BrowserLiveCard.tsx`, polling `GET /api/browser-jobs/live`): the provider's interactive live view in an
+  iframe where one exists, else a screenshot refreshed every ~2 s, plus the current URL, the step log and Stop. Full width
+  on phones; tap to expand to full screen. When the job ends it shows the final screenshot and a truthful status.
+- Live views (`src/lib/liveView.ts`, checked 2026-11-04 with the real keys on free tiers): Steel `debugUrl` +
+  `?interactive=true` (works, frameable), Hyperbrowser `liveUrl` (noVNC, works, frameable), Anchor `live_view_url`
+  (session create refused: "Insufficient credits balance"), Browserbase debug URL (no key configured), Browserless
+  `Browserless.liveURL` CDP command (not verified: the saved token was refused). Only allow-listed https hosts are framed.
+- Take control: `POST /api/browser-jobs/{id}/control` `{action: take|continue|stop}`. Take pauses the agent and the user
+  clicks/types in the live view (up to 5 min); Continue hands back and the agent reads the page again. The worker pauses
+  on its own (`need_user`) for a Cloudflare check or a captcha it can't pass. Pause/take state: `browser_jobs.control`
+  (`agent | paused | user | stop`), `paused_until`; state machine `nextControl()`.
+- Long pauses: a Vercel worker run lasts ~270 s. When a paused job's run is nearly over, the open provider session
+  (Steel, Hyperbrowser, Anchor, Browserbase) is handed to the next run (`browser_jobs.resume`, job back to `queued`, the
+  worker kicks itself); the page stays as the user left it. Browserless sessions can't be resumed.
+- Migration `0017_browser_live.sql` (applied on production 2026-11-04).
