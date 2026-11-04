@@ -96,3 +96,29 @@ export function claimsSignedIn(text: string): boolean {
     .replace(/\b(sign[- ]?in|login)\s+(poora|pura)\s+(nahi|nahin|nhi)\b/gi, " ");
   return /✓|✅|\b(signed in|logged in|sign[- ]?in (ho gaya|ho gya|hogaya|ho chuka|successful|complete[d]?|done)|login (ho gaya|ho gya|hogaya|ho chuka|successful|kar (liya|diya)|complete[d]?|done))\b/i.test(t);
 }
+
+export const NOT_CREATED = "ACCOUNT_NOT_CREATED";
+export type SignupVerdict = { ok: true; evidence: string } | { ok: false; code: typeof CLOUDFLARE_BLOCKED | typeof NOT_CREATED; reason: string };
+/** Words on a page right after a sign-up that went through. */
+const CREATED_TEXT = /\b(account (has been |was )?created|successfully (registered|signed up|created)|registration (was )?(successful|complete)|thanks? (you )?for (registering|signing up)|welcome( aboard| to)?|verify your email|check your (email|inbox)|confirm your email|we('ve| have) sent (you )?(an? )?(email|link|code)|log ?out|sign ?out|my account|dashboard)\b/i;
+/** Words a sign-up form shows when it refused the details. */
+const SIGNUP_ERROR = /\b(already (exists|registered|taken|in use)|is already (registered|taken|in use)|is required|required field|do not match|don'?t match|invalid (email|username|password|phone)|password must|must (be|contain) at least|captcha (is )?(required|failed|incorrect)|please (try again|correct))\b/i;
+const NOT_CREATED_TEXT = /\b(not|couldn'?t|could not|unable to|failed to|wasn'?t able to)\b[^.\n]{0,25}\b(create|register|sign ?up|make)\b|\b(sign ?up|registration|account creation)\b[^.\n]{0,30}\b(failed|blocked|did not|didn'?t|not (complete|completed|possible))\b/i;
+
+/**
+ * Did the sign-up really go through? Like verifyLogin: no bot check pending, no form error on the page, and the
+ * sign-up form is gone or the page says the account exists / asks to verify the email.
+ */
+export function verifySignup(page: LoginPage, result?: string): SignupVerdict {
+  const bot = detectBotCheck({ title: page.title, text: page.text, frames: page.bot?.frames, widget: page.bot?.widget, solved: page.bot?.solved });
+  const passwords = page.elements.filter((e) => (e.type ?? "").toLowerCase() === "password").length;
+  if (bot && (bot.kind === "page" || passwords > 0)) return { ok: false, code: CLOUDFLARE_BLOCKED, reason: `${bot.line}, so the sign-up could not be completed` };
+  if (result && NOT_CREATED_TEXT.test(result)) return { ok: false, code: NOT_CREATED, reason: firstSentence(result) };
+  const text = `${page.title ?? ""}\n${page.text ?? ""}`;
+  const err = text.match(SIGNUP_ERROR)?.[0];
+  const created = text.match(CREATED_TEXT)?.[0];
+  if (err && !created) return { ok: false, code: NOT_CREATED, reason: `the site says "${err}"` };
+  if (created) return { ok: true, evidence: `page shows "${created}"` };
+  if (passwords > 0) return { ok: false, code: NOT_CREATED, reason: "the sign-up form is still on the page" };
+  return { ok: true, evidence: "the sign-up form is gone" };
+}

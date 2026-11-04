@@ -113,7 +113,7 @@ describe("site_register / site_password_reset tools", () => {
   it("prepares an approval card and a held job, without creating any password yet", async () => {
     h.db.tables.connections = [{ id: "g", user_id: A, connector_id: "google", status: "connected", account_label: "Me@Gmail.com" }];
     const out = await siteRegisterTool.execute({ site: "https://example.com/signup", details: "name Vikash", lang: "hinglish" }, ctx(["example.com pe naya account bana do"])) as { __approval: { id: string; summary: string } };
-    expect(out.__approval.summary).toBe("Create a new account on example.com with me@gmail.com");
+    expect(out.__approval.summary).toBe("Create a new account on example.com with me@gmail.com (name Vikash). A strong password is generated and saved in your vault");
     const job = h.db.tables.browser_jobs[0];
     expect(job).toMatchObject({ status: "needs_approval", allowed_secrets: [], inputs: { account: { flow: "register", site: "example.com", email: "me@gmail.com", details: "name Vikash", lang: "hinglish" } } });
     expect(h.db.tables.approval_requests[0]).toMatchObject({ action_type: "site_account", status: "pending", payload: { browser_job_id: job.id, flow: "register", site: "example.com", email: "me@gmail.com" } });

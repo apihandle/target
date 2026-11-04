@@ -76,7 +76,7 @@ export function accountGoal(a: AccountInputs & { vault_id: string }): string {
   const common = [
     "Every password box (new password and confirm password) takes fill_secret field \"password\" from that vault item; never type a password yourself.",
     "If the site emails a one-time code, use need_code on the code box. If it emails a link instead (verify email / reset password), use need_link and continue on the page it opens.",
-    "If there is a captcha, or the site asks for information you were not given (phone number, date of birth, ID), use fail and say exactly what is needed.",
+    "If there is a captcha or a check you can't pass, use need_user when that action is offered (the user takes control and finishes it), otherwise fail. If the site asks for information you were not given (phone number, date of birth, ID), use fail and say exactly what is needed.",
     "Never pay, subscribe, or accept anything optional (newsletters, offers).",
   ];
   const steps = a.flow === "reset"
@@ -98,8 +98,15 @@ export function accountGoal(a: AccountInputs & { vault_id: string }): string {
   return `${steps.join(" ").slice(0, 1600)}${hint ? ` ${hint}` : ""}`;
 }
 
-export function accountSummary(a: Pick<AccountInputs, "flow" | "site" | "email">): string {
-  return (a.flow === "reset" ? `Reset your password on ${a.site} (account ${a.email})` : `Create a new account on ${a.site} with ${a.email}`).slice(0, 300);
+export function accountSummary(a: Pick<AccountInputs, "flow" | "site" | "email"> & { name?: string | null }): string {
+  return (a.flow === "reset" ? `Reset your password on ${a.site} (account ${a.email})` : `Create a new account on ${a.site} with ${a.email}${a.name ? ` (name ${a.name})` : ""}. A strong password is generated and saved in your vault`).slice(0, 300);
+}
+
+/** "name X" for the form, from the user's own profile, unless the user already gave a name. */
+export function withProfileName(details: string | undefined, name: string | null | undefined): string | undefined {
+  const n = (name ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!n || /\bname\b/i.test(details ?? "")) return details;
+  return [details, `name ${n}`].filter(Boolean).join("; ").slice(0, 300);
 }
 
 /** Read { account } out of a browser job's inputs. */

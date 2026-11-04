@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { normalizeSite } from "@/lib/sessions";
 import { matchLogin, type VaultLoginRow } from "@/lib/signin";
-import { accountSummary, userAsked, type AccountFlow } from "@/lib/siteAccount";
+import { accountSummary, userAsked, withProfileName, type AccountFlow } from "@/lib/siteAccount";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { isLang, type Lang } from "@/lib/lang";
 import type { BuiltinCtx, BuiltinTool } from "@/lib/builtins/tools";
 
@@ -19,6 +20,18 @@ async function defaultEmail(ctx: BuiltinCtx): Promise<string | null> {
   return email.safeParse(label).success ? label.toLowerCase() : null;
 }
 
+/** The user's own profile (TARGET account): email and name, used to fill a sign-up form. */
+async function profile(ctx: BuiltinCtx): Promise<{ email: string | null; name: string | null }> {
+  try {
+    const admin = createAdminClient() as unknown as { auth: { admin: { getUserById(id: string): Promise<{ data: { user: { email?: string; user_metadata?: Record<string, unknown> } | null } }> } } };
+    const { data } = await admin.auth.admin.getUserById(ctx.userId);
+    const u = data.user;
+    const m = u?.user_metadata ?? {};
+    const name = [m.full_name, m.name].find((v): v is string => typeof v === "string" && v.trim().length > 1) ?? null;
+    return { email: u?.email && email.safeParse(u.email).success ? u.email.toLowerCase() : null, name };
+  } catch { return { email: null, name: null }; }
+}
+
 async function prepare(ctx: BuiltinCtx, flow: AccountFlow, rawSite: string, opts: { email?: string; details?: string; lang?: Lang | null }) {
   const site = normalizeSite(rawSite.replace(/^https?:\/\//i, ""));
   if (!site) throw new Error("Give a website like example.com");
@@ -34,16 +47,18 @@ async function prepare(ctx: BuiltinCtx, flow: AccountFlow, rawSite: string, opts
     const own = matchLogin((data ?? []) as VaultLoginRow[], site);
     replaces = own?.id ?? null;
   }
-  mail = mail ?? (await defaultEmail(ctx));
+  const me = flow === "register" ? await profile(ctx) : { email: null, name: null };
+  mail = mail ?? (await defaultEmail(ctx)) ?? me.email;
+  const details = flow === "register" ? withProfileName(opts.details, me.name) : opts.details;
   if (!mail) return { status: "needs_email", site, note: `Ask the user in one line which email address ${flow === "reset" ? "the account uses" : "to use for the new account"}, then call this again with it.` };
 
   const { data: job, error } = await ctx.db.from("browser_jobs").insert({
     user_id: ctx.userId, mode: "auto", goal: (flow === "reset" ? `Reset password on ${site}` : `Create an account on ${site}`).slice(0, 500),
     start_url: `https://${site}/`, steps: [], allowed_secrets: [], max_steps: 40, status: "needs_approval", conversation_id: ctx.conversationId,
-    inputs: { account: { flow, site, email: mail, replaces, ...(opts.details ? { details: opts.details.slice(0, 300) } : {}), ...(opts.lang ? { lang: opts.lang } : {}) } },
+    inputs: { account: { flow, site, email: mail, replaces, ...(details ? { details: details.slice(0, 300) } : {}), ...(opts.lang ? { lang: opts.lang } : {}) } },
   }).select("id").single();
   if (error || !job) throw new Error("Couldn't prepare this");
-  const summary = accountSummary({ flow, site, email: mail });
+  const summary = accountSummary({ flow, site, email: mail, name: flow === "register" && details && /\bname\b/i.test(details) ? (details.match(/\bname\s+([^;,]{2,80})/i)?.[1] ?? null) : null });
   const { data: ap, error: e2 } = await ctx.db.from("approval_requests").insert({
     user_id: ctx.userId, action_type: "site_account", summary, destination: site, status: "pending", conversation_id: ctx.conversationId,
     payload: { browser_job_id: job.id, flow, site, email: mail },
