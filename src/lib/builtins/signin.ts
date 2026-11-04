@@ -4,6 +4,7 @@ import { SITE } from "@/lib/builtins/helpers";
 import { normalizeSite } from "@/lib/sessions";
 import { googleLogin, matchLogin, signinFailure, signinGoal, type VaultLoginRow } from "@/lib/signin";
 import { isLang, type Lang } from "@/lib/lang";
+import { NOT_SIGNED_IN, resultSaysFailed } from "@/lib/loginCheck";
 import type { BuiltinCtx, BuiltinTool } from "@/lib/builtins/tools";
 
 /** Log line the worker writes while it waits for the user's one-time code. */
@@ -68,15 +69,18 @@ export const siteLoginTool: BuiltinTool = {
         note: `${site} sent a one-time code and it was not found in Gmail. A small code form is shown under your reply; ask for the code in one line. The sign-in continues once it is entered.`,
         __card: { type: "otp", job: job.id, site },
       };
-    // The browser sometimes "finishes" on the login page with an error showing: that is a failed sign-in.
+    // The browser sometimes "finishes" on the login page with an error showing, or reports a blocked login as done:
+    // that is a failed sign-in. ok:false + reason is what the chat renders; the model's wording can't change it.
     if (j?.status === "done" && /\b(login (attempt )?failed|not successful|password is (invalid|incorrect|wrong)|invalid (password|credentials|username))\b/i.test(j.result ?? ""))
-      return { job_id: job.id, status: "failed", site, reason: signinFailure("WRONG_LOGIN", site, lang).line, page: (j.result ?? "").slice(0, 600), note: "Say this in one short line and offer to update the saved login (a form is shown under your reply).", __card: { type: "vault_login", site, for: site } };
-    if (j?.status === "done") return { job_id: job.id, status: "signed_in", site, result: (j.result ?? "").slice(0, 4000), note: "Signed in; the session is saved. Report what the page shows in 1-3 lines." };
+      return { ok: false, job_id: job.id, status: "failed", site, reason: signinFailure("WRONG_LOGIN", site, lang).line, page: (j.result ?? "").slice(0, 600), note: "The sign-in did NOT happen. Say this in one short line and offer to update the saved login (a form is shown under your reply). Never say signed in.", __card: { type: "vault_login", site, for: site } };
+    if (j?.status === "done" && resultSaysFailed(j.result))
+      return { ok: false, job_id: job.id, status: "failed", site, reason: signinFailure(`${NOT_SIGNED_IN}: ${j.result ?? ""}`, site, lang).line, note: "The sign-in did NOT happen. Say why in one short line. Never say signed in." };
+    if (j?.status === "done") return { ok: true, job_id: job.id, status: "signed_in", site, result: (j.result ?? "").slice(0, 4000), note: "Signed in (verified on the page); the session is saved. Report what the page shows in 1-3 lines." };
     if (j?.status === "failed") {
       const f = signinFailure(j.error, site, lang);
       return {
-        job_id: job.id, status: "failed", site, reason: f.line,
-        note: f.offerPassword ? `Say this in one short line and offer email + password instead (a form is shown under your reply).` : "Say this in one short line. No lectures.",
+        ok: false, job_id: job.id, status: "failed", site, reason: f.line,
+        note: (f.offerPassword ? `The sign-in did NOT happen. Say this in one short line and offer email + password instead (a form is shown under your reply).` : "The sign-in did NOT happen. Say this in one short line. No lectures.") + " Never say signed in.",
         ...(f.offerPassword ? { __card: { type: "vault_login", site, for: site } } : {}),
       };
     }

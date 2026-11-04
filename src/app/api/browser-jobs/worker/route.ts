@@ -12,6 +12,7 @@ import { gmailSigninCode, gmailSiteLink } from "@/lib/server/signinMail";
 import { WAITING_FOR_CODE } from "@/lib/builtins/signin";
 import { isLang, type Lang } from "@/lib/lang";
 import { signinFailure, signinPostHead } from "@/lib/signin";
+import { NOT_SIGNED_IN, resultSaysFailed, verifyLogin } from "@/lib/loginCheck";
 import { accountOf, accountPost } from "@/lib/siteAccount";
 import { settleSiteAccount } from "@/lib/server/siteAccountRun";
 import { checkoutOf, guardCheckout, PAY_PRESSED } from "@/lib/checkout";
@@ -177,13 +178,26 @@ export async function POST(req: Request) {
         await db.from("browser_jobs").update({ inputs: { ...inputs, checkout: { ...(inputs.checkout as Record<string, unknown>), pending } } }).eq("id", id);
       } else action = { do: "done", result: `Reached the final confirm step (${action.when}). Stopped before confirming.` };
     }
-    const line = action.do === "done" || action.do === "fail" ? action.do : `${action.do}${"i" in action ? ` [${action.i}]` : ""}${action.do === "fill_secret" ? ` ${action.field}` : ""}${"why" in action && action.why ? `: ${action.why}` : ""}`.slice(0, 200);
+    // A sign-in is only "done" when the page proves it (login form gone / logged-in markers, no Cloudflare check
+    // pending, and the model's own summary doesn't say it failed). Otherwise it is a failure with the real reason.
+    let verified = "";
+    if (action.do === "done" && signinOf(job.inputs)) {
+      const v = verifyLogin(snap.data, action.result);
+      if (v.ok) verified = `verified: ${v.evidence}`;
+      else action = { do: "fail", reason: `${v.code}: ${v.reason}`.slice(0, 400) };
+    }
+    const line = action.do === "done" || action.do === "fail" ? (verified ? `done: signed in, ${verified}`.slice(0, 200) : action.do) : `${action.do}${"i" in action ? ` [${action.i}]` : ""}${action.do === "fill_secret" ? ` ${action.field}` : ""}${"why" in action && action.why ? `: ${action.why}` : ""}`.slice(0, 200);
     await db.from("browser_jobs").update({ log: [...log, line, ...(pays && action.do !== "done" && action.do !== "fail" ? [PAY_PRESSED] : [])] }).eq("id", id);
     return json({ action });
   }
 
   if (b.action === "finish") {
-    const ok = b.status === "done";
+    let ok = b.status === "done";
+    // Defense in depth: a sign-in "done" whose own report says the login didn't happen is a failure.
+    if (ok && signinOf(job.inputs) && resultSaysFailed(typeof b.result === "string" ? b.result : "")) {
+      ok = false;
+      b.error = `${NOT_SIGNED_IN}: ${String(b.result).replace(/\s+/g, " ").slice(0, 300)}`;
+    }
     let result = typeof b.result === "string" ? b.result : null;
     // Video jobs: the worker sends frames + captions; TARGET turns them into a description.
     if (ok && job.mode === "video") {

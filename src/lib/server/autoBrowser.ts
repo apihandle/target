@@ -7,6 +7,8 @@ export const snapshotSchema = z.object({
   text: z.string().max(6000).default(""),
   elements: z.array(z.object({ i: z.number().int().min(0).max(999), tag: z.string().max(20), type: z.string().max(30).optional(), text: z.string().max(120).default(""), name: z.string().max(80).optional() })).max(200),
   screenshot: z.string().max(400000).optional(),
+  // Cloudflare signals the page text can't show: challenge iframes, and whether a Turnstile token was issued.
+  bot: z.object({ frames: z.array(z.string().max(500)).max(20).default([]), widget: z.boolean().default(false), solved: z.boolean().default(false) }).optional(),
 });
 export type Snapshot = z.infer<typeof snapshotSchema>;
 

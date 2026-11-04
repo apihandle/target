@@ -63,10 +63,17 @@ export function signinGoal(site: string, opts: { siteLogin?: string | null; goog
 export function signinFailure(error: string | null | undefined, site: string, lang?: Lang | null): { line: string; offerPassword: boolean } {
   const e = (error ?? "").trim();
   const en = lang === "english";
-  const rest = e.replace(/^(GOOGLE_BLOCKED|WRONG_LOGIN)[:\s-]*/i, "").slice(0, 200);
+  const rest = e.replace(/^(GOOGLE_BLOCKED|WRONG_LOGIN|CLOUDFLARE_BLOCKED|NOT_SIGNED_IN)[:\s-]*/i, "").slice(0, 200);
   if (/GOOGLE_BLOCKED/i.test(e)) return { line: en ? `Google blocked the sign-in from this browser, so ${site} couldn't be signed in with Google.` : `Google ne is browser se sign-in block kar diya, isliye ${site} pe Google se login nahi hua.`, offerPassword: true };
   if (/WRONG_LOGIN/i.test(e)) return { line: en ? `${site} says the saved username or password is wrong.` : `${site} ne kaha ki saved username ya password galat hai.`, offerPassword: true };
+  if (/CLOUDFLARE_BLOCKED/i.test(e) || /cloudflare|turnstile|security check could not load|verify you are human/i.test(e)) return {
+    line: en
+      ? `${site}'s Cloudflare security check blocked the cloud browser, so the sign-in did not happen.`
+      : `${site} ke Cloudflare security check ne cloud browser ko rok diya, isliye sign in nahi hua.`,
+    offerPassword: false,
+  };
   if (/captcha/i.test(e)) return { line: en ? `${site} showed a captcha, so the sign-in stopped.` : `${site} ne captcha dikhaya, isliye sign-in ruk gaya.`, offerPassword: false };
+  if (/NOT_SIGNED_IN/i.test(e)) return { line: en ? `Sign-in to ${site} didn't finish: ${rest || "the page still shows the login form"}.` : `${site} pe sign in nahi hua: ${rest || "page pe abhi bhi login form dikh raha hai"}.`, offerPassword: false };
   return { line: en ? `Sign-in to ${site} didn't finish: ${rest || "the browser stopped"}.` : `${site} pe sign-in poora nahi hua: ${rest || "browser ruk gaya"}.`, offerPassword: false };
 }
 
@@ -81,6 +88,17 @@ export function signinStatusLine(j: Record<string, unknown>, site: string, lang?
   if (status === "signed_in") return `\n\n✓ ${en ? `Signed in to ${site}.` : `${site} pe sign in ho gaya.`}${typeof j.result === "string" && j.result ? `\n\n${j.result.slice(0, 1500)}` : ""}`;
   if (status === "failed") return `\n\n${typeof j.reason === "string" ? j.reason : en ? `Couldn't sign in to ${site}.` : `${site} pe sign-in nahi hua.`}`;
   if (status === "queued" || status === "running") return en ? `\n\nSigning in to ${site}; the result will be posted in this chat.` : `\n\n${site} pe sign in chal raha hai; result isi chat mein aa jayega.`;
+  return "";
+}
+
+/**
+ * The status headline the chat shows for a site_login result, rendered from the tool's status (never from the
+ * model's words): success only for signed_in; a failure shows the reason. Empty for needs_login / needs_code / running.
+ */
+export function signinHeadline(j: Record<string, unknown>, site: string, lang?: Lang | null): string {
+  const status = typeof j.status === "string" ? j.status : "";
+  if (status === "signed_in") return signinPostHead(site, true, lang);
+  if (status === "failed") return `${signinPostHead(site, false, lang)}\n\n${typeof j.reason === "string" && j.reason ? j.reason : lang === "english" ? "The sign-in didn't complete." : "Sign-in poora nahi hua."}`;
   return "";
 }
 
@@ -102,4 +120,5 @@ export const SIGNIN_PROMPT =
   "When they ask you to log in / sign in / open their account on a site, call target__site_login with the site (method \"google\" when they say Google se / with Google). " +
   "It checks their vault; if no login is saved it shows a secure form under your reply, so just say in one short line that they can save the login there and you will sign in right after. " +
   "Never refuse, never lecture about phishing or security, never tell them to log in themselves, and never ask them to type a password or OTP into the chat (the secure form and code form handle that). " +
-  "After the job runs, report what the signed-in page shows in 1-3 lines.";
+  "After the job runs, report what the signed-in page shows in 1-3 lines. " +
+  "Only say the user is signed in / logged in / 'sign in ho gaya' when target__site_login returned status \"signed_in\". If it returned failed (Cloudflare check, wrong password, still on the login form) say plainly that the sign-in did NOT happen and why; never write a success headline or a ✓ for it.";
