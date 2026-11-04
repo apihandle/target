@@ -114,8 +114,24 @@ async function streamText(res: Response, o: Opts): Promise<string> {
   return text;
 }
 
+/** Tools that create or send something: an identical second call in the same turn must not do it twice. */
+const ACTING_TOOL = /(create|add|make|new|save|write|upload|insert|append|schedule|remind|send|post|reply|forward|book|order|buy|invite|share|copy|propose)/i;
+
+/** Stable key for "the same call": tool name plus its arguments with keys sorted and whitespace ignored. */
+export function callKey(call: ToolCall): string {
+  const norm = (v: unknown): unknown => Array.isArray(v) ? v.map(norm)
+    : v && typeof v === "object" ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, norm((v as Record<string, unknown>)[k])]))
+    : typeof v === "string" ? v.replace(/\s+/g, " ").trim() : v;
+  let args: unknown = call.function.arguments;
+  try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* keep the raw text */ }
+  return `${call.function.name}|${JSON.stringify(norm(args))}`;
+}
+
 export async function runAgent(o: Opts): Promise<AgentResult> {
   const messages = [...o.messages];
+  // Acting calls that already succeeded in this turn, by callKey: a repeat (same round or a later one) gets the
+  // first result back instead of running again (task mode once made the same file twice).
+  const done = new Map<string, string>();
   const steps: AgentResult["steps"] = [];
   let text = "";
   let res: Response | null = o.first;
@@ -150,11 +166,18 @@ export async function runAgent(o: Opts): Promise<AgentResult> {
 
     messages.push({ role: "assistant", content: roundText || null, tool_calls: calls });
     for (const call of calls) {
+      const key = ACTING_TOOL.test(call.function.name) ? callKey(call) : null;
+      const earlier = key ? done.get(key) : undefined;
+      if (earlier !== undefined) {
+        messages.push({ role: "tool", tool_call_id: call.id, content: `Already done earlier in this turn with the same input, so it was not repeated. Result: ${earlier}` });
+        continue;
+      }
       const note = `\n\n> ${o.label ? o.label(call) : call.function.name}\n\n`;
       text += note; o.onText(note);
       const outcome = await o.onTool(call);
       steps.push({ connector: "connector" in outcome ? outcome.connector : undefined, tool: call.function.name, ok: outcome.kind === "result" });
       messages.push({ role: "tool", tool_call_id: call.id, content: outcome.content });
+      if (key && outcome.kind === "result") done.set(key, outcome.content);
       if (outcome.kind === "needs_connection" || outcome.kind === "approval") return { text, pause: outcome, steps, interrupted: false, hitLimit: false };
     }
     if (round + 1 >= maxRounds || (o.deadline && Date.now() > o.deadline)) break;
