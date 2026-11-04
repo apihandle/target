@@ -1,5 +1,4 @@
 import Link from "next/link";
-import AdDisclosure from "@/components/AdDisclosure";
 
 export default function LegalPage({ title, sections, updated = "October 29, 2026" }: { title: string; sections: { h: string; p: string; id?: string }[]; updated?: string }) {
   return (
@@ -13,9 +12,6 @@ export default function LegalPage({ title, sections, updated = "October 29, 2026
           <p className="mt-2 text-sm leading-relaxed text-white/60">{s.p}</p>
         </section>
       ))}
-      <footer className="mt-12 border-t border-white/10 pt-6 text-xs text-white/40">
-        <AdDisclosure />
-      </footer>
     </main>
   );
 }

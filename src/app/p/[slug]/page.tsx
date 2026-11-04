@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import Markdown from "@/components/Markdown";
-import AdDisclosure from "@/components/AdDisclosure";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -45,9 +44,6 @@ export default async function PublicPage(props: { params: Promise<{ slug: string
         <p className="mt-2 text-xs text-muted">{new Date(p.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</p>
         <article className="prose-target mt-8 text-[15px] leading-relaxed text-ink-soft"><Markdown>{p.markdown}</Markdown></article>
       </main>
-      <footer className="mx-auto max-w-3xl border-t border-line px-4 py-6 text-xs text-muted">
-        <AdDisclosure />
-      </footer>
     </div>
   );
 }

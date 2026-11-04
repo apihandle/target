@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import Markdown from "@/components/Markdown";
-import AdDisclosure from "@/components/AdDisclosure";
 import type { Metadata } from "next";
 import { loadSharedConversation, publicContent } from "@/lib/shares";
 import { splitSources } from "@/lib/search";
@@ -73,9 +72,6 @@ export default async function SharedChatPage(props: { params: Promise<{ token: s
           ))}
         </div>
       </main>
-      <footer className="mx-auto max-w-2xl border-t border-line px-4 py-6 text-xs text-muted">
-        <AdDisclosure />
-      </footer>
     </div>
   );
 }

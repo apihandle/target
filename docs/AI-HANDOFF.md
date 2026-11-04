@@ -31,7 +31,7 @@ Compute worker: `docs/COMPUTE-WORKER.md`. Setup for the owner: `SETUP-REMAINING.
 
 ## Rules (non-negotiable)
 - Keep the Monetag tag (zone **12150496**, `src/components/AdTag.tsx`) and `public/sw.js` unchanged. No ads in the signed-in app.
-- Ads stay honest: no paid-to-click / watch-ads-for-coins pages, no ad-shortener links (ouo.io etc.), no fake download/continue buttons, forced redirects or hidden links. Public pages keep the one-line disclosure (`src/components/AdDisclosure.tsx`) and `/privacy#advertising`. The old `/work` page was removed for this reason (its `work_links` / `work_views` tables from migration 0010 are left in place, unused).
+- Ads stay honest: no paid-to-click / watch-ads-for-coins pages, no ad-shortener links (ouo.io etc.), no fake download/continue buttons, forced redirects or hidden links. The old `/work` page was removed for this reason (its `work_links` / `work_views` tables from migration 0010 are left in place, unused).
 - **No payments, plans, pricing or usage limits for TARGET itself.** Abuse rate limits (`src/lib/connectors/rateLimit.ts`) are fine.
 - **Never commit or print secrets.** Real keys go in Vercel env, GitHub Actions secrets, or the worker host's secrets.
 - Don't break sign-in, connectors, approvals, checkout/booking, or AI speed.
