@@ -104,3 +104,26 @@ describe("a username the user chose", () => {
     expect(accountOf({ account: { flow: "register", site: "fake-site.example", email: "nobody@example.com", username: "bad name!" } })?.username).toBeUndefined();
   });
 });
+
+describe("sign-up fields from the account inputs", () => {
+  const g = accountGoal({ flow: "register", site: "fake-site.example", email: "nobody@example.com", username: "fakeuser01", vault_id: VID });
+  const pw = ["fill_secret [4] password", "fill_secret [6] password"];
+  it("types the chosen username into the username box, then hands the form to the model", () => {
+    const p = registerPage();
+    expect(accountAutofill(g, p, pw)).toEqual({ do: "fill", i: 2, value: "fakeuser01", why: "Chosen username" });
+    p.elements[2].text = "username = fakeuser01";
+    expect(accountAutofill(g, p, [...pw, "fill [2]"])).toBeNull();
+  });
+  it("corrects the email typed into the username box, but stops after three tries", () => {
+    const p = registerPage();
+    p.elements[2].text = "username = nobody@example.com";
+    expect(accountAutofill(g, p, pw)).toMatchObject({ do: "fill", i: 2, value: "fakeuser01" });
+    expect(accountAutofill(g, p, [...pw, "fill [2]", "fill [2]", "fill [2]"])).toBeNull();
+  });
+  it("fills an email box with the account email", () => {
+    const p = registerPage();
+    p.elements.splice(1, 0, { i: 20, tag: "input", type: "email", text: "Email", name: "email" });
+    p.elements[3].text = "username = fakeuser01";
+    expect(accountAutofill(g, p, pw)).toMatchObject({ do: "fill", i: 20, value: "nobody@example.com" });
+  });
+});

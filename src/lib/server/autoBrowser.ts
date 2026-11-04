@@ -151,7 +151,29 @@ export function accountAutofill(goal: string, snap: Snapshot, history: string[])
   if (history.filter((h) => h.startsWith("fill_secret") && h.includes(" password")).length >= 12) return null; // runaway guard
   const since = history.slice(history.map((h) => h.startsWith("click") || h.startsWith("press") || h.startsWith("goto")).lastIndexOf(true) + 1);
   const box = boxes.find((b) => !since.some((h) => h.startsWith(`fill_secret [${b.i}] password`)));
-  return box ? { do: "fill_secret", i: box.i, secret_id: id, field: "password", why: "New password from the vault" } : null;
+  if (box) return { do: "fill_secret", i: box.i, secret_id: id, field: "password", why: "New password from the vault" };
+  return accountFields(goal, snap, history);
+}
+
+/**
+ * Sign-up forms: the username box gets the username the user chose and an email box the account email, checked
+ * against what the page shows in the box (so a re-rendered form, or the email typed into the username box, is
+ * corrected). A box that doesn't take the value after three fills is left to the model.
+ */
+function accountFields(goal: string, snap: Snapshot, history: string[]): AutoAction | null {
+  if (!/^Create a new account for the user on/.test(goal)) return null;
+  const username = goal.match(/ with the username ([A-Za-z0-9][A-Za-z0-9._-]{1,38}),/)?.[1];
+  const email = goal.match(/ the email ([^\s,]+@[^\s,]+?)[\s,]/)?.[1];
+  const shown = (t: string) => (t.includes(" = ") ? t.slice(t.indexOf(" = ") + 3).trim() : "");
+  const tries = (i: number) => history.filter((h) => h.startsWith(`fill [${i}]`)).length;
+  for (const e of snap.elements) {
+    if (e.tag !== "input" || (e.type && !/^(text|email)$/i.test(e.type))) continue;
+    const label = `${e.name ?? ""} ${e.text.split(" = ")[0]}`;
+    const want = /e-?mail/i.test(label) || (e.type ?? "").toLowerCase() === "email" ? email
+      : /user.?name|user.?id|login|handle|nick/i.test(label) ? username : undefined;
+    if (want && shown(e.text) !== want && tries(e.i) < 3) return { do: "fill", i: e.i, value: want, why: /@/.test(want) ? "Account email" : "Chosen username" };
+  }
+  return null;
 }
 
 /** A shorter page for a retry: form controls and buttons first, short text. */
