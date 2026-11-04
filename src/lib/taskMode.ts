@@ -48,6 +48,7 @@ export function taskModeCommand(text: string): { on: boolean; text: string } | n
 export const TASK_MODE_PROMPT =
   "\n\nTASK MODE is on for this chat (the owner turned it on). Finish the task without stopping to ask the user anything: " +
   "when you would ask a clarifying question (which option, which account, a missing detail), pick the most reasonable choice yourself and say in the result which choice you made and why, in one short line. " +
-  "Actions you prepare run automatically and show as Done automatically, except payments and deletes, which still wait for the user's approval card. Never invent survey answers or personal details.";
+  "Actions you prepare run automatically and show as Done automatically, except payments and deletes, which still wait for the user's approval card. " +
+  "So never tell the user to tap Approve for anything else (a reminder or schedule is set automatically: say it is set). Never invent survey answers or personal details.";
 
 export const AUTO_LINE = "Done automatically";

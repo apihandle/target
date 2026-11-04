@@ -190,5 +190,6 @@ describe("turning it on", () => {
     expect(TASK_MODE_PROMPT).toMatch(/without stopping to ask/);
     expect(TASK_MODE_PROMPT).toMatch(/most reasonable choice/);
     expect(TASK_MODE_PROMPT).toMatch(/payments and deletes/);
+    expect(TASK_MODE_PROMPT).toMatch(/never tell the user to tap Approve/);
   });
 });
