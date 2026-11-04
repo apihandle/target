@@ -34,3 +34,20 @@ Same two steps, with the final confirm button instead of pay. Tool: `target__boo
 4. **Confirm job** (after the tap): restores the session, refills cleared fields, and presses the final button once, only while the page still shows the approved date/time (and price). A gone/changed slot stops it ("slot isn't on the page any more") and nothing is booked.
 
 Live test: CURA Healthcare demo (katalon-demo-cura.herokuapp.com, demo login printed on its page) — facility, date and comment filled, refused on *Book Appointment*, card shows 10/12/2026, the confirm job is back on the form signed in. It never presses Book Appointment.
+
+# Sign-in truth and Cloudflare checks
+
+- A sign-in is only reported as done when the page proves it (`src/lib/loginCheck.ts`): the login form is gone or a
+  logged-in marker (Log out, My account, Dashboard...) is on the page, it is not a login URL, no Cloudflare check is
+  pending, and the browser's own report doesn't say it failed. Otherwise the worker API turns the model's `done` into
+  `fail` with `CLOUDFLARE_BLOCKED:` / `NOT_SIGNED_IN:` and the real reason. The chat headline (✓ / ⚠️) is rendered from the
+  `site_login` tool status (`ok`, `status`, `reason`), never from the model's text.
+- Cloudflare / Turnstile (`src/lib/server/cloudWorker.ts`): the worker detects challenge pages and Turnstile boxes on
+  login forms (challenge iframes, `cf-turnstile-response` token), waits, reloads at most twice, then retries the job on
+  the next cloud browser in its stealth mode (order Steel > Browserless > Hyperbrowser > Anchor > Browserbase, at most
+  3 sessions per job). When it still doesn't pass, the job fails with `CLOUDFLARE_BLOCKED` and the chat says so plainly.
+  The user is never asked to solve a captcha inside TARGET's browser.
+- Free tiers (checked 2026-11-04): Steel `stealthConfig` works, `solveCaptcha` needs a paid balance; Hyperbrowser
+  `useStealth` works, `solveCaptchas` is paid only; Browserless accepts `stealth=true` but its shared IPs get
+  Cloudflare's block page on some sites; Anchor's solver needs its paid proxy. With a paid plan, switch the solver on
+  with `STEEL_SOLVE_CAPTCHA=1`, `HYPERBROWSER_SOLVE_CAPTCHAS=1`, `BROWSERLESS_SOLVE_CAPTCHAS=1` or `ANCHOR_SOLVE_CAPTCHA=1`.

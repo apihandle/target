@@ -13,7 +13,18 @@
 type Env = Record<string, string | undefined>;
 
 export type ProviderId = "steel" | "browserless" | "browserbase" | "hyperbrowser" | "anchor";
-export interface CdpSession { provider: ProviderId; wsUrl: string; release: () => Promise<void> }
+export interface CdpSession { provider: ProviderId; wsUrl: string; release: () => Promise<void>; stealth?: boolean }
+export interface SessionOpts { stealth?: boolean }
+
+/**
+ * Providers to retry on when a Cloudflare check blocks the browser, in order. Each is opened in its stealth mode.
+ * Free tiers (checked 2026-11-04): Steel stealthConfig yes, solveCaptcha needs a paid balance; Hyperbrowser useStealth yes,
+ * solveCaptchas paid only; Browserless stealth flag accepted (its shared IPs still get Cloudflare's block page);
+ * Anchor captcha solving needs its paid proxy. Paid captcha solving switches on with STEEL_SOLVE_CAPTCHA=1,
+ * HYPERBROWSER_SOLVE_CAPTCHAS=1, BROWSERLESS_SOLVE_CAPTCHAS=1 or ANCHOR_SOLVE_CAPTCHA=1.
+ */
+export const STEALTH_ORDER: ProviderId[] = ["steel", "browserless", "hyperbrowser", "anchor", "browserbase"];
+const on = (v: string | undefined) => v === "1" || v === "true";
 
 const DEFAULT_ORDER: ProviderId[] = ["steel", "browserless", "browserbase", "hyperbrowser", "anchor"];
 const noop = async () => {};
@@ -38,7 +49,8 @@ export function configuredProviders(env: Env = process.env): ProviderId[] {
 }
 
 /** Start a cloud browser session on one provider and return its CDP WebSocket URL. */
-export async function startSession(p: ProviderId, env: Env = process.env): Promise<CdpSession> {
+export async function startSession(p: ProviderId, env: Env = process.env, opts: SessionOpts = {}): Promise<CdpSession> {
+  if (opts.stealth) return { ...(await startStealthSession(p, env)), stealth: true };
   switch (p) {
     case "steel":
       return { provider: p, wsUrl: `wss://connect.steel.dev?apiKey=${encodeURIComponent(env.STEEL_API_KEY!)}`, release: noop };
@@ -70,6 +82,47 @@ export async function startSession(p: ProviderId, env: Env = process.env): Promi
       const release = async () => { await fetch(`https://api.anchorbrowser.io/v1/sessions/${id}`, { method: "DELETE", headers: { "anchor-api-key": key } }).catch(() => {}); };
       return { provider: p, wsUrl: String(d.cdp_url ?? `wss://connect.anchorbrowser.io?apiKey=${encodeURIComponent(key)}&sessionId=${id}`), release };
     }
+  }
+}
+
+/** A session in the provider's stealth mode (and its captcha solver when the owner has turned on a paid one). */
+async function startStealthSession(p: ProviderId, env: Env): Promise<CdpSession> {
+  switch (p) {
+    case "steel": {
+      const key = env.STEEL_API_KEY!;
+      const j = await postJson("https://api.steel.dev/v1/sessions", { "steel-api-key": key }, {
+        stealthConfig: { humanizeInteractions: true }, timeout: 300000, ...(on(env.STEEL_SOLVE_CAPTCHA) ? { solveCaptcha: true } : {}),
+      });
+      const id = String(j.id ?? "");
+      const release = async () => { await fetch(`https://api.steel.dev/v1/sessions/${id}/release`, { method: "POST", headers: { "steel-api-key": key } }).catch(() => {}); };
+      return { provider: p, wsUrl: String(j.websocketUrl || `wss://connect.steel.dev?apiKey=${encodeURIComponent(key)}&sessionId=${id}`), release };
+    }
+    case "browserless": {
+      const host = env.BROWSERLESS_HOST || "production-sfo.browserless.io";
+      return { provider: p, wsUrl: `wss://${host}?token=${encodeURIComponent(env.BROWSERLESS_TOKEN!)}&stealth=true${on(env.BROWSERLESS_SOLVE_CAPTCHAS) ? "&solveCaptchas=true" : ""}`, release: noop };
+    }
+    case "hyperbrowser": {
+      const key = env.HYPERBROWSER_API_KEY!;
+      const j = await postJson("https://api.hyperbrowser.ai/api/session", { "x-api-key": key }, { useStealth: true, ...(on(env.HYPERBROWSER_SOLVE_CAPTCHAS) ? { solveCaptchas: true } : {}) });
+      const id = String(j.id ?? "");
+      const release = async () => { await fetch(`https://api.hyperbrowser.ai/api/session/${id}/stop`, { method: "PUT", headers: { "x-api-key": key } }).catch(() => {}); };
+      return { provider: p, wsUrl: String(j.wsEndpoint), release };
+    }
+    case "anchor": {
+      const key = env.ANCHOR_API_KEY!;
+      const captcha = on(env.ANCHOR_SOLVE_CAPTCHA);
+      const j = await postJson("https://api.anchorbrowser.io/v1/sessions", { "anchor-api-key": key }, {
+        browser: { extra_stealth: { active: true }, ...(captcha ? { captcha_solver: { active: true } } : {}) },
+        ...(captcha ? { session: { proxy: { active: true, type: "anchor_proxy" } } } : {}),
+      });
+      const d = (j.data ?? j) as Record<string, unknown>;
+      const id = String(d.id ?? "");
+      const release = async () => { await fetch(`https://api.anchorbrowser.io/v1/sessions/${id}`, { method: "DELETE", headers: { "anchor-api-key": key } }).catch(() => {}); };
+      return { provider: p, wsUrl: String(d.cdp_url ?? `wss://connect.anchorbrowser.io?apiKey=${encodeURIComponent(key)}&sessionId=${id}`), release };
+    }
+    case "browserbase":
+      // Browserbase's basic stealth is always on; its captcha solving is on by default where the plan has it.
+      return startSession(p, env);
   }
 }
 

@@ -57,7 +57,7 @@ export const siteLoginTool: BuiltinTool = {
     const ids = [own?.id, g?.id].filter((x): x is string => !!x);
     const goal = signinGoal(site, { siteLogin: own?.id ?? null, googleLogin: g?.id ?? null, check: a.check, lang });
     const { data: job, error } = await ctx.db.from("browser_jobs").insert({
-      user_id: ctx.userId, goal: `Sign in to ${site}`.slice(0, 500), start_url: `https://${site}/`, steps: [], mode: "auto", max_steps: 30,
+      user_id: ctx.userId, goal: `Sign in to ${site}`.slice(0, 500), start_url: `https://${site}/`, steps: [], mode: "auto", max_steps: 40,
       allowed_secrets: ids, inputs: { signin: { site, via: own ? "password" : "google", goal, ...(lang ? { lang } : {}) } }, status: "queued", conversation_id: ctx.conversationId,
     }).select("id").single();
     if (error || !job) throw new Error("Couldn't start the sign-in");

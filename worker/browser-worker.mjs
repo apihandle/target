@@ -140,7 +140,17 @@ async function snapshot(page) {
     return { els, text: document.body ? document.body.innerText.replace(/\n{2,}/g, "\n").slice(0, 5500) : "" };
   });
   const shot = (await page.screenshot({ type: "jpeg", quality: 45 }).catch(() => null))?.toString("base64");
-  return { url: page.url().slice(0, 2000), title: (await page.title()).slice(0, 290), text: data.text, elements: data.els, ...(shot && shot.length < 390000 ? { screenshot: shot } : {}) };
+  // Cloudflare signals the page text can't show (challenge iframes, Turnstile token); TARGET waits, then stops honestly.
+  const frames = page.frames().map((f) => f.url()).filter((u) => /challenges\.cloudflare\.com|\/cdn-cgi\/challenge-platform/i.test(u)).map((u) => u.slice(0, 300)).slice(0, 10);
+  const tb = await page.evaluate(() => {
+    const t = Array.from(document.querySelectorAll("input[name='cf-turnstile-response']"));
+    return { widget: t.length > 0 || !!document.querySelector(".cf-turnstile, #challenge-form, #challenge-stage"), solved: t.some((x) => x.value.length > 0) };
+  }).catch(() => ({ widget: false, solved: false }));
+  return {
+    url: page.url().slice(0, 2000), title: (await page.title()).slice(0, 290), text: data.text, elements: data.els,
+    ...(shot && shot.length < 390000 ? { screenshot: shot } : {}),
+    ...(frames.length || tb.widget ? { bot: { frames, widget: tb.widget, solved: tb.solved } } : {}),
+  };
 }
 
 async function runAuto(job, page) {

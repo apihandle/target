@@ -66,10 +66,11 @@ export function signinFailure(error: string | null | undefined, site: string, la
   const rest = e.replace(/^(GOOGLE_BLOCKED|WRONG_LOGIN|CLOUDFLARE_BLOCKED|NOT_SIGNED_IN)[:\s-]*/i, "").slice(0, 200);
   if (/GOOGLE_BLOCKED/i.test(e)) return { line: en ? `Google blocked the sign-in from this browser, so ${site} couldn't be signed in with Google.` : `Google ne is browser se sign-in block kar diya, isliye ${site} pe Google se login nahi hua.`, offerPassword: true };
   if (/WRONG_LOGIN/i.test(e)) return { line: en ? `${site} says the saved username or password is wrong.` : `${site} ne kaha ki saved username ya password galat hai.`, offerPassword: true };
+  const tried = e.match(/\(tried (\d+) cloud browser/)?.[1];
   if (/CLOUDFLARE_BLOCKED/i.test(e) || /cloudflare|turnstile|security check could not load|verify you are human/i.test(e)) return {
     line: en
-      ? `${site}'s Cloudflare security check blocked the cloud browser, so the sign-in did not happen.`
-      : `${site} ke Cloudflare security check ne cloud browser ko rok diya, isliye sign in nahi hua.`,
+      ? `${site}'s Cloudflare security check blocked the cloud browser, so the sign-in did not happen.${tried ? ` I waited, reloaded and tried ${tried} cloud browser sessions (stealth mode included); the check still didn't pass.` : ""} Free cloud browsers can't get past this check. Want me to try again later?`
+      : `${site} ke Cloudflare security check ne cloud browser ko rok diya, isliye sign in nahi hua.${tried ? ` Maine wait aur reload kiya, ${tried} cloud browser sessions (stealth mode bhi) pe try kiya, check paas nahi hua.` : ""} Free cloud browsers ye check paar nahi kar paate. Thodi der baad dobara try karun?`,
     offerPassword: false,
   };
   if (/captcha/i.test(e)) return { line: en ? `${site} showed a captcha, so the sign-in stopped.` : `${site} ne captcha dikhaya, isliye sign-in ruk gaya.`, offerPassword: false };

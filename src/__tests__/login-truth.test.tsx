@@ -125,8 +125,11 @@ describe("the chat headline comes from the tool status", () => {
 describe("worker API: an unverified done becomes a failure", () => {
   it("turns the owner's 'done' on the Cloudflare page into CLOUDFLARE_BLOCKED and posts a ⚠️ message, not ✓", async () => {
     signinJob();
+    // An older worker that doesn't send the Cloudflare iframe signals: only the model's report shows the block.
     h.replies = [JSON.stringify({ do: "done", result: OWNER_RESULT })];
-    const n = await (await call({ action: "next", job_id: JOB, snapshot: TIMEBUCKS })).json();
+    const { bot: _bot, ...noSignals } = TIMEBUCKS;
+    void _bot;
+    const n = await (await call({ action: "next", job_id: JOB, snapshot: noSignals })).json();
     expect(n.action.do).toBe("fail");
     expect(n.action.reason).toMatch(/^CLOUDFLARE_BLOCKED/);
     await call({ action: "finish", job_id: JOB, status: "failed", error: n.action.reason });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { llmText, visionModels, type LLMMessage } from "@/lib/llm";
+import { CLOUDFLARE_BLOCKED, detectBotCheck } from "@/lib/loginCheck";
 
 /** What the worker sends each turn: the page as numbered elements (plus an optional screenshot). */
 export const snapshotSchema = z.object({
@@ -128,6 +129,14 @@ function submitLogin(snap: Snapshot): AutoAction {
 export type StepGuard = (a: AutoAction) => { action: AutoAction } | { retry: string };
 
 export async function decideNext(goal: string, snap: Snapshot, secrets: { id: string; kind: string; label: string; site: string | null }[], history: string[], stepsLeft: number, guard?: StepGuard): Promise<AutoAction> {
+  // A Cloudflare challenge page, or a Turnstile box on a login form that hasn't passed: wait twice, then stop with the
+  // real reason (filling and submitting the form again can't get past it).
+  const bot = detectBotCheck({ title: snap.title, text: snap.text, frames: snap.bot?.frames, widget: snap.bot?.widget, solved: snap.bot?.solved });
+  if (bot && (bot.kind === "page" || snap.elements.some((e) => e.type === "password"))) {
+    const waits = history.filter((h) => h.startsWith("wait") && /cloudflare/i.test(h)).length;
+    if (waits < 2) return { do: "wait", why: `Cloudflare security check on the page (${waits + 1}/2)` };
+    return { do: "fail", reason: `${CLOUDFLARE_BLOCKED}: ${bot.line}` };
+  }
   const auto = signinAutofill(goal, snap, secrets, history);
   if (auto) return auto;
   const notes: string[] = [];

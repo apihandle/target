@@ -69,11 +69,11 @@ export function verifyLogin(page: LoginPage, result?: string): LoginVerdict {
   const hasPassword = page.elements.some((e) => (e.type ?? "").toLowerCase() === "password");
   const elMarker = page.elements.find((e) => LOGGED_IN_EL.test((e.text ?? "").trim()))?.text;
   if (bot && (bot.kind === "page" || hasPassword)) return { ok: false, code: CLOUDFLARE_BLOCKED, reason: `${bot.line}, so the login could not be completed` };
-  if (hasPassword && !elMarker) return { ok: false, code: NOT_SIGNED_IN, reason: "the login form is still on the page" };
   if (result && resultSaysFailed(result) && !elMarker) {
     const cf = /cloudflare|turnstile|security check|verify you are human|captcha/i.test(result);
     return { ok: false, code: cf ? CLOUDFLARE_BLOCKED : NOT_SIGNED_IN, reason: firstSentence(result) };
   }
+  if (hasPassword && !elMarker) return { ok: false, code: NOT_SIGNED_IN, reason: "the login form is still on the page" };
   if (elMarker) return { ok: true, evidence: `page has "${elMarker.trim().slice(0, 40)}"` };
   let path = "";
   try { const u = new URL(page.url); path = `${u.pathname}${u.search}${u.hash}`; } catch { path = page.url; }

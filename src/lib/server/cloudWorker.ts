@@ -1,5 +1,6 @@
 import type { Browser, BrowserContext, Page } from "playwright-core";
-import { configuredProviders, redact, startSession, type CdpSession } from "./remoteBrowser";
+import { configuredProviders, redact, startSession, STEALTH_ORDER, type CdpSession, type ProviderId, type SessionOpts } from "./remoteBrowser";
+import { CLOUDFLARE_BLOCKED, detectBotCheck, type BotCheck, type BotSignals } from "@/lib/loginCheck";
 import { SITE } from "@/lib/builtins/helpers";
 import { readUrl } from "@/lib/urlReader";
 import { llmText } from "@/lib/llm";
@@ -129,15 +130,76 @@ async function snapshot(page: Page) {
     return { els, text: document.body ? document.body.innerText.replace(/\n{2,}/g, "\n").slice(0, 5500) : "" };
   });
   const shot = (await page.screenshot({ type: "jpeg", quality: 45 }).catch(() => null))?.toString("base64");
-  return { url: page.url().slice(0, 2000), title: (await page.title()).slice(0, 290), text: data.text, elements: data.els, ...(shot && shot.length < 390000 ? { screenshot: shot } : {}) };
+  const bot = await botSignals(page).catch(() => null);
+  return {
+    url: page.url().slice(0, 2000), title: (await page.title()).slice(0, 290), text: data.text, elements: data.els,
+    ...(shot && shot.length < 390000 ? { screenshot: shot } : {}),
+    ...(bot && (bot.frames.length || bot.widget) ? { bot: { frames: bot.frames, widget: bot.widget, solved: bot.solved } } : {}),
+  };
 }
+
+/** What the page shows of a Cloudflare check: challenge iframes (the page text can't see inside them) and the Turnstile token. */
+export async function botSignals(page: Page): Promise<Required<Pick<BotSignals, "title" | "text">> & { frames: string[]; widget: boolean; solved: boolean; password: boolean }> {
+  const frames = page.frames().map((f) => f.url()).filter((u) => /challenges\.cloudflare\.com|\/cdn-cgi\/challenge-platform/i.test(u)).map((u) => u.slice(0, 300)).slice(0, 10);
+  const d = await page.evaluate(() => {
+    const tokens = Array.from(document.querySelectorAll<HTMLInputElement>("input[name='cf-turnstile-response'], input[name='g-recaptcha-response'][id^='cf-chl']"));
+    const pw = Array.from(document.querySelectorAll<HTMLInputElement>("input[type=password]")).some((e) => { const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2 && getComputedStyle(e).visibility !== "hidden"; });
+    return {
+      text: document.body ? document.body.innerText.slice(0, 3000) : "",
+      widget: tokens.length > 0 || !!document.querySelector(".cf-turnstile, [data-sitekey][class*='turnstile'], #challenge-form, #challenge-stage"),
+      solved: tokens.some((t) => t.value.length > 0), pw,
+    };
+  });
+  return { title: await page.title(), text: d.text, frames, widget: d.widget, solved: d.solved, password: d.pw };
+}
+
+/** A Cloudflare check that stops this job: a challenge/block page, or a Turnstile box on a login form that hasn't passed. */
+export function blockingCheck(s: BotSignals & { password?: boolean }): BotCheck {
+  const c = detectBotCheck(s);
+  if (!c) return null;
+  return c.kind === "page" || s.password ? c : null;
+}
+
+export class CloudflareBlocked extends Error {
+  final = true;
+  cloudflare = true;
+  constructor(line: string, host: string) { super(`${CLOUDFLARE_BLOCKED}: ${line} on ${host}`); }
+}
+
+/**
+ * Cloudflare on the page: wait for it to pass, then reload, at most twice per browser. Throws CloudflareBlocked
+ * when it still hasn't passed (the caller then retries on another cloud browser in stealth mode).
+ */
+export async function passBotCheck(page: Page, job: Job, api: Api, state: { reloads: number }, waitMs = 6000): Promise<void> {
+  let check = blockingCheck(await botSignals(page).catch(() => ({ title: "", text: "", frames: [], widget: false, solved: false, password: false })));
+  if (!check) return;
+  let host = "";
+  try { host = new URL(page.url()).hostname.replace(/^www\./, ""); } catch { /* keep "" */ }
+  for (;;) {
+    await api({ action: "progress", job_id: job.id, line: `Cloudflare security check on ${host}, waiting for it to pass` }).catch(() => {});
+    await page.waitForTimeout(waitMs);
+    check = blockingCheck(await botSignals(page).catch(() => ({ title: "", text: "", frames: [], widget: false, solved: false, password: false })));
+    if (!check) return;
+    if (state.reloads >= 2) throw new CloudflareBlocked(check.line, host);
+    state.reloads++;
+    await api({ action: "progress", job_id: job.id, line: `Cloudflare check didn't pass, reloading the page (${state.reloads}/2)` }).catch(() => {});
+    await page.reload({ waitUntil: "domcontentloaded" }).catch(() => {});
+    await page.waitForTimeout(Math.round(waitMs / 2));
+    check = blockingCheck(await botSignals(page).catch(() => ({ title: "", text: "", frames: [], widget: false, solved: false, password: false })));
+    if (!check) return;
+  }
+}
+
+export const isCloudflareBlock = (e: unknown) => !!(e as { cloudflare?: boolean })?.cloudflare || String((e as Error)?.message ?? "").startsWith(CLOUDFLARE_BLOCKED);
 
 export async function runAuto(job: Job, page: Page, api: Api, deadline: number): Promise<string> {
   await page.goto(safeUrl(job.start_url), { waitUntil: "domcontentloaded" });
+  const cf = { reloads: 0 };
   for (let n = 0; n < (job.max_steps || 20) + 2; n++) {
     if (Date.now() > deadline) throw Object.assign(new Error("Took too long in the cloud browser; try a shorter task"), { final: true });
     await page.waitForLoadState("domcontentloaded").catch(() => {});
     await page.waitForTimeout(700);
+    await passBotCheck(page, job, api, cf);
     const { action } = (await api({ action: "next", job_id: job.id, snapshot: await snapshot(page) })) as { action: Record<string, string & number> };
     const a = action;
     const el = (i: number) => page.locator(`[data-target-i="${i}"]`).first();
@@ -181,13 +243,13 @@ export async function runAuto(job: Job, page: Page, api: Api, deadline: number):
 }
 
 /** Connect to the first cloud browser provider that answers. */
-export async function connectCloudBrowser(env: Record<string, string | undefined> = process.env): Promise<{ browser: Browser; session: CdpSession }> {
+export async function connectCloudBrowser(env: Record<string, string | undefined> = process.env, opts: SessionOpts & { only?: ProviderId[] } = {}): Promise<{ browser: Browser; session: CdpSession }> {
   const { chromium } = await import("playwright-core");
   const errors: string[] = [];
-  for (const p of configuredProviders(env)) {
+  for (const p of opts.only ?? configuredProviders(env)) {
     let session: CdpSession | null = null;
     try {
-      session = await startSession(p, env);
+      session = await startSession(p, env, { stealth: opts.stealth });
       const browser = await chromium.connectOverCDP(session.wsUrl, { timeout: 25000 });
       return { browser, session };
     } catch (e) {
@@ -226,6 +288,32 @@ export async function readWithoutBrowser(job: Job, api: Api, f: typeof fetch = f
   return `${answer}\n\nFinal page: ${page.title} (${page.url}) [read without a browser]`;
 }
 
+/** One run of a job on an open cloud browser: restore the saved session / cart, run it, save the new session. */
+async function runOnce(job: Job, browser: Browser, api: Api, deadline: number): Promise<string> {
+  await api({ action: "progress", job_id: job.id, line: `Opening ${new URL(job.start_url).hostname.replace(/^www\./, "")}` }).catch(() => {});
+  const ctx = browser.contexts()[0] ?? (await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "en-IN" }));
+  const page = ctx.pages()[0] ?? (await ctx.newPage());
+  page.setDefaultTimeout(15000);
+  const site = signinSite(job);
+  if (checkoutPhase(job) === "pay") {
+    const { state } = (await api({ action: "checkout_state", job_id: job.id })) as { state?: StorageState };
+    if (!state) throw Object.assign(new Error("The saved cart is missing; prepare the checkout again"), { final: true });
+    await restoreState(ctx, state);
+  } else if (site) {
+    const { cookies } = (await api({ action: "cookies", job_id: job.id }).catch(() => ({ cookies: [] }))) as { cookies?: Parameters<typeof ctx.addCookies>[0] };
+    if (cookies?.length) await ctx.addCookies(cookies).catch(() => {});
+  }
+  const result = job.mode === "auto" ? await runAuto(job, page, api, deadline - 15000) : await runSteps(job, page, api);
+  if (site) {
+    const cookies = await ctx.cookies().catch(() => []);
+    if (cookies.length) {
+      const saved = (await api({ action: "save_session", job_id: job.id, cookies }).catch(() => ({}))) as { ok?: boolean };
+      if (saved.ok) await api({ action: "progress", job_id: job.id, line: "Saved the sign-in for next time" }).catch(() => {});
+    }
+  }
+  return result;
+}
+
 /** Claim and run queued browser jobs until the time budget runs out. Returns a short summary per job. */
 export async function runQueuedJobs(opts: { budgetMs: number; secret: string; base?: string }): Promise<{ id: string; ok: boolean; provider?: string; error?: string }[]> {
   const api = workerApi(opts.secret, opts.base);
@@ -245,35 +333,33 @@ export async function runQueuedJobs(opts: { budgetMs: number; secret: string; ba
         results.push({ id: job.id, ok: true, provider: "direct" });
         continue;
       }
-      const { browser, session } = conn;
-      provider = session.provider;
-      await api({ action: "progress", job_id: job.id, line: `Opening ${new URL(job.start_url).hostname.replace(/^www\./, "")}` }).catch(() => {});
-      try {
-        const ctx = browser.contexts()[0] ?? (await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "en-IN" }));
-        const page = ctx.pages()[0] ?? (await ctx.newPage());
-        page.setDefaultTimeout(15000);
-        const site = signinSite(job);
-        if (checkoutPhase(job) === "pay") {
-          const { state } = (await api({ action: "checkout_state", job_id: job.id })) as { state?: StorageState };
-          if (!state) throw Object.assign(new Error("The saved cart is missing; prepare the checkout again"), { final: true });
-          await restoreState(ctx, state);
-        } else if (site) {
-          const { cookies } = (await api({ action: "cookies", job_id: job.id }).catch(() => ({ cookies: [] }))) as { cookies?: Parameters<typeof ctx.addCookies>[0] };
-          if (cookies?.length) await ctx.addCookies(cookies).catch(() => {});
-        }
-        const result = job.mode === "auto" ? await runAuto(job, page, api, deadline - 15000) : await runSteps(job, page, api);
-        if (site) {
-          const cookies = await ctx.cookies().catch(() => []);
-          if (cookies.length) {
-            const saved = (await api({ action: "save_session", job_id: job.id, cookies }).catch(() => ({}))) as { ok?: boolean };
-            if (saved.ok) await api({ action: "progress", job_id: job.id, line: "Saved the sign-in for next time" }).catch(() => {});
+      // A Cloudflare block retries the job on the next cloud browser in stealth mode (at most twice, time allowing).
+      const tried: string[] = [];
+      const stealthLeft = STEALTH_ORDER.filter((p) => configuredProviders().includes(p));
+      for (;;) {
+        const { browser, session } = conn;
+        provider = session.provider;
+        tried.push(`${session.provider}${session.stealth ? " (stealth)" : ""}`);
+        if (session.stealth && stealthLeft.includes(session.provider)) stealthLeft.splice(stealthLeft.indexOf(session.provider), 1);
+        let result: string;
+        try {
+          result = await runOnce(job, browser, api, deadline);
+        } catch (e) {
+          if (!isCloudflareBlock(e)) throw e;
+          const next = stealthLeft[0];
+          if (!next || tried.length >= 3 || Date.now() > deadline - 90000) {
+            throw Object.assign(new Error(`${String((e as Error).message).slice(0, 250)} (tried ${tried.length} cloud browser${tried.length === 1 ? "" : "s"}: ${tried.join(", ")})`), { final: true });
           }
+          await api({ action: "progress", job_id: job.id, line: `Cloudflare blocked ${session.provider}; retrying on ${next} in stealth mode` }).catch(() => {});
+          conn = await connectCloudBrowser(process.env, { stealth: true, only: stealthLeft }).catch((err) => { throw Object.assign(new Error(`${String((e as Error).message).slice(0, 250)} (tried ${tried.join(", ")}; no other cloud browser started: ${redact(String((err as Error).message)).slice(0, 120)})`), { final: true }); });
+          continue;
+        } finally {
+          await browser.close().catch(() => {});
+          await session.release().catch(() => {});
         }
         await api({ action: "finish", job_id: job.id, status: "done", result });
         results.push({ id: job.id, ok: true, provider });
-      } finally {
-        await browser.close().catch(() => {});
-        await session.release().catch(() => {});
+        break;
       }
     } catch (e) {
       const error = redact(String((e as Error)?.message || e)).slice(0, 400);
