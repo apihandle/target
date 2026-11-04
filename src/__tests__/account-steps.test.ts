@@ -90,3 +90,17 @@ describe("decideNext on an account form", () => {
     expect(a).toMatchObject({ do: "click", i: 7 });
   });
 });
+
+describe("a username the user chose", () => {
+  it("is read from their words and goes into the goal, never the email in its place", async () => {
+    const { usernameIn, accountOf } = await import("@/lib/siteAccount");
+    expect(usernameIn("create my account on fake-site.example with email nobody@example.com, username fakeuser01")).toBe("fakeuser01");
+    expect(usernameIn("user id: fake-user.2")).toBe("fake-user.2");
+    expect(usernameIn("create my account on fake-site.example")).toBeNull();
+    const g = accountGoal({ flow: "register", site: "fake-site.example", email: "nobody@example.com", username: "fakeuser01", vault_id: VID });
+    expect(g).toMatch(/username fakeuser01/);
+    expect(g).toMatch(/never put the email in the username box/);
+    expect(accountOf({ account: { flow: "register", site: "fake-site.example", email: "nobody@example.com", username: "fakeuser01" } })?.username).toBe("fakeuser01");
+    expect(accountOf({ account: { flow: "register", site: "fake-site.example", email: "nobody@example.com", username: "bad name!" } })?.username).toBeUndefined();
+  });
+});

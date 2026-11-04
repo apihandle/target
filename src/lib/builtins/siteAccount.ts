@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { normalizeSite } from "@/lib/sessions";
 import { matchLogin, type VaultLoginRow } from "@/lib/signin";
-import { accountSummary, userAsked, withProfileName, type AccountFlow } from "@/lib/siteAccount";
+import { accountSummary, userAsked, usernameIn, withProfileName, type AccountFlow } from "@/lib/siteAccount";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isLang, type Lang } from "@/lib/lang";
 import type { BuiltinCtx, BuiltinTool } from "@/lib/builtins/tools";
@@ -49,13 +49,16 @@ async function prepare(ctx: BuiltinCtx, flow: AccountFlow, rawSite: string, opts
   }
   const me = flow === "register" ? await profile(ctx) : { email: null, name: null };
   mail = mail ?? (await defaultEmail(ctx)) ?? me.email;
+  // A username the user chose (in the tool's details or their own message) is typed into the form and becomes the
+  // vault login's username, since sites with usernames sign in with it.
+  const username = flow === "register" ? usernameIn(opts.details) ?? (ctx.userTexts ?? []).slice(-3).reverse().map(usernameIn).find(Boolean) ?? null : null;
   const details = flow === "register" ? withProfileName(opts.details, me.name) : opts.details;
   if (!mail) return { status: "needs_email", site, note: `Ask the user in one line which email address ${flow === "reset" ? "the account uses" : "to use for the new account"}, then call this again with it.` };
 
   const { data: job, error } = await ctx.db.from("browser_jobs").insert({
     user_id: ctx.userId, mode: "auto", goal: (flow === "reset" ? `Reset password on ${site}` : `Create an account on ${site}`).slice(0, 500),
     start_url: `https://${site}/`, steps: [], allowed_secrets: [], max_steps: 40, status: "needs_approval", conversation_id: ctx.conversationId,
-    inputs: { account: { flow, site, email: mail, replaces, ...(details ? { details: details.slice(0, 300) } : {}), ...(opts.lang ? { lang: opts.lang } : {}) } },
+    inputs: { account: { flow, site, email: mail, ...(username ? { username } : {}), replaces, ...(details ? { details: details.slice(0, 300) } : {}), ...(opts.lang ? { lang: opts.lang } : {}) } },
   }).select("id").single();
   if (error || !job) throw new Error("Couldn't prepare this");
   const summary = accountSummary({ flow, site, email: mail, name: flow === "register" && details && /\bname\b/i.test(details) ? (details.match(/\bname\s+([^;,]{2,80})/i)?.[1] ?? null) : null });

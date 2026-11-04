@@ -8,7 +8,13 @@ import { reportLangHint, type Lang } from "@/lib/lang";
  * fill_secret: it is never shown in chat, logs, job results or the approval card.
  */
 export type AccountFlow = "register" | "reset";
-export type AccountInputs = { flow: AccountFlow; site: string; email: string; vault_id?: string; replaces?: string | null; details?: string; lang?: Lang | null; goal?: string };
+export type AccountInputs = { flow: AccountFlow; site: string; email: string; username?: string; vault_id?: string; replaces?: string | null; details?: string; lang?: Lang | null; goal?: string };
+
+/** A username the user chose ("username fakeuser01", "user id: abc"), from their own words or the form details. */
+export function usernameIn(text: string | null | undefined): string | null {
+  const m = (text ?? "").slice(0, 2000).match(/\b(?:user ?name|user ?id|handle)\s*(?:is|:|=|-)?\s*['"]?([A-Za-z0-9][A-Za-z0-9._-]{1,38})\b/i);
+  return m && !/^(is|and|aur|with)$/i.test(m[1]) ? m[1] : null;
+}
 
 const DOMAIN = /\b((?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,24})\b/i;
 const RESET = [
@@ -88,7 +94,9 @@ export function accountGoal(a: AccountInputs & { vault_id: string }): string {
         "Use done only when the site confirms the password was changed, and say what it showed.",
       ]
     : [
-        `Create a new account for the user on ${a.site} using the email ${a.email} and the password from ${secret} (fill_secret field "username" can fill the email).`,
+        a.username
+          ? `Create a new account for the user on ${a.site} with the username ${a.username}, the email ${a.email} and the password from ${secret}. Type ${a.username} yourself into the username box (fill_secret field "username" also gives ${a.username}) and ${a.email} into any email box; never put the email in the username box.`
+          : `Create a new account for the user on ${a.site} using the email ${a.email} and the password from ${secret} (fill_secret field "username" can fill the email).`,
         `Open the site's Sign up / Register / Create account page.${a.details ? ` Details the user gave for the form: ${a.details.replace(/\s+/g, " ").slice(0, 300)}.` : ""}`,
         "Accept only the required terms checkbox.",
         ...common,
@@ -118,6 +126,7 @@ export function accountOf(inputs: unknown): AccountInputs | null {
     flow: a.flow, site: a.site, email: a.email,
     vault_id: typeof a.vault_id === "string" ? a.vault_id : undefined,
     replaces: typeof a.replaces === "string" ? a.replaces : null,
+    username: typeof a.username === "string" && usernameIn(`username ${a.username}`) === a.username ? a.username : undefined,
     details: typeof a.details === "string" ? a.details : undefined,
     lang: a.lang === "hinglish" || a.lang === "hindi" || a.lang === "english" ? a.lang : null,
     goal: typeof a.goal === "string" ? a.goal : undefined,

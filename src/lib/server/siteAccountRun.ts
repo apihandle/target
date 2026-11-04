@@ -19,7 +19,7 @@ export async function runSiteAccount(userId: string, jobId: string, dbIn?: Db): 
   const { count } = await db.from("vault_secrets").select("id", { count: "exact", head: true }).eq("user_id", userId);
   if ((count ?? 0) >= MAX_VAULT_ITEMS) throw new Error(`Your vault is full (${MAX_VAULT_ITEMS} items). Delete one first.`);
 
-  const sealed = sealVault(userId, { kind: "login", label: pendingLabel(a), site: a.site, username: a.email, password: generatePassword() });
+  const sealed = sealVault(userId, { kind: "login", label: pendingLabel(a), site: a.site, username: a.username ?? a.email, password: generatePassword() });
   const { data: item, error } = await db.from("vault_secrets").insert({ user_id: userId, kind: "login", label: pendingLabel(a), ...sealed }).select("id").single();
   if (error || !item) throw new Error("Couldn't save the new password to your vault.");
   const vault_id = item.id as string;
