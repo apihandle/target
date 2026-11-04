@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { llmText, visionModels, type LLMMessage } from "@/lib/llm";
+import { llmText, orderCandidates, providers, visionModels, type LLMMessage, type ModelRef } from "@/lib/llm";
 import { CLOUDFLARE_BLOCKED, detectBotCheck } from "@/lib/loginCheck";
 
 /** What the worker sends each turn: the page as numbered elements (plus an optional screenshot). */
@@ -61,26 +61,36 @@ export function pageBlock(s: Snapshot): string {
   return `<untrusted_page url="${s.url.replace(/"/g, "")}" title="${s.title.replace(/"/g, "")}">\nELEMENTS:\n${els}\n\nTEXT:\n${s.text}\n</untrusted_page>`;
 }
 
-/** Pull the first JSON object out of a model reply and validate it. */
+/**
+ * Pull the model's action out of its reply and validate it. Models sometimes think out loud before the answer
+ * (take the last action), and sometimes answer with a whole plan, several actions in a row ("fill", "fill", "click"):
+ * then the FIRST action of that final run is the next step (taking the last one skipped the confirm-password box and
+ * clicked Register on an empty form).
+ */
 export function parseAction(reply: string): AutoAction | null {
   const text = reply.replace(/<think>[\s\S]*?<\/think>/g, "").replace(/```(?:json)?/g, "");
-  // Try every {...} that mentions "do", last first (models often think out loud before the answer).
-  const starts: number[] = [];
-  for (let i = 0; i < text.length; i++) if (text[i] === "{") starts.push(i);
-  for (const st of starts.reverse()) {
-    let depth = 0;
-    for (let j = st; j < text.length; j++) {
-      if (text[j] === "{") depth++;
-      else if (text[j] === "}" && --depth === 0) {
-        const chunk = text.slice(st, j + 1);
-        if (/"do"\s*:/.test(chunk)) {
-          try { const r = autoAction.safeParse(JSON.parse(chunk)); if (r.success) return r.data; } catch { /* next */ }
-        }
-        break;
-      }
+  const found: { a: AutoAction; st: number; end: number }[] = [];
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] !== "{") { i++; continue; }
+    let depth = 0, end = -1, inStr = false;
+    for (let j = i; j < text.length; j++) {
+      const ch = text[j];
+      if (inStr) { if (ch === "\\") j++; else if (ch === '"') inStr = false; continue; }
+      if (ch === '"') inStr = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}" && --depth === 0) { end = j; break; }
     }
+    if (end < 0) break;
+    const chunk = text.slice(i, end + 1);
+    let a: AutoAction | null = null;
+    if (/"do"\s*:/.test(chunk)) { try { const r = autoAction.safeParse(JSON.parse(chunk)); if (r.success) a = r.data; } catch { /* not JSON */ } }
+    if (a) { found.push({ a, st: i, end }); i = end + 1; } else i++;
   }
-  return null;
+  if (!found.length) return null;
+  let k = found.length - 1;
+  while (k > 0 && /^[\s,\[\]]*$/.test(text.slice(found[k - 1].end + 1, found[k].st))) k--;
+  return found[k].a;
 }
 
 /**
@@ -123,6 +133,37 @@ export function signinAutofill(goal: string, snap: Snapshot, secrets: { id: stri
   return null;
 }
 
+const ACCOUNT_GOAL = /^(Create a new account for the user on|Reset the password of the user's own account)/;
+const NEW_PASSWORD_PAGE = /\b(sign ?up|register|registration|create (an |your )?account|join|new password|reset password|choose a password|confirm password)\b/i;
+
+/**
+ * Account creation / password reset: every password box on a sign-up or new-password form (the new password AND the
+ * confirm box) is filled from the generated vault login before the model is asked, since models often fill one box
+ * twice and skip "Confirm password". Only boxes not filled since the form was last submitted count.
+ */
+export function accountAutofill(goal: string, snap: Snapshot, history: string[]): AutoAction | null {
+  if (!ACCOUNT_GOAL.test(goal)) return null;
+  const id = goal.match(/vault item ([0-9a-f-]{36})/i)?.[1];
+  if (!id) return null;
+  const boxes = snap.elements.filter((e) => (e.type ?? "").toLowerCase() === "password");
+  if (!boxes.length) return null;
+  if (boxes.length < 2 && !NEW_PASSWORD_PAGE.test(`${snap.url} ${snap.title} ${boxes.map((b) => `${b.text} ${b.name ?? ""}`).join(" ")}`)) return null; // one box: only a page that is itself a sign-up / new-password page
+  if (history.filter((h) => h.startsWith("fill_secret") && h.includes(" password")).length >= 12) return null; // runaway guard
+  const since = history.slice(history.map((h) => h.startsWith("click") || h.startsWith("press") || h.startsWith("goto")).lastIndexOf(true) + 1);
+  const box = boxes.find((b) => !since.some((h) => h.startsWith(`fill_secret [${b.i}] password`)));
+  return box ? { do: "fill_secret", i: box.i, secret_id: id, field: "password", why: "New password from the vault" } : null;
+}
+
+/** A shorter page for a retry: form controls and buttons first, short text. */
+export function compactBlock(s: Snapshot): string {
+  const form = s.elements.filter((e) => /^(input|select|textarea|button)$/.test(e.tag) || e.type === "submit");
+  const rest = s.elements.filter((e) => !form.includes(e) && e.text.length > 0 && e.text.length < 40);
+  return pageBlock({ ...s, elements: [...form, ...rest].slice(0, 60).sort((a, b) => a.i - b.i), text: s.text.slice(0, 1500) });
+}
+
+export const NO_STEP = "The AI couldn't decide the next step on this page";
+const NO_STEP_WAIT = "The AI gave no usable step; trying again";
+
 function submitLogin(snap: Snapshot): AutoAction {
   const submit = snap.elements.find((e) => (e.tag === "button" || e.type === "submit") && /log ?in|sign ?in|submit|continue|next/i.test(e.text));
   return submit ? { do: "click", i: submit.i, why: "Submit the login form" } : { do: "press", key: "Enter", why: "Submit the login form" };
@@ -145,8 +186,8 @@ export async function decideNext(goal: string, snap: Snapshot, secrets: { id: st
     if (snap.can_pause && history.filter((h) => h.startsWith("need_user")).length < 2) return { do: "need_user", why: "Complete the check, then tap Continue" };
     return { do: "fail", reason: `${CLOUDFLARE_BLOCKED}: ${bot.line}` };
   }
-  const auto = signinAutofill(goal, snap, secrets, history);
-  if (auto) return auto;
+  const auto = signinAutofill(goal, snap, secrets, history) ?? accountAutofill(goal, snap, history);
+  if (auto && (auto.do !== "fill_secret" || secrets.some((s) => s.id === auto.secret_id))) return auto;
   const notes: string[] = [];
   const pass = (a: AutoAction): AutoAction | null => {
     if (!guard) return a;
@@ -162,36 +203,48 @@ export async function decideNext(goal: string, snap: Snapshot, secrets: { id: st
   // An empty or still-loading page (bot check, splash) gets a wait instead of a model call.
   if (!snap.elements.length && snap.text.trim().length < 200 && history.filter((h) => h.startsWith("wait")).length < 3) return { do: "wait", why: "Page is still loading" };
   const plain: LLMMessage = { role: "user", content: pageBlock(snap) };
+  const small: LLMMessage = { role: "user", content: compactBlock(snap) };
+  // Retries switch model: the default order minus its first model (a model that answered with nothing usable once
+  // usually does it again on the same page), and the last try also gets a smaller page.
+  let fallback: ModelRef[] | null = null;
+  const fallbackModels = (): ModelRef[] => {
+    if (!fallback) { try { fallback = orderCandidates(providers()).slice(1).map((c) => ({ provider: c.p.name, model: c.model })); } catch { fallback = []; } }
+    return fallback;
+  };
+  const why: string[] = [];
   // The worker's request for the next step is capped at 60 s, so the model gets ~45 s in total: each try races the
   // next model after 10 s and stops at 20 s.
   const started = Date.now();
   for (let attempt = 0; attempt < 3; attempt++) {
     if (Date.now() - started > 25000) return notes.length ? { do: "fail", reason: notes[notes.length - 1].slice(0, 400) } : { do: "wait", why: "The AI was slow; trying this step again" };
     const sys = notes.length ? `${sysBase}\nSERVER: your last choice was refused. ${notes[notes.length - 1]}` : sysBase;
-    const reply = await llmText({ messages: [{ role: "system", content: sys }, attempt === 0 ? user : plain], maxTokens: 2500, temperature: 0, timeoutMs: 20000, firstTokenMs: 10000, ...(vision && attempt === 0 ? { only: vision } : {}) });
+    const msg = attempt === 0 ? user : attempt === 1 ? plain : small;
+    const only = vision && attempt === 0 ? vision : attempt > 0 && fallbackModels().length ? fallbackModels() : undefined;
+    const reply = await llmText({ messages: [{ role: "system", content: sys }, msg], maxTokens: 2500, temperature: 0, timeoutMs: 20000, firstTokenMs: 10000, ...(only ? { only } : {}) });
     const a = parseAction(reply);
-    if (a) {
-      if ((a.do === "click" || a.do === "fill" || a.do === "fill_secret" || a.do === "select" || a.do === "need_code" || a.do === "ready_to_pay" || a.do === "ready_to_confirm") && !snap.elements.some((e) => e.i === a.i)) continue;
-      if (a.do === "fill_secret" && !secrets.some((s) => s.id === a.secret_id)) {
-        const g = guard?.(a);
-        if (g && "retry" in g) { notes.push(g.retry); continue; }
-        return { do: "fail", reason: "Needed a login or card that isn't in the vault for this task" };
-      }
-      // Re-filling a login field that was already filled from the vault: the form is ready, so submit it.
-      if (a.do === "fill_secret" && /\bsign in\b/i.test(goal) && snap.elements.some((e) => e.type === "password")) {
-        const since = history.slice(history.map((h) => h.startsWith("click") || h.startsWith("press")).lastIndexOf(true) + 1);
-        if (since.some((h) => h.startsWith("fill_secret") && h.includes(` ${a.field}`)) && since.some((h) => h.startsWith("fill_secret") && h.includes(" password"))) { const s = pass(submitLogin(snap)); if (s) return s; continue; }
-      }
-      // "Signed in" while the login form is still on screen and was never submitted: submit it instead.
-      if (a.do === "done" && /\bsign in\b/i.test(goal) && snap.elements.some((e) => e.type === "password") && !history.some((h) => /^(click|press)/.test(h) && /log ?in|sign ?in|submit/i.test(h))) {
-        const s = pass(submitLogin(snap)); if (s) return s; continue;
-      }
-      const out = pass(secretSafe(a, snap, secrets));
-      if (out) return out;
+    if (!a) { why.push(!reply ? "no reply" : /"do"\s*:/.test(reply) ? "invalid action" : "no action in the reply"); continue; }
+    if ((a.do === "click" || a.do === "fill" || a.do === "fill_secret" || a.do === "select" || a.do === "need_code" || a.do === "ready_to_pay" || a.do === "ready_to_confirm") && !snap.elements.some((e) => e.i === a.i)) { why.push(`element ${a.i} is not on the page`); continue; }
+    if (a.do === "fill_secret" && !secrets.some((s) => s.id === a.secret_id)) {
+      const g = guard?.(a);
+      if (g && "retry" in g) { notes.push(g.retry); continue; }
+      return { do: "fail", reason: "Needed a login or card that isn't in the vault for this task" };
     }
+    // Re-filling a login field that was already filled from the vault: the form is ready, so submit it.
+    if (a.do === "fill_secret" && /\bsign in\b/i.test(goal) && snap.elements.some((e) => e.type === "password")) {
+      const since = history.slice(history.map((h) => h.startsWith("click") || h.startsWith("press")).lastIndexOf(true) + 1);
+      if (since.some((h) => h.startsWith("fill_secret") && h.includes(` ${a.field}`)) && since.some((h) => h.startsWith("fill_secret") && h.includes(" password"))) { const s = pass(submitLogin(snap)); if (s) return s; continue; }
+    }
+    // "Signed in" while the login form is still on screen and was never submitted: submit it instead.
+    if (a.do === "done" && /\bsign in\b/i.test(goal) && snap.elements.some((e) => e.type === "password") && !history.some((h) => /^(click|press)/.test(h) && /log ?in|sign ?in|submit/i.test(h))) {
+      const s = pass(submitLogin(snap)); if (s) return s; continue;
+    }
+    const out = pass(secretSafe(a, snap, secrets));
+    if (out) return out;
   }
   if (notes.length) return { do: "fail", reason: notes[notes.length - 1].slice(0, 400) };
-  return { do: "fail", reason: "The AI couldn't decide the next step on this page" };
+  // Nothing usable from three tries (and two models): ask for this step once more before giving up.
+  if (history.filter((h) => h.includes(NO_STEP_WAIT)).length < 2) return { do: "wait", why: NO_STEP_WAIT };
+  return { do: "fail", reason: `${NO_STEP} (${[...new Set(why)].join(", ") || "no answer"})`.slice(0, 400) };
 }
 
 /** Video: describe frames (vision model when configured) plus captions. */
