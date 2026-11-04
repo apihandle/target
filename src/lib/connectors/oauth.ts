@@ -71,7 +71,7 @@ export async function exchangeCode(c: ConnectorDef, env: Env, p: { code: string;
 export async function refreshCreds(c: ConnectorDef, env: Env, creds: Credentials, f: typeof fetch = fetch): Promise<Credentials> {
   const o = c.oauth;
   if (!o || !o.refreshable || !creds.refresh_token) throw new ConnectorError(`${c.name} access expired. Reconnect it.`, 401, "auth");
-  const j = await tokenRequest(o, env, { grant_type: "refresh_token", refresh_token: creds.refresh_token }, f);
+  const j = await tokenRequest(o.refreshUrl ? { ...o, tokenUrl: o.refreshUrl } : o, env, { grant_type: "refresh_token", refresh_token: creds.refresh_token }, f);
   return toCreds(o, j, creds);
 }
 

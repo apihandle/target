@@ -13,7 +13,8 @@ const NEEDS_WORK = new RegExp(
     "logo", "poster", "pdf", "csv", "excel", "sheet", "file", "page", "site", "website", "app", "video", "youtube", "reel", "transcript",
     // accounts and actions
     "log\\s*in", "login", "sign\\s*in", "signin", "sign\\s*up", "account", "password", "vault", "email", "mail", "gmail", "inbox", "calendar", "drive",
-    "doc", "docs", "github", "repos?", "branch\\w*", "merge", "pull\\s*request", "release\\w*", "collaborator\\w*", "workflow\\w*", "delete", "archive", "rename", "notion", "slack", "vercel", "supabase", "figma", "canva", "send", "bhej\\w*", "post", "tweet", "share", "book",
+    "doc", "docs", "github", "repos?", "branch\\w*", "merge", "pull\\s*request", "release\\w*", "collaborator\\w*", "workflow\\w*", "delete", "archive", "rename", "notion", "slack", "vercel", "supabase", "figma", "canva", "dm", "channel\\w*", "thread\\w*", "react\\w*", "comment\\w*", "status", "send", "bhej\\w*", "post", "tweet", "share", "book",
+    "sheets", "spreadsheets?", "contacts?", "meet", "meeting\\w*", "rsvp", "folders?", "labels?", "trash", "star", "starred", "unstar", "repl(?:y|ies)", "forward\\w*", "attach\\w*", "invite\\w*", "events?", "unread", "free\\s*time", "slots?",
     "order", "buy", "kharid\\w*", "checkout", "pay", "payment", "browser", "open", "khol\\w*", "click", "download", "upload",
     // app features
     "remind\\w*", "reminder", "yaad", "remember", "alarm", "task", "todo", "to-do", "schedule", "project", "panel", "memory", "note",

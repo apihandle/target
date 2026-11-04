@@ -64,6 +64,8 @@ export type TokenResult = { creds: Credentials; accountLabel: string; scopes: st
 export type OAuthConfig = {
   authorizeUrl: string;
   tokenUrl: string;
+  /** Separate refresh endpoint when the provider uses one (e.g. Figma's /v1/oauth/refresh). Defaults to tokenUrl. */
+  refreshUrl?: string;
   clientIdEnv: string;
   clientSecretEnv: string;
   /** How the client authenticates at the token endpoint. */
