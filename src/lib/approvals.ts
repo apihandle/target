@@ -9,8 +9,10 @@ export type Approval = {
   status: ApprovalStatus; project_id: string | null; conversation_id: string | null; task_id: string | null;
   decided_at: string | null; executed_at: string | null; result: Record<string, unknown> | null; error: string | null;
   created_at: string;
+  /** Approved automatically in task mode (shown as "Done automatically"). */
+  auto?: boolean;
 };
-export const APPROVAL_COLS = "id, action_type, summary, destination, payload, status, project_id, conversation_id, task_id, decided_by, decided_at, executed_at, result, error, created_at";
+export const APPROVAL_COLS = "id, action_type, summary, destination, payload, status, project_id, conversation_id, task_id, decided_by, decided_at, executed_at, result, error, created_at, auto";
 
 /** Mirrors the database trigger in migration 0006. */
 const TRANSITIONS: Record<ApprovalStatus, ApprovalStatus[]> = {

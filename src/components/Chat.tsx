@@ -38,10 +38,10 @@ type Props = {
   /** Task paused for a connection that the user has just connected: continue it once on open. */
   resumeTaskId?: string;
   /** Model picker options (server allow-list incl. "auto") and the user's remembered choice. */
-  models?: ModelChoice[]; initialModel?: string;
+  models?: ModelChoice[]; initialModel?: string; initialTaskMode?: boolean;
 };
 
-export default function Chat({ conversationId: initialId, initialMessages = [], projectId, projectName, aiConfigured = true, webAvailable = true, initialPrompt = "", autoSend = false, taskId, taskTitle, resumeTaskId, models = [], initialModel = "auto" }: Props) {
+export default function Chat({ conversationId: initialId, initialMessages = [], projectId, projectName, aiConfigured = true, webAvailable = true, initialPrompt = "", autoSend = false, taskId, taskTitle, resumeTaskId, models = [], initialModel = "auto", initialTaskMode = false }: Props) {
   const router = useRouter();
   const [conversationId, setConversationId] = useState<string | undefined>(initialId);
   const [messages, setMessages] = useState<UIMsg[]>(initialMessages);
@@ -52,6 +52,8 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
   const [web, setWeb] = useState(false);
   const [chips, setChips] = useState<Chip[]>([]);
   const [model, setModel] = useState(initialModel);
+  // Task mode (per chat, saved on the chat): actions run without approval cards, except payments and deletes.
+  const [taskMode, setTaskMode] = useState(initialTaskMode);
   const fileRef = useRef<HTMLInputElement>(null);
   const uploading = chips.some((c) => c.status === "uploading");
   const ready = chips.filter((c) => c.status === "ready" && c.id);
@@ -159,6 +161,17 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
     setChips((cs) => cs.filter((x) => x.key !== key));
   }
 
+  // Saved on the chat right away when it exists; a new chat gets it with its first message.
+  async function toggleTaskMode() {
+    const next = !taskMode;
+    setTaskMode(next);
+    if (!conversationId) return;
+    try {
+      const r = await fetch(`/api/conversations/${conversationId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task_mode: next }) });
+      if (!r.ok) setTaskMode(!next);
+    } catch { setTaskMode(!next); }
+  }
+
   async function send(textArg?: string, opts: { retry?: boolean; regenerate?: boolean; resumeTaskId?: string } = {}) {
     const text = (textArg ?? input).trim();
     const files = opts.retry ? [] : ready;
@@ -184,6 +197,7 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
           ...(files.length ? { attachmentIds: files.map((c) => c.id) } : {}),
           ...(models.length > 1 && model !== "auto" ? { model } : {}),
           ...(web ? { web: true } : {}),
+          ...(taskMode ? { taskMode: true } : {}),
           ...(opts.retry && conversationId ? { retry: true } : {}),
           ...(opts.regenerate && conversationId ? { regenerate: true } : {}),
           ...(opts.resumeTaskId ? { taskId: opts.resumeTaskId, resume: true } : sendTask ? { taskId } : {}),
@@ -196,6 +210,8 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
         throw new Error(j.error || `Request failed (${res.status})`);
       }
       newId = res.headers.get("X-Conversation-Id") ?? undefined;
+      const tm = res.headers.get("X-Task-Mode");
+      if (tm === "1" || tm === "0") setTaskMode(tm === "1");
       if (newId && newId !== conversationId) setConversationId(newId);
       const reader = res.body.getReader();
       const dec = new TextDecoder();
@@ -379,6 +395,16 @@ export default function Chat({ conversationId: initialId, initialMessages = [], 
             className={`h-8 rounded-full border px-3 text-xs font-semibold transition disabled:opacity-40 ${web ? "border-accent bg-accent-subtle text-accent-strong" : "border-line-strong bg-surface text-muted hover:text-ink"}`}
           >
             Web
+          </button>
+          <button
+            type="button"
+            data-testid="task-mode-toggle"
+            aria-pressed={taskMode}
+            title="Task mode: actions run without asking, except payments and deletes"
+            onClick={toggleTaskMode}
+            className={`h-8 rounded-full border px-3 text-xs font-semibold transition ${taskMode ? "border-accent bg-accent-subtle text-accent-strong" : "border-line-strong bg-surface text-muted hover:text-ink"}`}
+          >
+            Task mode
           </button>
           <TemplatesMenu current={input} disabled={!aiConfigured} onPick={(p) => { setInput(p); inputRef.current?.focus(); }} />
           <ModelPicker options={models} value={model} onChange={setModel} disabled={!aiConfigured || streaming} />

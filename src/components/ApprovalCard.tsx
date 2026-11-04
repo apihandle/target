@@ -73,6 +73,16 @@ export default function ApprovalCard({ id, initial, onChange }: { id: string; in
   if (!a) return <div data-testid="approval-loading" className="mt-3 h-24 animate-pulse rounded-xl border border-line bg-surface" aria-label="Loading approval request" />;
 
   const def = ACTION_DEFS[a.action_type];
+  // Task mode: approved in code, shown compact. A failure keeps the full card so it can be retried.
+  if (a.auto && a.status !== "failed") {
+    return (
+      <section data-testid="approval-auto" data-status={a.status} aria-label={`Done automatically: ${a.summary}`} className="not-prose mt-2 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-xs">
+        <span aria-hidden className={a.status === "executed" ? "text-ok" : "text-muted"}>{a.status === "executed" ? "✓" : "…"}</span>
+        <span className="font-medium text-ink">{a.status === "executed" ? "Done automatically" : "Running automatically"}</span>
+        <span className="min-w-0 flex-1 truncate text-muted">{a.summary}</span>
+      </section>
+    );
+  }
   const email = emailOf(a.payload);
   const preview = previewOf(a.payload);
   // Replies, forwards and drafts are emails too; their recipients and text come from the server-built preview.

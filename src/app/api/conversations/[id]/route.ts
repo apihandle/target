@@ -4,7 +4,7 @@ import { removeConversationFiles } from "@/lib/server/attachments";
 
 export const dynamic = "force-dynamic";
 
-/** Rename and/or pin a chat. Body: { title?: string, pinned?: boolean }. */
+/** Rename, pin, or switch task mode for a chat. Body: { title?: string, pinned?: boolean, task_mode?: boolean }. */
 export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const a = await requireUser();
@@ -13,7 +13,11 @@ export async function PATCH(req: Request, props: { params: Promise<{ id: string 
   const body = await readJson(req);
   if (!body) return badRequest("Bad JSON");
   const patch: Record<string, unknown> = {};
-  if (body.title !== undefined || body.pinned === undefined) {
+  if (body.task_mode !== undefined) {
+    if (typeof body.task_mode !== "boolean") return badRequest("task_mode must be true or false");
+    patch.task_mode = body.task_mode;
+  }
+  if (body.title !== undefined || (body.pinned === undefined && body.task_mode === undefined)) {
     const title = cleanText(body.title, 81);
     if (!title || title.length > 80) return badRequest("Title must be 1–80 characters");
     patch.title = title;
@@ -23,9 +27,9 @@ export async function PATCH(req: Request, props: { params: Promise<{ id: string 
     patch.pinned = body.pinned;
     patch.pinned_at = body.pinned ? new Date().toISOString() : null;
   }
-  const cols = patch.pinned !== undefined ? "id, title, pinned" : "id, title";
+  const cols = `id, title${patch.pinned !== undefined ? ", pinned" : ""}${patch.task_mode !== undefined ? ", task_mode" : ""}`;
   const { data, error } = await a.db.from("conversations").update(patch).eq("id", params.id).eq("user_id", a.user.id).select(cols);
-  if (error) return dbError(error, patch.pinned !== undefined ? "Could not pin chat" : "Could not rename chat");
+  if (error) return dbError(error, patch.task_mode !== undefined ? "Could not change task mode" : patch.pinned !== undefined ? "Could not pin chat" : "Could not rename chat");
   if (!data?.length) return notFound();
   return json({ conversation: data[0] });
 }

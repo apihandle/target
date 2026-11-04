@@ -15,6 +15,8 @@ import { loadSettings } from "@/lib/settings";
 import { tasksBlock, type TaskStatus } from "@/lib/tasks";
 import { parseProposal, ACTION_DEFS } from "@/lib/approvals";
 import { connectedProviders, proposeAction } from "@/lib/server/approvals";
+import { autoApprove, chatTaskMode, setChatTaskMode } from "@/lib/server/taskMode";
+import { TASK_MODE_PROMPT, taskModeCommand } from "@/lib/taskMode";
 import { logActivity } from "@/lib/server/activity";
 import type { Db } from "@/lib/server/auth";
 import type { LLMMessage } from "@/lib/llm";
@@ -45,7 +47,7 @@ export async function POST(req: Request) {
   const mark = (name: string) => { const now = Date.now(); marks.push(`${name};dur=${now - tMark}`); tMark = now; };
   const supabase = await createClient();
   const db = supabase as unknown as Db;
-  type Body = { conversationId?: unknown; projectId?: unknown; message?: unknown; web?: unknown; retry?: unknown; regenerate?: unknown; taskId?: unknown; resume?: unknown; attachmentIds?: unknown; model?: unknown };
+  type Body = { conversationId?: unknown; projectId?: unknown; message?: unknown; web?: unknown; retry?: unknown; regenerate?: unknown; taskId?: unknown; resume?: unknown; attachmentIds?: unknown; model?: unknown; taskMode?: unknown };
   const bodyP = req.json().then((b) => b as Body, () => null);
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Not signed in" }, { status: 401 });
@@ -101,6 +103,12 @@ export async function POST(req: Request) {
   }
   const convId = conversationId;
   const isNewChat = !body.conversationId;
+  // Task mode (per chat, persisted): the composer toggle, "/task ..." or "task mode on|off".
+  const tmCmd = taskModeCommand(text);
+  if (tmCmd) text = tmCmd.text;
+  let taskMode = isNewChat ? false : await chatTaskMode(db, user.id, convId);
+  const tmWant = tmCmd ? tmCmd.on : typeof body.taskMode === "boolean" ? body.taskMode : null;
+  if (tmWant !== null && tmWant !== taskMode) { await setChatTaskMode(db, user.id, convId, tmWant); taskMode = tmWant; }
   mark("chat");
 
   // A plain new message (no retry/regenerate) is saved while the history loads; its own row is dropped from it.
@@ -237,8 +245,8 @@ export async function POST(req: Request) {
   const lang: Lang | null = intent ? userLang(text, history.filter((m) => m.role === "user").map((m) => (typeof m.content === "string" ? m.content : ""))) : null;
   const signinNote = intent ? SIGNIN_PROMPT + ` The user wants to sign in to ${intent.site}${intent.google ? " with Google" : ""}.` : "";
   const system = quick
-    ? SYSTEM_PROMPT + QUICK_PROMPT + nowLine() + projectBlock(project) + memoryBlock(known) + memNote + webNote + files.block
-    : coreSystemPrompt(text) + signinNote + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + pageNote + files.block + connectorNote + resumeNote;
+    ? SYSTEM_PROMPT + QUICK_PROMPT + nowLine() + projectBlock(project) + memoryBlock(known) + memNote + webNote + files.block + (taskMode ? TASK_MODE_PROMPT : "")
+    : coreSystemPrompt(text) + signinNote + nowLine() + projectBlock(project) + taskNote + memoryBlock(known) + memNote + webNote + pageNote + files.block + connectorNote + resumeNote + (taskMode ? TASK_MODE_PROMPT : "");
   const messages: LLMMessage[] = [
     { role: "system", content: system },
     ...history,
@@ -288,6 +296,7 @@ export async function POST(req: Request) {
       let signinRan = false;
       const login: { v: { status: string; site: string; at: number; line: string } | null } = { v: null };
       const cards: Record<string, string>[] = [];
+      const autoCards: Record<string, string>[] = [];
       let interrupted = false;
       let paused = false;
       try {
@@ -340,7 +349,16 @@ export async function POST(req: Request) {
           onText: (d) => { full += d; send(d); },
           label: (call: ToolCall) => toolLabel(call.function.name),
           onTool: async (call: ToolCall) => {
-            const out = await executeToolCall(ctx, call.function.name, call.function.arguments, loaded);
+            const out0 = await executeToolCall(ctx, call.function.name, call.function.arguments, loaded);
+            // Task mode: the approval is made in code and the task carries on (payments and deletes still wait).
+            let out: ToolOutcome = out0;
+            if (taskMode && out0.kind === "approval") {
+              const r = await autoApprove(db, user.id, out0.approvalId);
+              if (r.auto) {
+                autoCards.push({ type: "approval", id: out0.approvalId });
+                out = { kind: "result", connector: out0.connector, tool: out0.tool, content: JSON.stringify({ status: r.ok ? "done_automatically" : "failed", task_mode: true, summary: out0.summary, ...(r.ok ? { result: r.result ?? {} } : { error: r.error }) }).slice(0, 8000) } as ToolOutcome;
+              }
+            }
             if (call.function.name === SITE_LOGIN) {
               signinRan = true; const c = cardFromToolOutput(out.content); if (c) cards.push(c);
               const tj = toolJson(out.content) ?? {};
@@ -367,8 +385,9 @@ export async function POST(req: Request) {
           const line = signinLine(out.content, intent.site, lang);
           if (line) { full += line; send(line); }
         }
+        if (autoCards.length) cards.push(...autoCards);
         if (cards.length) {
-          const block = "\n\n```actions\n" + JSON.stringify(cards.slice(0, 2)) + "\n```";
+          const block = "\n\n```actions\n" + JSON.stringify(cards.slice(0, 2 + autoCards.length)) + "\n```";
           full += block; send(block);
         }
         if (result.interrupted && !cancelled) { interrupted = true; send("\n\n[connection interrupted]"); }
@@ -402,7 +421,7 @@ export async function POST(req: Request) {
           const src = sourcesFence(found);
           full += src; send(src);
         }
-        if (!cancelled && full && !quick && text.length >= 12 && !/```actions?/i.test(full)) {
+        if (!cancelled && full && !quick && text.length >= 12 && (!/```actions?/i.test(full) || (taskMode && autoCards.length > 0 && !paused))) {
           try {
             const { actions, proposals } = await suggestActions(text, full);
             const extra: Action[] = [];
@@ -415,6 +434,7 @@ export async function POST(req: Request) {
                   continue;
                 }
                 const r = await proposeAction(db, user.id, pr.value, { projectId, conversationId: convId, connected });
+                if (r.ok && taskMode) await autoApprove(db, user.id, r.approval.id as string).catch(() => null);
                 extra.push(r.ok ? { type: "approval", id: r.approval.id as string } : { type: "unavailable", label: `Can't ${(ACTION_DEFS[pr.value.action]?.label ?? "do that").toLowerCase()}`, reason: r.reason });
               }
             }
@@ -457,7 +477,7 @@ export async function POST(req: Request) {
 
   return new Response(stream, {
     headers: {
-      "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Conversation-Id": convId,
+      "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Conversation-Id": convId, "X-Task-Mode": taskMode ? "1" : "0",
       // Where the time went before the first word: context gathering, then waiting for the model.
       "Server-Timing": marks.join(", "), "X-Target-Quick": quick ? "1" : "0",
     },

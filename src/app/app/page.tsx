@@ -18,10 +18,12 @@ export default async function ChatPage(
   let projectId: string | undefined;
   let projectName: string | undefined;
   let missing = false;
+  let taskMode = false;
   if (activeId) {
-    const { data: conv } = await supabase.from("conversations").select("id, project_id, projects(name)").eq("id", activeId).eq("user_id", user.id).maybeSingle();
+    const { data: conv } = await supabase.from("conversations").select("id, project_id, task_mode, projects(name)").eq("id", activeId).eq("user_id", user.id).maybeSingle();
     if (!conv) missing = true;
     else {
+      taskMode = !!(conv as { task_mode?: boolean }).task_mode;
       if (conv.project_id) {
         projectId = conv.project_id as string;
         const pj = conv.projects as unknown as { name: string } | { name: string }[] | null;
@@ -66,7 +68,7 @@ export default async function ChatPage(
       ) : (
         <Chat key={activeId ?? `new-${projectId ?? ""}-${taskId ?? ""}`} conversationId={activeId} initialMessages={initial}
           projectId={projectId} projectName={projectName} aiConfigured={providers().length > 0 || custom.length > 0} webAvailable={!!process.env.TAVILY_API_KEY}
-          initialPrompt={prefill} autoSend={!activeId && searchParams.send === "1" && typeof searchParams.q === "string" && !!searchParams.q.trim()} taskId={taskId} taskTitle={taskTitle} models={models} initialModel={initialModel}
+          initialPrompt={prefill} autoSend={!activeId && searchParams.send === "1" && typeof searchParams.q === "string" && !!searchParams.q.trim()} taskId={taskId} taskTitle={taskTitle} models={models} initialModel={initialModel} initialTaskMode={taskMode}
           resumeTaskId={activeId && isUuid(searchParams.resume) ? searchParams.resume : undefined} />
       )}
     </AppShell>

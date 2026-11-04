@@ -37,6 +37,14 @@ Compute worker: `docs/COMPUTE-WORKER.md`. Setup for the owner: `SETUP-REMAINING.
 - Don't break sign-in, connectors, approvals, checkout/booking, or AI speed.
 - UI text is English; don't change the UI language. Chat replies follow the user's language (Hinglish when they write Hinglish).
 - Anything that sends, buys, books, deletes or posts goes through an approval card the user taps; the server enforces it.
+- **Task mode (owner decision, 2026-11-04):** approvals are skipped in Task mode by owner instruction. With Task mode on
+  in a chat (composer toggle, a message starting with `/task`, or "task mode on"; saved in `conversations.task_mode`),
+  approval cards are approved in code right away (`src/lib/server/taskMode.ts`), run through the normal execution gate,
+  shown as a compact "Done automatically" card and logged (`approval_requests.auto = true`, activity log). Two kinds
+  still always wait for the user's card, even in Task mode: **payments / any money spend** and **deletes** (every
+  delete / trash / drop / remove tool, destructive SQL). In Task mode the model doesn't ask clarifying questions: it
+  picks the most reasonable choice and says which in the result. The browser still pauses for a Cloudflare check it
+  can't pass (Take control). Never invent paid-survey / earn-task answers (unchanged). Migration 0018 (applied 2026-11-04).
 - Secrets in the DB: AES-256-GCM with `CONNECTOR_ENCRYPTION_KEY` (`src/lib/connectors/crypto.ts`), RLS on, column grants that hide ciphertext from browser roles, writes via the service role on the server only.
 - User-supplied URLs fetched by the server must be SSRF-guarded (`src/lib/server/safeFetch.ts` or `src/lib/urlReader.ts`).
 

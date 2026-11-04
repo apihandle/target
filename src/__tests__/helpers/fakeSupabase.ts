@@ -146,7 +146,7 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
           for (const k of ["user_id", "action_type", "payload", "summary", "destination"]) if (k in p && JSON.stringify(p[k]) !== JSON.stringify(r[k])) return { data: null, error: { message: "immutable" } };
           if (p.status && p.status !== r.status) {
             if (!canMoveApproval(r.status as ApprovalStatus, p.status as ApprovalStatus)) return { data: null, error: { message: `invalid transition ${r.status} -> ${p.status}` } };
-            if (["approved", "rejected", "cancelled"].includes(p.status as string)) { r.decided_by = this.db.uid; r.decided_at = new Date().toISOString(); }
+            if (["approved", "rejected", "cancelled"].includes(p.status as string)) { r.decided_by = this.db.uid ?? (p.status === "approved" && p.auto ? r.user_id : null); r.decided_at = new Date().toISOString(); }
           }
           const { decided_by: _a, decided_at: _b, ...rest } = p; void _a; void _b;
           Object.assign(r, rest);

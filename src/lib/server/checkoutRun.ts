@@ -107,6 +107,14 @@ export async function finishCheckout(
     }).select("id").single();
     if (!ap) { await post(db, job.user_id, job.conversation_id, checkoutPost(cur, false, "Couldn't prepare the approval card.")); return; }
     const block = `\`\`\`actions\n${JSON.stringify([{ type: "approval", id: ap.id }])}\n\`\`\``;
+    // Task mode: a booking without a charge is confirmed in code; payments still wait for the card.
+    if (booking && job.conversation_id) {
+      const { chatTaskMode, autoApprove } = await import("@/lib/server/taskMode");
+      if (await chatTaskMode(db, job.user_id, job.conversation_id).catch(() => false)) {
+        const r = await autoApprove(db, job.user_id, ap.id as string).catch(() => null);
+        if (r?.auto) { await post(db, job.user_id, job.conversation_id, `Task mode: confirming the booking automatically.\n\n${block}`); return; }
+      }
+    }
     await post(db, job.user_id, job.conversation_id, `${checkoutPost(cur, true, "")}\n\n${block}`);
     return;
   }
