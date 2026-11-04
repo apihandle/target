@@ -54,9 +54,10 @@ export default function ConnectorsGrid({ initial, focus, returnTo }: Props) {
     <div className="mt-6 divide-y divide-line overflow-hidden rounded-xl2 border border-line bg-surface shadow-card" data-testid="connectors-grid">
       {items.filter((c) => c.status !== "setup_required").map((c) => {
         const [label, tone] = STATUS[c.status];
-        const canConnect = c.status !== "setup_required" && c.status !== "connected";
+        const upgrade = c.status === "connected" && !!c.needsReconnect?.length && c.methods.oauth;
+        const canConnect = (c.status !== "setup_required" && c.status !== "connected") || upgrade;
         const isOpen = open === c.id && canConnect && !c.methods.oauth;
-        const connectLabel = c.status === "expired" || c.status === "revoked" ? "Reconnect" : "Connect";
+        const connectLabel = c.status === "expired" || c.status === "revoked" || upgrade ? "Reconnect" : "Connect";
         return (
           <article key={c.id} ref={c.id === focus ? (el) => { focusRef.current = el; } : undefined}
             data-testid="connector-card" data-id={c.id} data-status={c.status} aria-label={c.name}
@@ -94,6 +95,7 @@ export default function ConnectorsGrid({ initial, focus, returnTo }: Props) {
                 <a href={c.apiKey.helpUrl} target="_blank" rel="noopener noreferrer" data-testid="connector-help" className="mt-1 inline-block text-xs text-accent-strong underline">Create a token on {hostOf(c.apiKey.helpUrl)}</a>
               </form>
             )}
+            {upgrade && <p data-testid="connector-reconnect-note" className="mt-2 text-xs text-warn">Reconnect to grant new permissions: {c.needsReconnect!.join(", ")}. Until then, actions that need them ask you to reconnect.</p>}
             {errors[c.id] && <p role="alert" className="mt-2 text-xs text-danger">{errors[c.id]}</p>}
           </article>
         );

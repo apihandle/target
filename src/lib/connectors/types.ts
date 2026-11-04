@@ -25,8 +25,17 @@ export type ToolDef<S extends z.ZodTypeAny = z.ZodTypeAny> = {
   requiresApproval?: boolean | ((args: z.infer<S>) => boolean);
   /** One-line, server-built description shown on the approval card. */
   summarize?: (args: z.infer<S>) => string;
+  /**
+   * Runs with the user's token BEFORE an approval card is created (read-only calls only): looks up what the
+   * card must show (e.g. a repo's visibility before deleting it) and can refuse early (missing scope,
+   * not found). Its preview is stored with the approval and shown on the card; it never changes the args.
+   */
+  prepare?: (args: z.infer<S>, ctx: ToolContext) => Promise<ToolPreview>;
   execute: (args: z.infer<S>, ctx: ToolContext) => Promise<unknown>;
 };
+
+/** What an approval card shows for a prepared connector action, built by the server from provider data. */
+export type ToolPreview = { summary?: string; details?: Record<string, string>; warning?: string };
 
 /** Visible (non-secret) details of a stored connection. */
 export type ConnectionInfo = {
@@ -101,6 +110,11 @@ export type ConnectorDef = {
   auth: AuthType;
   /** Minimum scopes requested (oauth) or recommended token permissions (api_key). */
   scopes: string[];
+  /**
+   * Scopes added to `scopes` after people had already connected. A connection whose granted scopes lack one
+   * of these shows "Reconnect" on the Connectors page so the user can grant it.
+   */
+  addedScopes?: string[];
   /** Plain-English list of what the agent can do with it. */
   capabilities: string[];
   /** Plain-English explanation of the permissions, shown before connecting. */

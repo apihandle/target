@@ -371,7 +371,7 @@ describe("connector routes", () => {
     const start = await connectRoute.GET(new Request("http://t/api/connectors/github/connect?return=%2Fapp%3Fc%3D1"), { params: Promise.resolve({ id: "github" }) });
     const loc = new URL(start.headers.get("location")!);
     expect(loc.origin + loc.pathname).toBe("https://github.com/login/oauth/authorize");
-    expect(loc.searchParams.get("scope")).toBe("repo");
+    expect(loc.searchParams.get("scope")).toBe("repo delete_repo workflow");
     expect(loc.searchParams.get("redirect_uri")).toBe("http://t/api/connectors/github/callback");
     const state = loc.searchParams.get("state")!;
     expect(state.length).toBeGreaterThanOrEqual(40);

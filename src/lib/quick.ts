@@ -13,7 +13,7 @@ const NEEDS_WORK = new RegExp(
     "logo", "poster", "pdf", "csv", "excel", "sheet", "file", "page", "site", "website", "app", "video", "youtube", "reel", "transcript",
     // accounts and actions
     "log\\s*in", "login", "sign\\s*in", "signin", "sign\\s*up", "account", "password", "vault", "email", "mail", "gmail", "inbox", "calendar", "drive",
-    "doc", "docs", "github", "repo", "notion", "slack", "vercel", "supabase", "figma", "canva", "send", "bhej\\w*", "post", "tweet", "share", "book",
+    "doc", "docs", "github", "repos?", "branch\\w*", "merge", "pull\\s*request", "release\\w*", "collaborator\\w*", "workflow\\w*", "delete", "archive", "rename", "notion", "slack", "vercel", "supabase", "figma", "canva", "send", "bhej\\w*", "post", "tweet", "share", "book",
     "order", "buy", "kharid\\w*", "checkout", "pay", "payment", "browser", "open", "khol\\w*", "click", "download", "upload",
     // app features
     "remind\\w*", "reminder", "yaad", "remember", "alarm", "task", "todo", "to-do", "schedule", "project", "panel", "memory", "note",

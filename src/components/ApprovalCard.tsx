@@ -15,6 +15,18 @@ export function emailOf(payload: Record<string, unknown> | null | undefined): { 
   return { to: a.to, ...(typeof a.cc === "string" && a.cc.trim() ? { cc: a.cc } : {}), subject: a.subject, body: a.body };
 }
 
+/**
+ * A connector action the server looked up before asking (e.g. a repository about to be deleted): the card shows
+ * those server-built details and warning instead of the raw arguments.
+ */
+export function previewOf(payload: Record<string, unknown> | null | undefined): { rows: [string, string][]; warning?: string } | null {
+  const p = payload?.preview as { details?: Record<string, unknown>; warning?: unknown } | undefined;
+  if (!p || typeof p !== "object") return null;
+  const rows = Object.entries(p.details ?? {}).filter(([, v]) => typeof v === "string" && v).map(([k, v]) => [k, v as string] as [string, string]);
+  const warning = typeof p.warning === "string" && p.warning ? p.warning : undefined;
+  return rows.length || warning ? { rows, ...(warning ? { warning } : {}) } : null;
+}
+
 function fmt(k: string, v: unknown) {
   if ((k === "start" || k === "end") && typeof v === "string" && !isNaN(Date.parse(v)))
     return new Date(v).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) + " IST";
@@ -61,7 +73,11 @@ export default function ApprovalCard({ id, initial, onChange }: { id: string; in
 
   const def = ACTION_DEFS[a.action_type];
   const email = emailOf(a.payload);
-  const details = Object.entries(email ?? a.payload ?? {}).filter(([k, v]) => v !== "" && v != null && !HIDDEN.has(k));
+  const preview = email ? null : previewOf(a.payload);
+  const details: [string, unknown][] = preview
+    ? [["connector", a.payload.connector], ["tool", a.payload.tool], ...preview.rows]
+    : Object.entries(email ?? a.payload ?? {}).filter(([k, v]) => v !== "" && v != null && !HIDDEN.has(k));
+  const reconnect = a.status === "failed" && /^Reconnect /.test(a.error ?? "") && typeof a.payload?.connector === "string" ? `/app/connectors?connect=${encodeURIComponent(a.payload.connector)}` : null;
   const canDecide = a.status === "pending" || a.status === "failed";
   const link = typeof a.result?.link === "string" && /^https:\/\//.test(a.result.link) ? a.result.link : null;
 
@@ -79,15 +95,16 @@ export default function ApprovalCard({ id, initial, onChange }: { id: string; in
         <dt className="text-muted">Where</dt><dd className="text-ink-soft">{a.destination}</dd>
         {details.map(([k, v]) => (<Fragment key={k}><dt className="text-muted">{FIELD_LABEL[k] ?? k}</dt><dd className="whitespace-pre-wrap break-words text-ink-soft">{fmt(k, v)}</dd></Fragment>))}
       </dl>
+      {preview?.warning && a.status === "pending" && <p data-testid="approval-warning" role="note" className="mt-3 rounded-lg border border-danger/40 bg-danger-subtle px-3 py-2 text-xs font-medium text-danger">⚠ {preview.warning}</p>}
       {a.status === "pending" && <p className="mt-3 text-xs text-muted">{email ? "Nothing is sent until you approve. You can reject it instead." : "Nothing happens until you approve. You can reject it instead."}</p>}
       {a.status === "executed" && <p data-testid="approval-result" className="mt-3 text-xs text-ok">{email ? "Sent." : "Done."}{link && <> <a className="underline" href={link} target="_blank" rel="noopener noreferrer">Open it</a></>}</p>}
-      {a.status === "failed" && <p data-testid="approval-error" className="mt-3 text-xs text-danger">It failed: {a.error ?? "unknown error"}. You can approve it again to retry, or cancel.</p>}
+      {a.status === "failed" && <p data-testid="approval-error" className="mt-3 text-xs text-danger">It failed: {a.error ?? "unknown error"}. {reconnect ? <><a className="underline" href={reconnect} data-testid="approval-reconnect">Reconnect</a>, then approve again to retry, or cancel.</> : "You can approve it again to retry, or cancel."}</p>}
       {(a.status === "rejected" || a.status === "cancelled") && <p className="mt-3 text-xs text-muted">Nothing was done.</p>}
       {error && <p role="alert" className="mt-2 text-xs text-danger">{error}</p>}
       {canDecide && (
         <div className="mt-3 flex flex-wrap gap-2">
           <Button size="sm" variant="approve" data-testid="approve-btn" disabled={!!busy} onClick={() => decide("approve")}>
-            {busy === "approve" ? "Running…" : a.status === "failed" ? "Approve & retry" : a.action_type === "purchase" ? "Place order" : a.action_type === "reservation" ? "Confirm booking" : email ? "Approve & send" : "Approve"}
+            {busy === "approve" ? "Running…" : a.status === "failed" ? "Approve & retry" : a.action_type === "purchase" ? "Place order" : a.action_type === "reservation" ? "Confirm booking" : email ? "Approve & send" : a.payload?.tool === "delete_repo" ? "Approve & delete" : "Approve"}
           </Button>
           <Button size="sm" variant="secondary" data-testid="reject-btn" disabled={!!busy} onClick={() => decide("reject")}>
             {busy === "reject" ? "…" : a.status === "failed" ? "Cancel" : "Reject"}

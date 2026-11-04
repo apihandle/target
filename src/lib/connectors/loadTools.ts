@@ -5,9 +5,9 @@ import { CONNECTORS, getConnector, isConfigured } from "@/lib/connectors/registr
 import { getCredentials, NotConnectedError, PUBLIC_COLS, touchLastUsed } from "@/lib/connectors/store";
 import { checkLimit, LIMITS } from "@/lib/connectors/rateLimit";
 import { redact, safeJson, untrusted } from "@/lib/connectors/safety";
-import { ConnectorError } from "@/lib/connectors/http";
+import { ConnectorError, MissingScopeError } from "@/lib/connectors/http";
 import { logActivity } from "@/lib/server/activity";
-import type { ConnectionInfo, ConnectorDef, Env, ToolDef } from "@/lib/connectors/types";
+import type { ConnectionInfo, ConnectorDef, Env, ToolDef, ToolPreview } from "@/lib/connectors/types";
 import { BUILTIN_ID, BUILTIN_TOOLS, getBuiltin } from "@/lib/builtins/tools";
 
 /** Separator between connector id and tool name in the names the model sees. */
@@ -77,7 +77,11 @@ export function toolsPrompt(tools: LoadedTool[], connected: Set<string>): string
   return `\n\nCONNECTORS: ${names.length ? `The user has connected: ${names.join(", ")}. Use their tools when the request needs them.` : "The user hasn't connected any accounts."} ` +
     `If a request needs an account that isn't connected, call ${META_TOOL} instead of guessing or pretending. ` +
     "Some tools need the user's approval; when a tool returns approval_required, tell the user it is waiting for their approval and stop. " +
-    "Never claim an action happened unless a tool result says so.";
+    "APPROVAL-FIRST: when the user asks for something a connected tool can do, including destructive things (delete a repository, branch, file or release, merge, change visibility, remove a collaborator), call that tool. " +
+    "Never refuse, never say you don't have a tool for it when one is listed, and never tell the user to do it manually on the website: the app shows them an approval card with the exact details and nothing happens until they tap Approve. " +
+    "If a tool returns reconnect_required, tell the user in one line to reconnect that app (Connectors → Reconnect) to grant the missing permission, and that you'll continue after. " +
+    "Never claim an action happened unless a tool result says so." +
+    (connected.has("github") ? " GITHUB: you can list/read/create repos, files, branches, PRs, issues, releases, collaborators and Actions runs, rename, archive/unarchive, change visibility, update description/topics, merge PRs, close/reopen issues and PRs, trigger workflows and delete repositories (github__delete_repo takes several repos at once, so one approval card covers a bulk delete). If the user names repos loosely (\"sab purane repos\"), list them with github__list_repos first, then propose the exact list." : "");
 }
 
 export type ToolCtx = { db: Db; userId: string; projectId: string | null; conversationId: string | null; taskId: string | null; f?: typeof fetch; autoApproveBrowser?: boolean; /** The user's own recent messages (latest last), for tools that only run on an explicit ask. */ userTexts?: string[] };
@@ -133,7 +137,15 @@ export async function executeToolCall(ctx: ToolCtx, name: string, rawArgs: strin
 
   const needsApproval = typeof t.def.requiresApproval === "function" ? !!t.def.requiresApproval(parsed.data) : !!t.def.requiresApproval;
   if (needsApproval) {
-    const p = await proposeToolCall(ctx, c, t.def, args, t.connection.account_label);
+    // Look up what the card must show (read-only) and refuse early (missing scope, not found) before asking the user.
+    let preview: ToolPreview | undefined;
+    if (t.def.prepare) {
+      const prep = t.def.prepare;
+      const r = await withToken(ctx.userId, c, t.def, ctx.f, (tctx) => prep(parsed.data, tctx));
+      if (!r.ok) return r.outcome;
+      preview = r.value;
+    }
+    const p = await proposeToolCall(ctx, c, t.def, args, t.connection.account_label, preview);
     if (!p.ok) return { kind: "error", connector: c.id, tool: tname, content: err({ error: "approval_failed", message: p.reason }) };
     return { kind: "approval", connector: c.id, tool: tname, approvalId: p.id, summary: p.summary, content: err({ status: "approval_required", approval_id: p.id, message: "Waiting for the user to approve this action. Do not retry it." }) };
   }
@@ -163,36 +175,61 @@ async function runBuiltin(ctx: ToolCtx, tname: string, args: Record<string, unkn
   }
 }
 
-async function runTool(userId: string, c: ConnectorDef, def: ToolDef, args: unknown, f: typeof fetch = fetch): Promise<ToolOutcome> {
+/** The pause/error the model sees when a provider says the stored token lacks a permission. */
+function reconnectOutcome(c: ConnectorDef, tool: string, e: MissingScopeError): ToolOutcome {
+  return { kind: "needs_connection", connector: c.id, status: "missing_scope", reason: e.message,
+    content: err({ error: "reconnect_required", connector: c.id, tool, missing_scope: e.scope, reconnect_url: e.reconnectUrl, message: e.message }) };
+}
+
+/**
+ * Run fn with the user's decrypted token (refreshing once on a 401) and map failures to tool outcomes.
+ * The token never leaves this function except inside fn's ToolContext.
+ */
+async function withToken<T>(userId: string, c: ConnectorDef, def: ToolDef, f: typeof fetch = fetch, fn: (ctx: { token: string; fetch: typeof fetch; meta: Record<string, unknown> }) => Promise<T>):
+  Promise<{ ok: true; value: T; token: string } | { ok: false; outcome: ToolOutcome }> {
   let token = "";
   try {
     const { creds, info } = await getCredentials(userId, c, f);
     token = creds.access_token;
-    let out: unknown;
+    let out: T;
     try {
-      out = await def.execute(args as never, { token, fetch: f, meta: info.meta ?? {} });
+      out = await fn({ token, fetch: f, meta: info.meta ?? {} });
     } catch (e) {
       // The provider rejected a token we thought was valid (revoked early, clock skew): refresh once and retry.
       if (!(e instanceof ConnectorError && e.status === 401 && creds.refresh_token)) throw e;
       const fresh = await getCredentials(userId, c, f, { forceRefresh: true });
       token = fresh.creds.access_token;
-      out = await def.execute(args as never, { token, fetch: f, meta: fresh.info.meta ?? {} });
+      out = await fn({ token, fetch: f, meta: fresh.info.meta ?? {} });
     }
     await touchLastUsed(userId, c.id);
-    return { kind: "result", connector: c.id, tool: def.name, content: untrusted(c.id, def.name, safeJson(out, [token])) };
+    return { ok: true, value: out, token };
   } catch (e) {
-    if (e instanceof NotConnectedError) return { kind: "needs_connection", connector: c.id, status: e.status, content: err(notConnected(c.id, e.status)) };
+    if (e instanceof NotConnectedError) return { ok: false, outcome: { kind: "needs_connection", connector: c.id, status: e.status, content: err(notConnected(c.id, e.status)) } };
     await touchLastUsed(userId, c.id);
+    if (e instanceof MissingScopeError) return { ok: false, outcome: reconnectOutcome(c, def.name, e) };
     const message = e instanceof ConnectorError ? e.message : e instanceof z.ZodError ? "Invalid arguments" : "The tool failed";
     if (!(e instanceof ConnectorError)) console.error(`[connector] ${c.id}.${def.name} failed:`, redact(e instanceof Error ? e.message : String(e), [token]).slice(0, 300));
-    return { kind: "error", connector: c.id, tool: def.name, content: err({ error: "tool_failed", message: redact(message, [token]) }) };
+    return { ok: false, outcome: { kind: "error", connector: c.id, tool: def.name, content: err({ error: "tool_failed", message: redact(message, [token]) }) } };
   }
 }
 
+async function runTool(userId: string, c: ConnectorDef, def: ToolDef, args: unknown, f: typeof fetch = fetch): Promise<ToolOutcome> {
+  const r = await withToken(userId, c, def, f, (ctx) => def.execute(args as never, ctx));
+  if (!r.ok) return r.outcome;
+  return { kind: "result", connector: c.id, tool: def.name, content: untrusted(c.id, def.name, safeJson(r.value, [r.token])) };
+}
+
+/** Bound the server-built card text (it can quote provider data such as repo names). */
+function cleanPreview(p: ToolPreview): { details?: Record<string, string>; warning?: string } {
+  const details = p.details ? Object.fromEntries(Object.entries(p.details).slice(0, 12).map(([k, v]) => [k.slice(0, 40), String(v).slice(0, 2000)])) : undefined;
+  return { ...(details ? { details } : {}), ...(p.warning ? { warning: p.warning.slice(0, 600) } : {}) };
+}
+
 /** Record a pending approval (and put the task into waiting_approval). Nothing runs here. */
-async function proposeToolCall(ctx: ToolCtx, c: ConnectorDef, def: ToolDef, args: Record<string, unknown>, accountLabel: string): Promise<{ ok: true; id: string; summary: string } | { ok: false; reason: string }> {
+async function proposeToolCall(ctx: ToolCtx, c: ConnectorDef, def: ToolDef, args: Record<string, unknown>, accountLabel: string, preview?: ToolPreview): Promise<{ ok: true; id: string; summary: string } | { ok: false; reason: string }> {
   const parsed = def.input.safeParse(args);
-  const summary = ((parsed.success && def.summarize ? def.summarize(parsed.data) : `${c.name}: ${def.name.replace(/_/g, " ")}`) || c.name).slice(0, 300);
+  const summary = ((preview?.summary || (parsed.success && def.summarize ? def.summarize(parsed.data) : `${c.name}: ${def.name.replace(/_/g, " ")}`)) || c.name).slice(0, 300);
+  const card = preview && (preview.details || preview.warning) ? { preview: cleanPreview(preview) } : {};
   const destination = `${c.name}${accountLabel ? ` (${accountLabel})` : ""}`.slice(0, 300);
   let taskId = ctx.taskId;
   if (taskId) {
@@ -206,7 +243,7 @@ async function proposeToolCall(ctx: ToolCtx, c: ConnectorDef, def: ToolDef, args
   }
   const { data, error } = await ctx.db.from("approval_requests").insert({
     user_id: ctx.userId, action_type: "connector_tool", summary, destination,
-    payload: { connector: c.id, tool: def.name, args }, status: "pending",
+    payload: { connector: c.id, tool: def.name, args, ...card }, status: "pending",
     project_id: ctx.projectId, conversation_id: ctx.conversationId, task_id: taskId,
   }).select("id").single();
   if (error || !data) return { ok: false, reason: "Couldn't prepare that action for approval." };
@@ -230,7 +267,7 @@ export async function runApprovedTool(userId: string, payload: { connector?: unk
   const parsed = t.def.input.safeParse(payload.args ?? {});
   if (!parsed.success) throw new Error("The approved details are no longer valid.");
   const r = await runTool(userId, c, t.def, parsed.data, f);
-  if (r.kind === "needs_connection") throw new Error(`${c.name} needs to be reconnected.`);
+  if (r.kind === "needs_connection") throw new Error(r.status === "missing_scope" && r.reason ? r.reason : `${c.name} needs to be reconnected.`);
   if (r.kind !== "result") throw new Error(JSON.parse(r.content).message ?? "The action failed");
   // Strip the untrusted wrapper for storage; content is already redacted and size-capped.
   return { output: r.content.replace(/^<untrusted_data[^>]*>\n|\n<\/untrusted_data>$/g, "").slice(0, 4000) };

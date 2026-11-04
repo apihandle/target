@@ -50,7 +50,9 @@ export type UiStatus = "connected" | "expired" | "revoked" | "not_connected" | "
 export type ConnectorView = {
   id: string; name: string; icon: string; description: string; auth: ConnectorDef["auth"];
   scopes: string[]; capabilities: string[]; permissions: string[];
-  status: UiStatus; accountLabel?: string; connectedAt?: string; lastUsedAt?: string | null;
+  status: UiStatus; accountLabel?: string;
+  /** Scopes this connector now asks for that the user's connection didn't grant: show "Reconnect". */
+  needsReconnect?: string[]; connectedAt?: string; lastUsedAt?: string | null;
   missingEnv: string[]; methods: { oauth: boolean; apiKey: boolean };
   apiKey?: { label: string; placeholder?: string; helpUrl: string; helpText: string };
   tools: { name: string; description: string; requiresApproval: "always" | "sometimes" | "never" }[];
@@ -62,11 +64,12 @@ export function connectorViews(env: Env, connections: ConnectionInfo[]): Connect
     const conn = connections.find((x) => x.connector_id === c.id);
     const missing = missingEnv(c, env);
     const status: UiStatus = conn ? conn.status : missing.length ? "setup_required" : "not_connected";
+    const lacking = conn && conn.status === "connected" && conn.scopes.length ? (c.addedScopes ?? []).filter((s) => !conn.scopes.includes(s)) : [];
     const preview = c.getTools(conn ?? { connector_id: c.id, status: "connected", scopes: c.scopes, account_label: "" });
     return {
       id: c.id, name: c.name, icon: c.icon, description: c.description, auth: c.auth,
       scopes: c.scopes, capabilities: c.capabilities, permissions: c.permissions,
-      status, accountLabel: conn?.account_label || undefined, connectedAt: conn?.created_at, lastUsedAt: conn?.last_used_at ?? null,
+      status, accountLabel: conn?.account_label || undefined, ...(lacking.length ? { needsReconnect: lacking } : {}), connectedAt: conn?.created_at, lastUsedAt: conn?.last_used_at ?? null,
       missingEnv: missing, methods: connectMethods(c, env),
       apiKey: c.apiKey ? { label: c.apiKey.label, placeholder: c.apiKey.placeholder, helpUrl: c.apiKey.helpUrl, helpText: c.apiKey.helpText } : undefined,
       tools: preview.map((t) => ({ name: t.name, description: t.description, requiresApproval: t.requiresApproval === true ? "always" : typeof t.requiresApproval === "function" ? "sometimes" : "never" })),

@@ -41,10 +41,14 @@ A user connects their own external accounts once on **Connectors** (`/app/connec
 | Vercel | `create_deployment` | when `target = production` |
 | Vercel | `add_domain` | always (changes live routing) |
 | GitHub | `commit_files` | when the branch is main/master/production/prod/release |
+| GitHub | `put_file` | when the branch is main/master/production/prod/release or omitted (default branch) |
+| GitHub | `delete_repo`, `set_repo_visibility`, `delete_branch`, `merge_pull_request`, `delete_file`, `delete_release`, `add_collaborator`, `remove_collaborator`, `trigger_workflow` | always (card shows server-looked-up details, e.g. owner/name, private/public and a permanent-delete warning) |
+| GitHub | `archive_repo` | when archiving (unarchiving is direct) |
+| GitHub | `create_release` | unless it is a draft (publishing notifies watchers) |
 | Google | `calendar_create_event` | always (kept from the previous Calendar integration) |
 | Slack | `send_message` | always |
 
-No connector has a tool that deletes repositories or spends money. Gmail can create drafts, and `gmail_send` sends an email only after the user approves that exact email on its approval card (requiresApproval: the chat path can never run it; only the approval execution gate does).
+No connector spends money. Deleting a GitHub repository (`delete_repo`, one or several in a single card) only happens after the user approves that exact list on its approval card. Gmail can create drafts, and `gmail_send` sends an email only after the user approves that exact email on its approval card (requiresApproval: the chat path can never run it; only the approval execution gate does).
 
 ## Security model
 
@@ -82,8 +86,9 @@ Redirect URL pattern for every OAuth connector: **`https://<your-domain>/api/con
 ### GitHub
 
 - Create an **OAuth App**: https://github.com/settings/developers → OAuth Apps → New. Homepage `https://<your-domain>`, Authorization callback URL `https://<your-domain>/api/connectors/github/callback`. Set `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET`.
-- Scope `repo` (no narrower OAuth scope allows writing private repos). Docs: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps. Disconnect revokes via `DELETE /applications/{client_id}/grant` (https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-authorization).
-- Tools: list repos, read file, create repo, create branch, commit files (Git Data API, one commit), open PR (draft). TODO: files > 1 MB; a GitHub App for fine-grained access.
+- OAuth App (not a GitHub App). Scopes requested: `repo delete_repo workflow`. `repo` covers code, issues, PRs, releases, collaborators, settings and Actions runs (no narrower OAuth scope allows writing private repos); `delete_repo` is required to delete repositories (`repo` does not include it); `workflow` is required to create/edit files under `.github/workflows`. Docs: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps. Disconnect revokes via `DELETE /applications/{client_id}/grant` (https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-authorization). Nothing to toggle in the OAuth App settings: OAuth App scopes are requested at authorize time.
+- `delete_repo` and `workflow` were added on 2026-11-04 (`addedScopes`). Connections made before that keep their old token: the Connectors page shows **Reconnect** on GitHub with the missing scopes, and a tool call GitHub refuses for a missing scope (detected from `x-oauth-scopes` / `x-accepted-oauth-scopes` or GitHub's "without `workflow` scope" message) returns `reconnect_required` with `reconnect_url: /app/connectors?connect=github`; the chat shows a Reconnect card and resumes the task after reconnecting. `delete_repo` checks the scope before creating the approval card, so the user isn't asked to approve something that would fail.
+- Tools: list_repos, get_repo, create_repo (user or org), delete_repo (one or many), archive_repo / unarchive, rename_repo, set_repo_visibility, update_repo (description, homepage, topics), read_file, put_file (create/update), delete_file, commit_files (Git Data API, one commit), list_branches, create_branch, delete_branch, list_pull_requests, open_pull_request (draft), merge_pull_request, list_issues, set_issue_state (close/reopen issues and PRs), list_releases, create_release, delete_release (optionally its tag), list_collaborators, add_collaborator, remove_collaborator, list_workflows, list_workflow_runs, trigger_workflow. TODO: files > 1 MB; a GitHub App for fine-grained access.
 
 ### Google (Gmail, Calendar, Drive)
 

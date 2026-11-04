@@ -342,7 +342,8 @@ export async function POST(req: Request) {
           paused = true;
           const c = getConnector(result.pause.connector);
           const name = c?.name ?? result.pause.connector;
-          const why = result.pause.status === "expired" ? `Your ${name} connection has expired.` : `To do this I need access to your ${name} account.`;
+          const scopeGap = result.pause.status === "missing_scope";
+          const why = result.pause.status === "expired" ? `Your ${name} connection has expired.` : scopeGap ? `Reconnect ${name} to allow this: your connection is missing a permission that was added later.` : `To do this I need access to your ${name} account.`;
           let taskId = task?.id ?? null;
           const patch = { status: "needs_connection", needs_connector: result.pause.connector, conversation_id: convId, progress: `Waiting for you to connect ${name}.`, updated_at: new Date().toISOString() };
           if (taskId) await supabase.from("tasks").update(patch).eq("id", taskId).eq("user_id", user.id);
@@ -351,7 +352,7 @@ export async function POST(req: Request) {
             taskId = (t?.id as string) ?? null;
           }
           await logActivity(db, user.id, { category: "task", title: `Paused: needs ${name}`, detail: "Connect it to let TARGET continue.", status: "needs_connection", task_id: taskId, project_id: projectId });
-          const block = `\n\n${why} ${result.pause.status === "expired" ? "Reconnect it" : "Connect it"} below and I'll pick up where I left off.\n\n\`\`\`actions\n${JSON.stringify([{ type: "connect", connector: result.pause.connector, ...(taskId ? { taskId } : {}) }])}\n\`\`\``;
+          const block = `\n\n${why} ${result.pause.status === "expired" || scopeGap ? "Reconnect it" : "Connect it"} below and I'll pick up where I left off.\n\n\`\`\`actions\n${JSON.stringify([{ type: "connect", connector: result.pause.connector, ...(taskId ? { taskId } : {}) }])}\n\`\`\``;
           full += block; send(block);
         } else if (result.pause?.kind === "approval") {
           paused = true;

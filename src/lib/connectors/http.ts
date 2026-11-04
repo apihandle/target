@@ -7,6 +7,20 @@ export class ConnectorError extends Error {
   }
 }
 
+/** Where the user reconnects a connector (the Connectors page focuses that card). */
+export const reconnectPath = (connectorId: string) => `/app/connectors?connect=${encodeURIComponent(connectorId)}`;
+
+/**
+ * The provider refused because the stored token lacks a permission (e.g. GitHub's delete_repo scope, added after
+ * the user connected). Becomes a "Reconnect <app> to allow this" pause instead of a generic error.
+ */
+export class MissingScopeError extends ConnectorError {
+  constructor(public connector: string, public connectorName: string, public scope: string) {
+    super(`Reconnect ${connectorName} to allow this. TARGET's ${connectorName} access is missing the "${scope}" permission, which was added after you connected. Open Connectors (${reconnectPath(connector)}), tap Reconnect on ${connectorName} and approve the new permission; then ask again.`, 403, "auth");
+  }
+  get reconnectUrl() { return reconnectPath(this.connector); }
+}
+
 type Opts = Omit<RequestInit, "body"> & { body?: unknown; f?: typeof fetch; timeoutMs?: number; raw?: boolean };
 
 /**
