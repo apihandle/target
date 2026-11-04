@@ -1,6 +1,6 @@
 import { getConnector } from "@/lib/connectors/registry";
 import { getCredentials } from "@/lib/connectors/store";
-import { SCOPES, extractVerification } from "@/lib/connectors/google";
+import { canReadGmail, extractVerification } from "@/lib/connectors/google";
 
 /**
  * Read a sign-in code from the user's connected Gmail for a browser sign-in job. Only the code is
@@ -26,7 +26,7 @@ async function gmailVerification(userId: string, site: string, sinceMs: number, 
   let token = "";
   try {
     const { creds, info } = await getCredentials(userId, google, f);
-    if (!(info.scopes ?? []).includes(SCOPES.gmailRead)) return "unavailable";
+    if (!canReadGmail(info.scopes ?? [])) return "unavailable";
     token = creds.access_token;
   } catch { return "unavailable"; }
   const auth = { Authorization: `Bearer ${token}` };

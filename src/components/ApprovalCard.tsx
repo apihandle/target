@@ -4,15 +4,16 @@ import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { ACTION_DEFS, STATUS_TEXT, type Approval } from "@/lib/approvals";
 
-const FIELD_LABEL: Record<string, string> = { connector: "App", tool: "Action", args: "Details", title: "Title", notes: "Notes", name: "Name", description: "Purpose", start: "Starts", end: "Ends", location: "Location", details: "Details", items: "Items", total: "Total", payment: "Pay with", deliver_to: "Deliver to", to: "To", cc: "Cc", subject: "Subject", body: "Message", flow: "Action", site: "Website", email: "Email", what: "Booking", when: "When", price: "Price" };
+const FIELD_LABEL: Record<string, string> = { connector: "App", tool: "Action", args: "Details", title: "Title", notes: "Notes", name: "Name", description: "Purpose", start: "Starts", end: "Ends", location: "Location", details: "Details", items: "Items", total: "Total", payment: "Pay with", deliver_to: "Deliver to", to: "To", cc: "Cc", bcc: "Bcc", subject: "Subject", body: "Message", flow: "Action", site: "Website", email: "Email", what: "Booking", when: "When", price: "Price" };
 const HIDDEN = new Set(["browser_job_id"]);
+const MAIL_TOOLS = new Set(["gmail_send", "gmail_reply", "gmail_reply_all", "gmail_forward", "gmail_send_draft"]);
 
 /** An email waiting to be sent: the card shows the exact recipients, subject and text instead of raw JSON. */
-export function emailOf(payload: Record<string, unknown> | null | undefined): { to: string; cc?: string; subject: string; body: string } | null {
+export function emailOf(payload: Record<string, unknown> | null | undefined): { to: string; cc?: string; bcc?: string; subject: string; body: string } | null {
   if (!payload || payload.connector !== "google" || payload.tool !== "gmail_send") return null;
   const a = payload.args as Record<string, unknown> | undefined;
   if (!a || typeof a.to !== "string" || typeof a.subject !== "string" || typeof a.body !== "string") return null;
-  return { to: a.to, ...(typeof a.cc === "string" && a.cc.trim() ? { cc: a.cc } : {}), subject: a.subject, body: a.body };
+  return { to: a.to, ...(typeof a.cc === "string" && a.cc.trim() ? { cc: a.cc } : {}), ...(typeof a.bcc === "string" && a.bcc.trim() ? { bcc: a.bcc } : {}), subject: a.subject, body: a.body };
 }
 
 /**
@@ -73,10 +74,14 @@ export default function ApprovalCard({ id, initial, onChange }: { id: string; in
 
   const def = ACTION_DEFS[a.action_type];
   const email = emailOf(a.payload);
-  const preview = email ? null : previewOf(a.payload);
-  const details: [string, unknown][] = preview
-    ? [["connector", a.payload.connector], ["tool", a.payload.tool], ...preview.rows]
-    : Object.entries(email ?? a.payload ?? {}).filter(([k, v]) => v !== "" && v != null && !HIDDEN.has(k));
+  const preview = previewOf(a.payload);
+  // Replies, forwards and drafts are emails too; their recipients and text come from the server-built preview.
+  const sendsMail = !!email || (a.payload?.connector === "google" && MAIL_TOOLS.has(String(a.payload?.tool)));
+  const details: [string, unknown][] = email
+    ? [...Object.entries(email), ...(preview?.rows ?? []).filter(([k]) => !(k in email))]
+    : preview
+      ? [["connector", a.payload.connector], ["tool", a.payload.tool], ...preview.rows]
+      : Object.entries(a.payload ?? {}).filter(([k, v]) => v !== "" && v != null && !HIDDEN.has(k));
   const reconnect = a.status === "failed" && /^Reconnect /.test(a.error ?? "") && typeof a.payload?.connector === "string" ? `/app/connectors?connect=${encodeURIComponent(a.payload.connector)}` : null;
   const canDecide = a.status === "pending" || a.status === "failed";
   const link = typeof a.result?.link === "string" && /^https:\/\//.test(a.result.link) ? a.result.link : null;
@@ -86,7 +91,7 @@ export default function ApprovalCard({ id, initial, onChange }: { id: string; in
       className="not-prose mt-3 rounded-xl border border-warn/30 bg-surface p-4 text-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">{email ? "Send an email" : def?.label ?? a.action_type}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">{sendsMail ? "Send an email" : def?.label ?? a.action_type}</p>
           <p className="mt-0.5 font-medium text-ink">{a.summary}</p>
         </div>
         <StatusBadge status={a.status} label={STATUS_TEXT[a.status]} />
@@ -96,8 +101,8 @@ export default function ApprovalCard({ id, initial, onChange }: { id: string; in
         {details.map(([k, v]) => (<Fragment key={k}><dt className="text-muted">{FIELD_LABEL[k] ?? k}</dt><dd className="whitespace-pre-wrap break-words text-ink-soft">{fmt(k, v)}</dd></Fragment>))}
       </dl>
       {preview?.warning && a.status === "pending" && <p data-testid="approval-warning" role="note" className="mt-3 rounded-lg border border-danger/40 bg-danger-subtle px-3 py-2 text-xs font-medium text-danger">⚠ {preview.warning}</p>}
-      {a.status === "pending" && <p className="mt-3 text-xs text-muted">{email ? "Nothing is sent until you approve. You can reject it instead." : "Nothing happens until you approve. You can reject it instead."}</p>}
-      {a.status === "executed" && <p data-testid="approval-result" className="mt-3 text-xs text-ok">{email ? "Sent." : "Done."}{link && <> <a className="underline" href={link} target="_blank" rel="noopener noreferrer">Open it</a></>}</p>}
+      {a.status === "pending" && <p className="mt-3 text-xs text-muted">{sendsMail ? "Nothing is sent until you approve. You can reject it instead." : "Nothing happens until you approve. You can reject it instead."}</p>}
+      {a.status === "executed" && <p data-testid="approval-result" className="mt-3 text-xs text-ok">{sendsMail ? "Sent." : "Done."}{link && <> <a className="underline" href={link} target="_blank" rel="noopener noreferrer">Open it</a></>}</p>}
       {a.status === "failed" && <p data-testid="approval-error" className="mt-3 text-xs text-danger">It failed: {a.error ?? "unknown error"}. {reconnect ? <><a className="underline" href={reconnect} data-testid="approval-reconnect">Reconnect</a>, then approve again to retry, or cancel.</> : "You can approve it again to retry, or cancel."}</p>}
       {(a.status === "rejected" || a.status === "cancelled") && <p className="mt-3 text-xs text-muted">Nothing was done.</p>}
       {error && <p role="alert" className="mt-2 text-xs text-danger">{error}</p>}

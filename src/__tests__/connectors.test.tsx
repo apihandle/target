@@ -178,10 +178,12 @@ describe("loadToolsForUser", () => {
     expect(specs).toContain(META_TOOL);
     expect(specs.some((n) => n.startsWith("vercel__") || n.startsWith("figma__"))).toBe(false);
   });
-  it("offers no tools when the server isn't configured, and Google tools only for granted scopes", async () => {
+  it("offers no tools when the server isn't configured; Google tools outside the granted scopes ask to reconnect", async () => {
     h.db.tables.connections = [conn(A, "google", { scopes: ["https://www.googleapis.com/auth/calendar.events"] })];
     const { tools } = await loadToolsForUser(A, h.db as unknown as Db);
-    expect(tools.map((t) => t.def.name).sort()).toEqual(["calendar_create_event", "calendar_list_events"]);
+    const names = tools.map((t) => t.def.name);
+    expect(names).toEqual(expect.arrayContaining(["calendar_create_event", "calendar_list_events", "gmail_search"]));
+    await expect(tools.find((t) => t.def.name === "gmail_search")!.def.execute({} as never, { token: "t", fetch, meta: {} })).rejects.toThrow(/Reconnect Google/);
     const noEnv = await loadToolsForUser(A, h.db as unknown as Db, {});
     expect(noEnv.tools).toEqual([]);
   });

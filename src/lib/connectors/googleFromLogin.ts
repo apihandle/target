@@ -1,4 +1,4 @@
-import { SCOPES } from "@/lib/connectors/google";
+import { SCOPES, LEGACY_SCOPES } from "@/lib/connectors/google/shared";
 import type { Credentials } from "@/lib/connectors/types";
 
 
@@ -20,7 +20,7 @@ export async function connectionFromLogin(
   if (!r.ok) return null;
   const info = (await r.json()) as Info;
   const scopes = String(info.scope ?? "").split(/\s+/).filter(Boolean);
-  const useful = Object.values(SCOPES);
+  const useful = [...Object.values(SCOPES), ...Object.values(LEGACY_SCOPES)];
   if (!scopes.some((s) => useful.includes(s))) return null;
   const ttl = Number(info.expires_in ?? 3500);
   const creds: Credentials = {

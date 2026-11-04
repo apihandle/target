@@ -12,7 +12,7 @@ describe("Google sign-in on TARGET's own domain", () => {
     expect(u.searchParams.get("redirect_uri")).toBe("https://gettarget.vercel.app/api/connectors/google/callback");
     expect(u.searchParams.get("state")).toBe("login." + cookie.state);
     expect(u.searchParams.get("scope")).toContain("openid");
-    expect(u.searchParams.get("scope")).toContain("gmail.readonly");
+    expect(u.searchParams.get("scope")).toContain("gmail.modify");
     expect(u.toString()).not.toContain("supabase");
   });
 
