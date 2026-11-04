@@ -89,8 +89,10 @@ export async function runScheduledJob(db: Db, job: ScheduledJob & { user_id: str
 
     let full = "";
     const result = await runAgent({
-      messages, first, maxRounds: 3,
+      messages, first, maxRounds: 5, deadline: opts.deadline - 40000,
       next: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 25000, tools, prefer, custom }),
+      // Out of rounds or time: answer from what the tools returned instead of stopping mid-task.
+      final: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 25000, prefer, custom }),
       onText: (d) => { full += d; },
       label: (call: ToolCall) => call.function.name.replace("__", " · ").replace(/_/g, " "),
       onTool: (call: ToolCall) => executeToolCall({ db, userId: uid, projectId, conversationId: convId, taskId, autoApproveBrowser: job.allow_browser === true }, call.function.name, call.function.arguments, loaded),

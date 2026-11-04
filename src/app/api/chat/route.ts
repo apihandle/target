@@ -318,7 +318,9 @@ export async function POST(req: Request) {
               messages: msgs, first: upstream, next: () => Promise.reject(new Error("no tools")), maxRounds: 1,
               onText: (d) => { buf += d; }, onTool: async (): Promise<ToolOutcome> => ({ kind: "error", content: "No tools on this step." }), cancelled: () => cancelled,
             });
-            if (buf.trim() && (status === "signed_in" || !claimsSignedIn(buf))) {
+            // Some models print a tool call as text ({"tool": "target__site_login", ...}); that is not a reply.
+            const toolish = /^\s*[[{]/.test(buf) && /"(tool|name|arguments|function)"\s*:/.test(buf);
+            if (buf.trim() && !toolish && (status === "signed_in" || !claimsSignedIn(buf))) {
               const t = head ? `\n\n${buf.trim()}` : buf;
               full += t; send(t);
               return { ...r, text: t, hitLimit: false };
@@ -331,6 +333,10 @@ export async function POST(req: Request) {
         })() : await runAgent({
           messages, first: upstream as Response,
           next: (msgs) => llm({ ...callOpts, messages: msgs, tools: toolSpecs.length ? toolSpecs : undefined }),
+          // Long multi-step tasks: no new tool round after ~3 minutes, then one answer from what was gathered,
+          // so the reply finishes inside the 300 s function limit instead of stopping at a step limit.
+          deadline: t0 + 180000,
+          final: (msgs) => llm({ ...callOpts, messages: msgs }),
           onText: (d) => { full += d; send(d); },
           label: (call: ToolCall) => toolLabel(call.function.name),
           onTool: async (call: ToolCall) => {

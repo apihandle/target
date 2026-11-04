@@ -2,7 +2,7 @@ import { z } from "zod";
 import { kickCloudWorker } from "@/lib/server/kickWorker";
 import { SITE } from "@/lib/builtins/helpers";
 import { normalizeSite } from "@/lib/sessions";
-import { googleLogin, matchLogin, signinFailure, signinGoal, type VaultLoginRow } from "@/lib/signin";
+import { googleLogin, matchLogin, scrubCredentials, signinFailure, signinGoal, type VaultLoginRow } from "@/lib/signin";
 import { isLang, type Lang } from "@/lib/lang";
 import { NOT_SIGNED_IN, resultSaysFailed } from "@/lib/loginCheck";
 import type { BuiltinCtx, BuiltinTool } from "@/lib/builtins/tools";
@@ -55,7 +55,7 @@ export const siteLoginTool: BuiltinTool = {
     }
     // With only a Google login saved, the browser tries the site's Google button with it.
     const ids = [own?.id, g?.id].filter((x): x is string => !!x);
-    const goal = signinGoal(site, { siteLogin: own?.id ?? null, googleLogin: g?.id ?? null, check: a.check, lang });
+    const goal = signinGoal(site, { siteLogin: own?.id ?? null, googleLogin: g?.id ?? null, check: a.check ? scrubCredentials(a.check) : undefined, lang });
     const { data: job, error } = await ctx.db.from("browser_jobs").insert({
       user_id: ctx.userId, goal: `Sign in to ${site}`.slice(0, 500), start_url: `https://${site}/`, steps: [], mode: "auto", max_steps: 40,
       allowed_secrets: ids, inputs: { signin: { site, via: own ? "password" : "google", goal, ...(lang ? { lang } : {}) } }, status: "queued", conversation_id: ctx.conversationId,

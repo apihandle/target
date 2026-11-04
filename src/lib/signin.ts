@@ -40,6 +40,20 @@ export function matchLogin(items: VaultLoginRow[], site: string): VaultLoginRow 
 export const googleLogin = (items: VaultLoginRow[]) =>
   items.filter((i) => i.kind === "login").find((i) => isGoogleSite(i.site) || isGoogleSite(i.label) || /^google\b/i.test(i.label)) ?? null;
 
+/**
+ * The user's words with any login they typed into the chat taken out ("log in with tomsmith / SuperSecretPassword!",
+ * "password: hunter2"). The browser fills the login from the vault; a typed password must never reach the browser
+ * model's goal, its step notes or the job log.
+ */
+export function scrubCredentials(text: string): string {
+  return (text ?? "")
+    .replace(/\b(with|using|as|se)\s+\S+\s*\/\s*\S+/gi, "$1 the saved login")
+    .replace(/(^|\s)[^\s/]+\s+\/\s+\S+/g, "$1[login hidden]")
+    .replace(/(^|\s)[^\s./]+\/\S+(?=\s+(se|ke saath|login)\b)/gi, "$1[login hidden]")
+    .replace(/\b(password|passwd|pass|pwd|pw|otp|pin)\b(\s*(is|=|:|-)?\s*)\S+/gi, "$1 [hidden]")
+    .replace(/\b(username|user ?name|user|login id|email)\b\s*(is|=|:)\s*\S+/gi, "$1 [from the vault]");
+}
+
 /** The goal handed to the smart browser for a sign-in job. */
 export function signinGoal(site: string, opts: { siteLogin?: string | null; googleLogin?: string | null; check?: string; lang?: Lang | null }): string {
   const how = opts.siteLogin
@@ -54,7 +68,7 @@ export function signinGoal(site: string, opts: { siteLogin?: string | null; goog
     "If the page asks for a one-time code sent by email/SMS, use need_code on the code box.",
     "If Google shows a captcha, 'Couldn't sign you in', 'This browser or app may not be secure' or blocks the sign-in, use fail with a reason starting GOOGLE_BLOCKED.",
     "If the site says the username or password is wrong, use fail with a reason starting WRONG_LOGIN.",
-    `When signed in, use done and report what the page shows (account name, balance, dashboard headings, key numbers)${opts.check ? ` and ${opts.check}` : ""}. Do not change any settings.`,
+    `When signed in, use done and report what the page shows (account name, balance, dashboard headings, key numbers)${opts.check ? ` and answer the user's ask: "${scrubCredentials(opts.check)}"` : ""}. Use the saved login only; once the page shows you are signed in, do not log out or sign in again. Do not change any settings.`,
   ].join(" ").slice(0, 1400);
   return lang ? `${main} ${lang}` : main;
 }

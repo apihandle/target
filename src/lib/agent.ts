@@ -9,8 +9,11 @@ import type { ToolOutcome } from "@/lib/connectors/loadTools";
  */
 export type ToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
 
-export const MAX_ROUNDS = 5;
-export const MAX_CALLS_PER_ROUND = 4;
+export const MAX_ROUNDS = 8;
+export const MAX_CALLS_PER_ROUND = 6;
+
+/** Said to the model when the tool rounds or the time budget run out: answer from what was gathered. */
+export const WRAP_UP = "STOP calling tools now. Using only the tool results above, give the user the complete answer to their request in their language (tables, lists, summaries as they asked). If some part could not be done, say exactly which part and why in one line. Do not mention step limits.";
 
 /** Parse an SSE buffer: text deltas plus incremental tool_call fragments merged into `acc` by index. */
 export function parseSSEWithTools(buffer: string, acc: Map<number, ToolCall>): { deltas: string[]; rest: string } {
@@ -61,7 +64,55 @@ type Opts = {
   label?: (call: ToolCall) => string;
   cancelled: () => boolean;
   maxRounds?: number;
+  /** Stop starting new tool rounds after this time (ms epoch) and wrap up, so the reply lands inside the function limit. */
+  deadline?: number;
+  /**
+   * One last request WITHOUT tools when the rounds or the time run out, so a multi-step task ends in an answer built
+   * from what was gathered instead of "I stopped after several tool steps".
+   */
+  final?: (messages: LLMMessage[]) => Promise<Response>;
 };
+
+/**
+ * The conversation with tool calls and results turned into plain turns, for a request sent without tools
+ * (several providers refuse tool messages when no tools are offered).
+ */
+export function flattenTools(messages: LLMMessage[]): LLMMessage[] {
+  const names = new Map<string, string>();
+  const out: LLMMessage[] = [];
+  for (const m of messages) {
+    if (m.role === "assistant" && "tool_calls" in m && m.tool_calls?.length) {
+      for (const c of m.tool_calls) names.set(c.id, c.function.name);
+      out.push({ role: "assistant", content: `${m.content ? `${m.content}\n` : ""}(Used tools: ${m.tool_calls.map((c) => c.function.name.split("__").pop()).join(", ")})` });
+    } else if (m.role === "tool") {
+      const id = "tool_call_id" in m ? m.tool_call_id ?? "" : "";
+      out.push({ role: "user", content: `Tool result (${(names.get(id) ?? "tool").split("__").pop()}):\n${String(m.content ?? "").slice(0, 12000)}` });
+    } else out.push(m);
+  }
+  return out;
+}
+
+/** Stream a plain text response (no tool calls expected) into the reply. */
+async function streamText(res: Response, o: Opts): Promise<string> {
+  const reader = res.body!.getReader();
+  const dec = new TextDecoder();
+  const acc = new Map<number, ToolCall>();
+  let buf = "", text = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done || o.cancelled()) break;
+      buf += dec.decode(value, { stream: true });
+      const { deltas, rest } = parseSSEWithTools(buf, acc);
+      buf = rest;
+      for (const d of deltas) { text += d; o.onText(d); }
+    }
+    if (buf.trim()) { const { deltas } = parseSSEWithTools(buf + "\n", acc); for (const d of deltas) { text += d; o.onText(d); } }
+  } finally {
+    reader.cancel().catch(() => undefined);
+  }
+  return text;
+}
 
 export async function runAgent(o: Opts): Promise<AgentResult> {
   const messages = [...o.messages];
@@ -106,8 +157,17 @@ export async function runAgent(o: Opts): Promise<AgentResult> {
       messages.push({ role: "tool", tool_call_id: call.id, content: outcome.content });
       if (outcome.kind === "needs_connection" || outcome.kind === "approval") return { text, pause: outcome, steps, interrupted: false, hitLimit: false };
     }
-    if (round + 1 >= maxRounds) break;
+    if (round + 1 >= maxRounds || (o.deadline && Date.now() > o.deadline)) break;
     try { res = await o.next(messages); } catch { return { text, steps, interrupted: true, hitLimit: false }; }
+  }
+  if (o.final && !o.cancelled()) {
+    try {
+      const sep = text && !text.endsWith("\n\n") ? "\n\n" : "";
+      if (sep) { text += sep; o.onText(sep); }
+      const t = await streamText(await o.final([...flattenTools(messages), { role: "user", content: WRAP_UP }]), o);
+      text += t;
+      if (t.trim()) return { text, steps, interrupted: false, hitLimit: false };
+    } catch { /* fall through to the limit note */ }
   }
   return { text, steps, interrupted: false, hitLimit: true };
 }

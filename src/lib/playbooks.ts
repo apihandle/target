@@ -54,6 +54,7 @@ export const AGENT_PLAYBOOKS: Playbook[] = [
       "- Creating an event goes through approval; prepare it with title, start, end and guests, and add a calendar card. Never say it is already on the calendar.",
       "- Before inviting other people, confirm the guest list with the user; do not guess anyone's email.",
       "- With no calendar connected, say in one line that TARGET can set a reminder here instead (the button appears below your reply) and offer to connect Google Calendar; do not pretend it is set.",
+      "- A reminder or a repeating ask (\"remind me every Monday 9am\", \"har din 8 baje\") is set by the schedule approval card that appears below your reply: state the exact schedule (day, time, IST) in one line and that it starts once they tap Approve. Don't make a file, page or note for it.",
       "- If the time is missing or unclear, ask one short question rather than inventing one.",
     ].join("\n"),
   },
