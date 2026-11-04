@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { llmText, orderCandidates, providers, visionModels, type LLMMessage, type ModelRef } from "@/lib/llm";
+import { llmText, visionModels, type LLMMessage } from "@/lib/llm";
 import { CLOUDFLARE_BLOCKED, detectBotCheck } from "@/lib/loginCheck";
 
 /** What the worker sends each turn: the page as numbered elements (plus an optional screenshot). */
@@ -204,23 +204,20 @@ export async function decideNext(goal: string, snap: Snapshot, secrets: { id: st
   if (!snap.elements.length && snap.text.trim().length < 200 && history.filter((h) => h.startsWith("wait")).length < 3) return { do: "wait", why: "Page is still loading" };
   const plain: LLMMessage = { role: "user", content: pageBlock(snap) };
   const small: LLMMessage = { role: "user", content: compactBlock(snap) };
-  // Retries switch model: the default order minus its first model (a model that answered with nothing usable once
-  // usually does it again on the same page), and the last try also gets a smaller page.
-  let fallback: ModelRef[] | null = null;
-  const fallbackModels = (): ModelRef[] => {
-    if (!fallback) { try { fallback = orderCandidates(providers()).slice(1).map((c) => ({ provider: c.p.name, model: c.model })); } catch { fallback = []; } }
-    return fallback;
-  };
+  // Retries switch to the fast models with thinking off (a big page can keep the thinking models past the time
+  // limit, which is how an account job once got no usable step three times), and the last try gets a smaller page.
   const why: string[] = [];
-  // The worker's request for the next step is capped at 60 s, so the model gets ~45 s in total: each try races the
-  // next model after 10 s and stops at 20 s.
+  // The worker's request for the next step is capped at 60 s: the first try gets 20 s (racing the next model after
+  // 10 s), each retry 12 s, and no try starts after 33 s, so the answer lands by ~45 s.
   const started = Date.now();
   for (let attempt = 0; attempt < 3; attempt++) {
-    if (Date.now() - started > 25000) return notes.length ? { do: "fail", reason: notes[notes.length - 1].slice(0, 400) } : { do: "wait", why: "The AI was slow; trying this step again" };
+    if (Date.now() - started > 33000) return notes.length ? { do: "fail", reason: notes[notes.length - 1].slice(0, 400) } : { do: "wait", why: "The AI was slow; trying this step again" };
     const sys = notes.length ? `${sysBase}\nSERVER: your last choice was refused. ${notes[notes.length - 1]}` : sysBase;
     const msg = attempt === 0 ? user : attempt === 1 ? plain : small;
-    const only = vision && attempt === 0 ? vision : attempt > 0 && fallbackModels().length ? fallbackModels() : undefined;
-    const reply = await llmText({ messages: [{ role: "system", content: sys }, msg], maxTokens: 2500, temperature: 0, timeoutMs: 20000, firstTokenMs: 10000, ...(only ? { only } : {}) });
+    const reply = await llmText({
+      messages: [{ role: "system", content: sys }, msg], maxTokens: 2500, temperature: 0,
+      ...(attempt === 0 ? { timeoutMs: 20000, firstTokenMs: 10000, ...(vision ? { only: vision } : {}) } : { fast: true, timeoutMs: 12000, firstTokenMs: 5000 }),
+    });
     const a = parseAction(reply);
     if (!a) { why.push(!reply ? "no reply" : /"do"\s*:/.test(reply) ? "invalid action" : "no action in the reply"); continue; }
     if ((a.do === "click" || a.do === "fill" || a.do === "fill_secret" || a.do === "select" || a.do === "need_code" || a.do === "ready_to_pay" || a.do === "ready_to_confirm") && !snap.elements.some((e) => e.i === a.i)) { why.push(`element ${a.i} is not on the page`); continue; }

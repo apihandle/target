@@ -1,14 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-const h = vi.hoisted(() => ({ replies: [] as string[], calls: [] as { only?: unknown; content: string }[] }));
+const h = vi.hoisted(() => ({ replies: [] as string[], calls: [] as { only?: unknown; fast?: boolean; content: string }[] }));
 vi.mock("@/lib/llm", () => ({
-  llmText: async (o: { only?: unknown; messages: { content: unknown }[] }) => {
-    h.calls.push({ only: o.only, content: String(o.messages[1].content) });
+  llmText: async (o: { only?: unknown; fast?: boolean; messages: { content: unknown }[] }) => {
+    h.calls.push({ only: o.only, fast: o.fast, content: String(o.messages[1].content) });
     return h.replies.shift() ?? "";
   },
   visionModels: () => [],
-  providers: () => [{ name: "fake", models: ["first-model", "second-model"] }],
-  orderCandidates: () => [{ p: { name: "fake" }, model: "first-model" }, { p: { name: "fake" }, model: "second-model" }],
 }));
 
 import { accountAutofill, compactBlock, decideNext, NO_STEP, parseAction, type Snapshot } from "@/lib/server/autoBrowser";
@@ -71,12 +69,13 @@ describe("decideNext on an account form", () => {
     expect(a).toMatchObject({ do: "fill_secret", i: 4, field: "password" });
     expect(h.calls).toHaveLength(0);
   });
-  it("retries with the fallback model and a smaller page, then waits once more before failing with the reason", async () => {
+  it("retries with the fast models and a smaller page, then waits once more before failing with the reason", async () => {
     const hist = ["fill [2]", "fill_secret [4] password", "fill_secret [6] password"];
     h.replies = ["", "I am not sure", "{\"do\":\"click\",\"i\":99}"];
     expect(await decideNext(goal, registerPage(), secrets, hist, 20)).toMatchObject({ do: "wait" });
-    expect(h.calls[0].only).toBeUndefined();
-    expect(h.calls[1].only).toEqual([{ provider: "fake", model: "second-model" }]);
+    expect(h.calls[0].fast).toBeUndefined();
+    expect(h.calls[1].fast).toBe(true);
+    expect(h.calls[2].fast).toBe(true);
     expect(h.calls[2].content).toBe(compactBlock(registerPage()));
     const later = [...hist, "wait: The AI gave no usable step; trying again", "wait: The AI gave no usable step; trying again"];
     h.replies = ["", "", ""];
