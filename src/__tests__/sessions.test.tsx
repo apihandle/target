@@ -85,9 +85,10 @@ describe("sealed session envelope", () => {
     process.env.CONNECTOR_ENCRYPTION_KEY = randomBytes(32).toString("base64");
     const { sealCookies, openCookies } = await import("@/lib/server/siteSessions");
     const { encryptSecret, parseKey } = await import("@/lib/connectors/crypto");
-    const ck = [{ name: "sid", value: "v", domain: "example.com", path: "/", expires: -1, httpOnly: true, secure: true, sameSite: "Lax" as const }];
+    const ck = [{ name: "sid", value: "plain-cookie-value-must-not-leak", domain: "example.com", path: "/", expires: -1, httpOnly: true, secure: true, sameSite: "Lax" as const }];
     const box = sealCookies("u1", "example.com", ck);
-    expect(box).not.toContain("sid");
+    expect(box).not.toContain("plain-cookie-value-must-not-leak");
+    expect(box).not.toContain('"name":"sid"');
     expect(openCookies(box, "u1", "example.com")).toEqual({ cookies: ck, stale: false });
     expect(openCookies(box, "u2", "example.com")).toBeNull();
     expect(openCookies(box, "u1", "evil.com")).toBeNull();
