@@ -139,6 +139,11 @@ describe("a submitted sign-up that shows success", () => {
   it("not before the form was submitted, and not over a form error", async () => {
     const { signupSucceeded } = await import("@/lib/loginCheck");
     expect(signupSucceeded({ title: "", text: "Account created? No: Username is already taken." })).toBeNull();
+    // Help text far below the success banner (practice.expandtesting.com /login) doesn't veto it.
+    const help = " Test Case 2: Invalid Username. Verify that an error message \"Invalid username.\" is displayed.";
+    expect(signupSucceeded({ title: "Login", text: "Successfully registered, you can log in now." + " Lorem ipsum.".repeat(40) + help }))
+      .toBe("Successfully registered");
+    expect(signupSucceeded({ title: "", text: "Successfully registered? Invalid username." })).toBeNull();
     h.replies = ['{"do":"click","i":0}'];
     expect(await decideNext(goal, login, secrets, ["click [9]"], 20)).toMatchObject({ do: "click" });
   });

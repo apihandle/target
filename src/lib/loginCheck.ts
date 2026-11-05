@@ -111,11 +111,18 @@ const NOT_CREATED_TEXT = /\b(not|couldn'?t|could not|unable to|failed to|wasn'?t
  */
 const CLEAR_SUCCESS = /\b(successfully (registered|signed up|created)|account (has been |was )?created|registration (was )?(successful|complete)|thanks? (you )?for (registering|signing up)|verify your email|check your (email|inbox)|confirm your email)\b/i;
 
-/** The page plainly says a sign-up worked (and shows no form error): the phrase, else null. */
+/**
+ * The page plainly says a sign-up worked (and shows no form error next to it): the phrase, else null.
+ * Only an error phrase near the success message vetoes it: a login page that says "Successfully registered" at the
+ * top can also explain "Invalid username" further down in its help text (practice.expandtesting.com does).
+ */
+const SUCCESS_ERROR_WINDOW = 300;
 export function signupSucceeded(page: Pick<LoginPage, "title" | "text">): string | null {
   const text = `${page.title ?? ""}\n${page.text ?? ""}`;
-  if (SIGNUP_ERROR.test(text)) return null;
-  return text.match(CLEAR_SUCCESS)?.[0] ?? null;
+  const m = CLEAR_SUCCESS.exec(text);
+  if (!m) return null;
+  const near = text.slice(Math.max(0, m.index - SUCCESS_ERROR_WINDOW), m.index + m[0].length + SUCCESS_ERROR_WINDOW);
+  return SIGNUP_ERROR.test(near) ? null : m[0];
 }
 
 export function verifySignup(page: LoginPage, result?: string): SignupVerdict {
