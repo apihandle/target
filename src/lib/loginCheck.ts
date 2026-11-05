@@ -109,6 +109,15 @@ const NOT_CREATED_TEXT = /\b(not|couldn'?t|could not|unable to|failed to|wasn'?t
  * Did the sign-up really go through? Like verifyLogin: no bot check pending, no form error on the page, and the
  * sign-up form is gone or the page says the account exists / asks to verify the email.
  */
+const CLEAR_SUCCESS = /\b(successfully (registered|signed up|created)|account (has been |was )?created|registration (was )?(successful|complete)|thanks? (you )?for (registering|signing up)|verify your email|check your (email|inbox)|confirm your email)\b/i;
+
+/** The page plainly says a sign-up worked (and shows no form error): the phrase, else null. */
+export function signupSucceeded(page: Pick<LoginPage, "title" | "text">): string | null {
+  const text = `${page.title ?? ""}\n${page.text ?? ""}`;
+  if (SIGNUP_ERROR.test(text)) return null;
+  return text.match(CLEAR_SUCCESS)?.[0] ?? null;
+}
+
 export function verifySignup(page: LoginPage, result?: string): SignupVerdict {
   const bot = detectBotCheck({ title: page.title, text: page.text, frames: page.bot?.frames, widget: page.bot?.widget, solved: page.bot?.solved });
   const passwords = page.elements.filter((e) => (e.type ?? "").toLowerCase() === "password").length;

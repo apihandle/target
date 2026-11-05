@@ -127,3 +127,19 @@ describe("sign-up fields from the account inputs", () => {
     expect(accountAutofill(g, p, pw)).toMatchObject({ do: "fill", i: 20, value: "nobody@example.com" });
   });
 });
+
+describe("a submitted sign-up that shows success", () => {
+  const login: Snapshot = { url: "https://fake-site.example/login", title: "Login", text: "Successfully registered, you can log in now.\nRegister here\nUsername\nPassword\nLogin", elements: [{ i: 0, tag: "a", text: "Register here" }, { i: 1, tag: "input", type: "text", text: "username" }, { i: 2, tag: "input", type: "password", text: "password" }, { i: 3, tag: "button", text: "Login" }] };
+  it("is done, without asking the model (which once clicked Register here and signed up again)", async () => {
+    const a = await decideNext(goal, login, secrets, ["fill_secret [4] password", "fill_secret [6] password", "fill [2]", "click [7]"], 20);
+    expect(a).toMatchObject({ do: "done" });
+    expect(a.do === "done" && a.result).toMatch(/Successfully registered/);
+    expect(h.calls).toHaveLength(0);
+  });
+  it("not before the form was submitted, and not over a form error", async () => {
+    const { signupSucceeded } = await import("@/lib/loginCheck");
+    expect(signupSucceeded({ title: "", text: "Account created? No: Username is already taken." })).toBeNull();
+    h.replies = ['{"do":"click","i":0}'];
+    expect(await decideNext(goal, login, secrets, ["click [9]"], 20)).toMatchObject({ do: "click" });
+  });
+});

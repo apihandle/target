@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { llmText, visionModels, type LLMMessage } from "@/lib/llm";
-import { CLOUDFLARE_BLOCKED, detectBotCheck } from "@/lib/loginCheck";
+import { CLOUDFLARE_BLOCKED, detectBotCheck, signupSucceeded } from "@/lib/loginCheck";
 
 /** What the worker sends each turn: the page as numbered elements (plus an optional screenshot). */
 export const snapshotSchema = z.object({
@@ -207,6 +207,13 @@ export async function decideNext(goal: string, snap: Snapshot, secrets: { id: st
     // A worker with a live view pauses so the user can finish the check; others stop with the real reason.
     if (snap.can_pause && history.filter((h) => h.startsWith("need_user")).length < 2) return { do: "need_user", why: "Complete the check, then tap Continue" };
     return { do: "fail", reason: `${CLOUDFLARE_BLOCKED}: ${bot.line}` };
+  }
+  // A sign-up that was submitted and now plainly shows success is done: models sometimes click "Register here" on
+  // the "Successfully registered, you can log in now" page and sign up again (then "username taken" forever).
+  if (/^Create a new account for the user on/.test(goal)) {
+    const pw = history.map((h) => h.startsWith("fill_secret") && h.includes(" password")).lastIndexOf(true);
+    const ok = pw >= 0 && history.slice(pw).some((h) => /^(click|press)/.test(h)) ? signupSucceeded(snap) : null;
+    if (ok) return { do: "done", result: `The account was created: the site shows "${ok}" (${snap.url.slice(0, 200)}).` };
   }
   const auto = signinAutofill(goal, snap, secrets, history) ?? accountAutofill(goal, snap, history);
   if (auto && (auto.do !== "fill_secret" || secrets.some((s) => s.id === auto.secret_id))) return auto;
