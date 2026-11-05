@@ -509,10 +509,10 @@ export const GMAIL_TOOLS: GTool[] = [
   }) },
   { need: NEED.gmailModify, ...tool({
     name: "gmail_trash",
-    description: "Move emails to the Trash (recoverable for 30 days). Give message_ids (search first with gmail_search). One email moves right away; more than one needs the user's approval on a card listing them.",
+    description: "Move emails to the Trash (recoverable for 30 days). Give message_ids (search first with gmail_search). Always needs the user's approval on a card listing them, even for one email.",
     input: z.object({ message_ids: ids }),
-    requiresApproval: (a) => a.message_ids.length > 1,
-    summarize: (a) => `Move ${a.message_ids.length} emails to the Trash`,
+    requiresApproval: true,
+    summarize: (a) => a.message_ids.length === 1 ? "Move 1 email to the Trash" : `Move ${a.message_ids.length} emails to the Trash`,
     async prepare(a, ctx): Promise<ToolPreview> {
       return { details: { Emails: await subjectsOf(ctx, a.message_ids), Count: String(a.message_ids.length) }, warning: "They stay in Gmail's Trash for 30 days, then Gmail deletes them for good." };
     },

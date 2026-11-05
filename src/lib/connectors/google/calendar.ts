@@ -246,9 +246,9 @@ export const CALENDAR_TOOLS: GTool[] = [
   }) },
   { need: NEED.calEvents, ...tool({
     name: "calendar_delete_event",
-    description: "Delete an event (whole_series: true deletes every occurrence of a repeating event). If it has other guests, pass has_other_guests: true: the user approves on a card and guests are told it's cancelled. Without other guests it is deleted right away.",
+    description: "Delete an event (whole_series: true deletes every occurrence of a repeating event). Always needs the user's approval: the card shows the event and any guests (pass has_other_guests: true when it has them; guests are told it's cancelled).",
     input: z.object({ calendar_id: calendarId, event_id: eventId, whole_series: z.boolean().default(false), has_other_guests: z.boolean().optional(), notify_guests: z.boolean().default(true) }),
-    requiresApproval: (a) => !!a.has_other_guests,
+    requiresApproval: true,
     summarize: () => "Delete a Google Calendar event",
     async prepare(a, ctx): Promise<ToolPreview> {
       const e = await loadEvent(ctx, a.calendar_id, a.event_id, a.whole_series);
@@ -260,8 +260,8 @@ export const CALENDAR_TOOLS: GTool[] = [
       };
     },
     async execute(a, ctx) {
+      // Runs only after the user approved the card, which lists the event's guests (prepare reads them).
       const e = await loadEvent(ctx, a.calendar_id, a.event_id, a.whole_series);
-      requireGuestsAck(e, a.has_other_guests, "delete");
       await gcall(ctx, `${evUrl(a.calendar_id, str(e.id))}${qs({ sendUpdates: guestsOf(e).length && a.notify_guests ? "all" : "none" })}`, { method: "DELETE" });
       return { deleted: true, title: e.summary };
     },

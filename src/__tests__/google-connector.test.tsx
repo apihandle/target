@@ -125,12 +125,12 @@ describe("Google tool registry and scopes", () => {
       expect([n, needs(n)]).toEqual([n, true]);
     for (const n of ["gmail_archive", "gmail_mark_read", "gmail_star", "gmail_modify_labels", "gmail_create_label", "gmail_untrash", "gmail_create_draft", "drive_move", "drive_rename", "drive_copy", "drive_create_doc", "drive_upload_file", "drive_export", "sheets_append_rows", "sheets_update_range", "docs_append_text", "contacts_search"])
       expect([n, needs(n)]).toEqual([n, false]);
-    expect(needs("gmail_trash", { message_ids: ["abcdef1"] })).toBe(false);
+    expect(needs("gmail_trash", { message_ids: ["abcdef1"] })).toBe(true);
     expect(needs("gmail_trash", { message_ids: ["abcdef1", "abcdef2"] })).toBe(true);
     expect(needs("calendar_update_event", { event_id: "e1" })).toBe(false);
     expect(needs("calendar_update_event", { event_id: "e1", has_other_guests: true })).toBe(true);
     expect(needs("calendar_update_event", { event_id: "e1", add_attendees: "a@x.com" })).toBe(true);
-    expect(needs("calendar_delete_event", { event_id: "e1" })).toBe(false);
+    expect(needs("calendar_delete_event", { event_id: "e1" })).toBe(true);
     expect(needs("calendar_delete_event", { event_id: "e1", has_other_guests: true })).toBe(true);
   });
 
@@ -241,17 +241,21 @@ describe("Gmail", () => {
     expect(decode(String((calls[0].json!.message as { raw: string }).raw))).toContain('filename="data.csv"');
   });
 
-  it("trash: one email goes right away; several need approval with their subjects listed", async () => {
+  it("trash: even one email waits for an approval card listing its subject; nothing moves before Approve", async () => {
     const { calls } = googleApi({
       [`POST ${GM}/messages/*`]: { body: {} },
       [`GET ${GM}/messages/*`]: (c) => ({ body: { id: c.path.split("/").pop(), payload: { headers: hdrs({ Subject: `S-${c.path.split("/").pop()}`, From: "x@y.com" }) } } }),
     });
-    expect((await run("gmail_trash", { message_ids: ["abcdef1"] })).kind).toBe("result");
-    expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual([`${GM}/messages/abcdef1/trash`]);
+    const one = await run("gmail_trash", { message_ids: ["abcdef1"] });
+    expect(one.kind).toBe("approval");
+    expect(aps()[0].summary).toBe("Move 1 email to the Trash");
+    expect(aps()[0].payload.preview!.details.Emails).toContain("S-abcdef1");
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
     const r = await run("gmail_trash", { message_ids: ["abcdef1", "abcdef2"] });
     expect(r.kind).toBe("approval");
-    expect(aps()[0].payload.preview!.details.Emails).toContain("S-abcdef2");
-    expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+    await decideApproval(h.db as unknown as Db, A, aps()[0].id, "approve");
+    expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual([`${GM}/messages/abcdef1/trash`]);
   });
 
   it("labels: missing user labels are created, then one batchModify; archive removes INBOX", async () => {
@@ -288,21 +292,22 @@ describe("Gmail", () => {
 describe("Calendar", () => {
   const ev = (attendees: unknown[] = []) => ({ id: "ev1", summary: "Standup", start: { dateTime: "2026-11-05T10:00:00+05:30" }, end: { dateTime: "2026-11-05T10:30:00+05:30" }, attendees });
 
-  it("delete: a solo event goes right away; with guests the server refuses unless approved via has_other_guests", async () => {
+  it("delete: a solo event and one with guests both wait for an approval card; nothing is deleted before Approve", async () => {
     let guests: unknown[] = [];
     const { calls } = googleApi({ [`GET ${CAL}/ev1`]: () => ({ body: ev(guests) }), [`DELETE ${CAL}/ev1`]: { status: 204 } });
-    expect((await run("calendar_delete_event", { event_id: "ev1" })).kind).toBe("result");
+    const solo = await run("calendar_delete_event", { event_id: "ev1" });
+    expect(solo.kind).toBe("approval");
+    expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(0);
+    await decideApproval(h.db as unknown as Db, A, aps()[0].id, "approve");
     expect(calls.find((c) => c.method === "DELETE")!.url).toContain("sendUpdates=none");
     guests = [{ email: "me@gmail.com", self: true }, { email: "asha@x.com" }];
-    const refused = await run("calendar_delete_event", { event_id: "ev1" });
-    expect(refused.kind).toBe("error");
-    expect(refused.content).toMatch(/has_other_guests: true/);
-    expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1);
     const r = await run("calendar_delete_event", { event_id: "ev1", has_other_guests: true });
     expect(r.kind).toBe("approval");
-    expect(aps()[0].summary).toBe("Delete “Standup”");
-    expect(aps()[0].payload.preview).toMatchObject({ details: { Guests: "asha@x.com" }, warning: "Guests get a cancellation email." });
-    await decideApproval(h.db as unknown as Db, A, aps()[0].id, "approve");
+    const card = aps().find((x) => x.status === "pending")!;
+    expect(card.summary).toBe("Delete “Standup”");
+    expect(card.payload.preview).toMatchObject({ details: { Guests: "asha@x.com" }, warning: "Guests get a cancellation email." });
+    expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1);
+    await decideApproval(h.db as unknown as Db, A, card.id, "approve");
     expect(calls.filter((c) => c.method === "DELETE").pop()!.url).toContain("sendUpdates=all");
   });
 
