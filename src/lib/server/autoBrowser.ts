@@ -42,7 +42,15 @@ export const autoAction = z.discriminatedUnion("do", [
 export type AutoAction = z.infer<typeof autoAction>;
 
 /** Paid surveys and paid-to-click / earn tasks: never answered with made-up data. */
-export const SURVEY_RULE = "Never fill in paid surveys, paid-to-click or earn-money tasks with invented answers: open the page, then let the user take over (need_user when offered, else fail and say so).";
+export const SURVEY_RULE = "Never do paid-to-click, watch-ads, offerwall or paid-survey earn tasks (no visiting or clicking task links for rewards, no survey answers): a bot doing them is click fraud and gets the account banned. If the goal asks for that, use fail with a reason starting EARN_TASK_REFUSED. Signing in and reading the dashboard or balance is fine.";
+
+/** A goal that asks the bot to do earn tasks (paid-to-click, watch ads, surveys/offers for money). */
+export const EARN_TASK_GOAL = /\b(paid[- ]?to[- ]?click|ptc|offer ?wall|(watch|view)(ing)? (ads|adverts|videos)\b[^.]{0,30}\b(earn|money|points|coins|cash|reward)|(complete|do|finish|solve|fill)\b[^.]{0,30}\b(tasks?|surveys?|offers?|clicks?)\b[^.]{0,40}\b(earn|money|points|coins|cash|reward|timebucks)|\b(visit|click|ptc|earn(ing)?) tasks?\b|(earn|money|points|coins|cash)\b[^.]{0,30}\b(tasks?|surveys?|clicks?)\b[^.]{0,20}\b(complete|do|karo|kar do|finish)|tasks? (karo|kar do|complete karo)|survey (karo|bharo|fill karo))/i;
+export const EARN_TASK_REFUSED = "EARN_TASK_REFUSED: I don't do paid-to-click, ad-watching or survey earn tasks with a bot: it is click fraud and gets the account banned. Signing in and reading your balance is fine.";
+/** Google's sign-in pages (Google refuses automated browsers there). */
+const GOOGLE_SIGNIN = /^https:\/\/accounts\.google\.com\//i;
+const GOOGLE_BLOCK_TEXT = /couldn'?t sign you in|this browser or app may not be secure|try using a different browser|unusual activity|verify it'?s you/i;
+export const GOOGLE_HANDOFF = "Google doesn't let automated browsers sign in: sign in with Google yourself here, then tap Continue";
 
 export function autoPrompt(goal: string, secrets: { id: string; kind: string; label: string; site: string | null }[], history: string[], stepsLeft: number, canPause = false): string {
   return [
@@ -225,13 +233,22 @@ export type StepGuard = (a: AutoAction) => { action: AutoAction } | { retry: str
 export async function decideNext(goal: string, snap: Snapshot, secrets: { id: string; kind: string; label: string; site: string | null }[], history: string[], stepsLeft: number, guard?: StepGuard): Promise<AutoAction> {
   // A Cloudflare challenge page, or a Turnstile box on a login form that hasn't passed: wait twice, then stop with the
   // real reason (filling and submitting the form again can't get past it).
+  // Earn tasks (paid-to-click, watch ads, surveys for money) are never done by the bot.
+  if (EARN_TASK_GOAL.test(goal)) return { do: "fail", reason: EARN_TASK_REFUSED };
   const bot = detectBotCheck({ title: snap.title, text: snap.text, frames: snap.bot?.frames, widget: snap.bot?.widget, solved: snap.bot?.solved });
   if (bot && (bot.kind === "page" || snap.elements.some((e) => e.type === "password"))) {
     const waits = history.filter((h) => h.startsWith("wait") && /cloudflare/i.test(h)).length;
     if (waits < 2) return { do: "wait", why: `Cloudflare security check on the page (${waits + 1}/2)` };
-    // A worker with a live view pauses so the user can finish the check; others stop with the real reason.
-    if (snap.can_pause && history.filter((h) => h.startsWith("need_user")).length < 2) return { do: "need_user", why: "Complete the check, then tap Continue" };
+    // A worker with a live view always pauses so the user can finish the check (the pause window bounds it);
+    // only a worker without one stops with the real reason.
+    if (snap.can_pause) return { do: "need_user", why: "Complete the check, then tap Continue" };
     return { do: "fail", reason: `${CLOUDFLARE_BLOCKED}: ${bot.line}` };
+  }
+  // Google sign-in: Google blocks automated browsers, so with a live view the user signs in with Google themselves.
+  if (GOOGLE_SIGNIN.test(snap.url)) {
+    const handoffs = history.filter((h) => h.startsWith("need_user") && /google/i.test(h)).length;
+    if (snap.can_pause && handoffs < 3) return { do: "need_user", why: GOOGLE_HANDOFF };
+    if (GOOGLE_BLOCK_TEXT.test(`${snap.title}\n${snap.text}`)) return { do: "fail", reason: "GOOGLE_BLOCKED: Google refused the sign-in from this cloud browser" };
   }
   // A sign-up that was submitted and now plainly shows success is done: models sometimes click "Register here" on
   // the "Successfully registered, you can log in now" page and sign up again (then "username taken" forever).

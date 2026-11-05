@@ -66,7 +66,7 @@ export function signinGoal(site: string, opts: { siteLogin?: string | null; goog
     how + google,
     "Open the site's login page first if the start page is not it. If it is already signed in, skip to the report.",
     "If the page asks for a one-time code sent by email/SMS, use need_code on the code box.",
-    "If Google shows a captcha, 'Couldn't sign you in', 'This browser or app may not be secure' or blocks the sign-in, use fail with a reason starting GOOGLE_BLOCKED.",
+    "Google blocks automated sign-in: on a Google sign-in page use need_user when it is offered (the user signs in with Google in the live view); without it, if Google shows a captcha, 'Couldn't sign you in', 'This browser or app may not be secure' or blocks the sign-in, use fail with a reason starting GOOGLE_BLOCKED.",
     "If the site says the username or password is wrong, use fail with a reason starting WRONG_LOGIN.",
     `When signed in, use done and report what the page shows (account name, balance, dashboard headings, key numbers)${opts.check ? ` and answer the user's ask: "${scrubCredentials(opts.check)}"` : ""}. Use the saved login only; once the page shows you are signed in, do not log out or sign in again. Do not change any settings.`,
   ].join(" ").slice(0, 1400);
@@ -78,6 +78,7 @@ export function signinFailure(error: string | null | undefined, site: string, la
   const e = (error ?? "").trim();
   const en = lang === "english";
   const rest = e.replace(/^(GOOGLE_BLOCKED|WRONG_LOGIN|CLOUDFLARE_BLOCKED|NOT_SIGNED_IN)[:\s-]*/i, "").slice(0, 200);
+  if (/EARN_TASK_REFUSED/.test(e)) return { line: en ? "I don't do paid-to-click, ad-watching or survey earn tasks with a bot: it is click fraud and gets the account banned. Signing in and reading your balance is fine." : "Paid-to-click, ad dekhna ya survey wale earn tasks main bot se nahi karta: ye click fraud hai aur account ban ho jata hai. Login aur balance dekhna theek hai.", offerPassword: false };
   if (/GOOGLE_BLOCKED/i.test(e)) return { line: en ? `Google blocked the sign-in from this browser, so ${site} couldn't be signed in with Google.` : `Google ne is browser se sign-in block kar diya, isliye ${site} pe Google se login nahi hua.`, offerPassword: true };
   if (/WRONG_LOGIN/i.test(e)) return { line: en ? `${site} says the saved username or password is wrong.` : `${site} ne kaha ki saved username ya password galat hai.`, offerPassword: true };
   const tried = e.match(/\(tried (\d+) cloud browser/)?.[1];

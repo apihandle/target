@@ -194,8 +194,8 @@ describe("Cloudflare pauses instead of failing", () => {
 
   it("the user completes the check in the live view: no stealth retry, the job finishes", async () => {
     process.env.STEEL_API_KEY = "test-not-a-real-key"; process.env.HYPERBROWSER_API_KEY = "test-not-a-real-key";
-    // Blocked for the waits and reloads, then cleared (the user solved it) a few checks into the pause.
-    h.pages = [{ blocked: true, clearsAfter: 6 }];
+    // Blocked for the waits, the automatic solve attempts and the reloads, then cleared (the user solved it) during the pause.
+    h.pages = [{ blocked: true, clearsAfter: 9 }];
     const calls = workerApi([job()], ["agent", "paused", "paused", "paused"]);
     const r = await runQueuedJobs({ budgetMs: 200000, secret: SECRET, base: "https://t.test" });
     expect(r).toEqual([{ id: "j1", ok: true, provider: "steel" }]);

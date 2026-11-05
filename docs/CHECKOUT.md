@@ -53,6 +53,20 @@ Live test: CURA Healthcare demo (katalon-demo-cura.herokuapp.com, demo login pri
   `useStealth` works, `solveCaptchas` is paid only; Browserless accepts `stealth=true` but its shared IPs get
   Cloudflare's block page on some sites; Anchor's solver needs its paid proxy. With a paid plan, switch the solver on
   with `STEEL_SOLVE_CAPTCHA=1`, `HYPERBROWSER_SOLVE_CAPTCHAS=1`, `BROWSERLESS_SOLVE_CAPTCHAS=1` or `ANCHOR_SOLVE_CAPTCHA=1`.
+- Automatic solve layer (`src/lib/server/autoSolve.ts`, 2026-11-05), tried before any pause, cheapest first:
+  1. free: a real (CDP) mouse click on the Turnstile checkbox, then wait for the token;
+  2. free if self-hosted: an open-source solver server (sarperavci/CloudflareBypassForScraping, MIT) at `CF_SOLVER_URL`
+     (+ `CF_SOLVER_TOKEN`, sent as `x-auth-token`); its token is injected into the form. Hugging Face no longer hosts
+     Docker Spaces on the free CPU tier (needs PRO), so this needs a host (Render, a VPS) before it can be switched on;
+  3. paid, off: CapSolver when `CAPSOLVER_API_KEY` is set ($1.20 / 1000 Turnstile tokens).
+  The provider solvers above (one env var each) now apply to normal sessions too. Only when all of these fail does the
+  job pause with Take control; a job with no live view moves to a provider that has one (Steel, Hyperbrowser) first.
+- A job is never `done`, and a sign-in is never saved to `site_sessions`, while the page still shows an unpassed check
+  or the result says it failed: the server only saves a session after its own verified `done: signed in` step.
+- Google sign-in pages: Google blocks automated browsers, so with a live view the job pauses ("sign in with Google
+  yourself, then tap Continue") and resumes on the same page; without one it fails with `GOOGLE_BLOCKED`.
+- Earn tasks (paid-to-click, watch ads, surveys, offerwalls) are refused with `EARN_TASK_REFUSED`: a bot doing them is
+  click fraud and gets the account banned. Signing in and reading the balance are fine.
 
 # Live browser view and Take control
 

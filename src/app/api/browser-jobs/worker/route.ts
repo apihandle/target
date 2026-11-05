@@ -14,7 +14,7 @@ import { gmailSigninCode, gmailSiteLink } from "@/lib/server/signinMail";
 import { WAITING_FOR_CODE } from "@/lib/builtins/signin";
 import { isLang, type Lang } from "@/lib/lang";
 import { signinFailure, signinPostHead } from "@/lib/signin";
-import { NOT_SIGNED_IN, resultSaysFailed, verifyLogin, verifySignup } from "@/lib/loginCheck";
+import { CLOUDFLARE_BLOCKED, detectBotCheck, NOT_SIGNED_IN, resultSaysFailed, sessionProven, verifyLogin, verifySignup } from "@/lib/loginCheck";
 import { accountOf, accountPost } from "@/lib/siteAccount";
 import { settleSiteAccount } from "@/lib/server/siteAccountRun";
 import { checkoutOf, guardCheckout, PAY_PRESSED } from "@/lib/checkout";
@@ -168,6 +168,8 @@ export async function POST(req: Request) {
       return new Response(JSON.stringify({ cookies: cookies ?? [] }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     }
     if (b.action === "save_session") {
+      // Only a sign-in the server itself verified (a "done: signed in, verified" step) is ever saved.
+      if (!sessionProven((job.log ?? []) as string[])) return json({ ok: false, error: "The sign-in wasn't verified, so it wasn't saved" });
       const r = await saveSiteSession({ userId: job.user_id as string, site: signin.site, via: signin.via, cookies: b.cookies }).catch(() => ({ ok: false as const, error: "save failed" }));
       return json({ ok: r.ok });
     }
@@ -241,7 +243,12 @@ export async function POST(req: Request) {
       const v = verifyLogin(snap.data, action.result);
       if (v.ok) verified = `verified: ${v.evidence}`;
       else action = { do: "fail", reason: `${v.code}: ${v.reason}`.slice(0, 400) };
-    } else if (action.do === "done" && account?.flow === "register") {
+    } else if (action.do === "done" && !checkout) {
+      // Any other job: never "done" on a page that is still a Cloudflare challenge.
+      const bot = detectBotCheck({ title: snap.data.title, text: snap.data.text, frames: snap.data.bot?.frames, widget: snap.data.bot?.widget, solved: snap.data.bot?.solved });
+      if (bot && (bot.kind === "page" || snap.data.elements.some((e) => e.type === "password"))) action = { do: "fail", reason: `${CLOUDFLARE_BLOCKED}: ${bot.line}`.slice(0, 400) };
+    }
+    if (action.do === "done" && account?.flow === "register") {
       // An account is only "created" when the page shows it (no form error, form gone or a created / verify-email message).
       const v = verifySignup(snap.data, action.result);
       if (v.ok) verified = `verified: ${v.evidence}`;
@@ -258,9 +265,13 @@ export async function POST(req: Request) {
     const stoppedByUser = job.control === "stop" || (typeof b.error === "string" && b.error.startsWith(STOPPED));
     await db.from("browser_jobs").update({ ...(finalShot ? { frame: finalShot, frame_at: new Date().toISOString() } : {}), control: null, control_reason: null, paused_until: null, resume: null }).eq("id", id);
     // Defense in depth: a sign-in "done" whose own report says the login didn't happen is a failure.
-    if (ok && signinOf(job.inputs) && resultSaysFailed(typeof b.result === "string" ? b.result : "")) {
+    if (ok && signinOf(job.inputs) && (resultSaysFailed(typeof b.result === "string" ? b.result : "") || !sessionProven((job.log ?? []) as string[]))) {
       ok = false;
-      b.error = `${NOT_SIGNED_IN}: ${String(b.result).replace(/\s+/g, " ").slice(0, 300)}`;
+      b.error = `${NOT_SIGNED_IN}: ${String(b.result ?? "the sign-in was never verified on the page").replace(/\s+/g, " ").slice(0, 300)}`;
+    } else if (ok && !checkout && /\b(cloudflare|turnstile|captcha|security check)\b[^.\n]{0,60}\b(fail|failed|blocked|blocking|could not|couldn'?t|didn'?t|not load|unsolved|not passed|required)/i.test(typeof b.result === "string" ? b.result : "")) {
+      // Any job: a "done" whose own report says a check stopped it is a failure.
+      ok = false;
+      b.error = `${CLOUDFLARE_BLOCKED}: ${String(b.result).replace(/\s+/g, " ").slice(0, 300)}`;
     }
     let result = typeof b.result === "string" ? b.result : null;
     // Video jobs: the worker sends frames + captions; TARGET turns them into a description.

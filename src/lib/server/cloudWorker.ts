@@ -3,10 +3,11 @@ import { recordProviderResult } from "./providerStatus";
 import { configuredProviders, redact, resumeSession, RESUMABLE, startSession, STEALTH_ORDER, type CdpSession, type ProviderId, type SessionOpts } from "./remoteBrowser";
 import { CHECK_LINE, liveViewFrom, PAUSE_MS, PAUSE_TIMEOUT, STOPPED, type Control, type LiveView } from "@/lib/liveView";
 import { kickCloudWorker } from "./kickWorker";
-import { CLOUDFLARE_BLOCKED, detectBotCheck, type BotCheck, type BotSignals } from "@/lib/loginCheck";
+import { CLOUDFLARE_BLOCKED, detectBotCheck, NOT_SIGNED_IN, resultSaysFailed, type BotCheck, type BotSignals } from "@/lib/loginCheck";
 import { SITE } from "@/lib/builtins/helpers";
 import { readUrl } from "@/lib/urlReader";
 import { llmText } from "@/lib/llm";
+import { autoSolve, providerSolverOn } from "./autoSolve";
 
 /**
  * Built-in worker: runs queued "steps" and "auto" browser jobs inside a Vercel function, on a cloud
@@ -265,16 +266,29 @@ export class CloudflareBlocked extends Error {
  * Cloudflare on the page: wait for it to pass, then reload, at most twice per browser. Throws CloudflareBlocked
  * when it still hasn't passed (the caller then retries on another cloud browser in stealth mode).
  */
-export async function passBotCheck(page: Page, job: Job, api: Api, state: { reloads: number }, waitMs = 6000, hold?: (check: () => Promise<boolean>) => Promise<void>): Promise<void> {
-  let check = blockingCheck(await botSignals(page).catch(() => ({ title: "", text: "", frames: [], widget: false, solved: false, password: false })));
+export type SolveFn = (page: Page, gone: () => Promise<boolean>, log: (line: string) => Promise<unknown>) => Promise<{ ok: boolean }>;
+
+export async function passBotCheck(page: Page, job: Job, api: Api, state: { reloads: number; solves?: number; provider?: string }, waitMs = 6000, hold?: (check: () => Promise<boolean>) => Promise<void>, solve: SolveFn | null = defaultSolve(state.provider)): Promise<void> {
+  const NONE = { title: "", text: "", frames: [], widget: false, solved: false, password: false };
+  let check = blockingCheck(await botSignals(page).catch(() => NONE));
   if (!check) return;
   let host = "";
   try { host = new URL(page.url()).hostname.replace(/^www\./, ""); } catch { /* keep "" */ }
+  const gone = async () => !blockingCheck(await botSignals(page).catch(() => NONE));
+  const log = (line: string) => api({ action: "progress", job_id: job.id, line }).catch(() => {});
   for (;;) {
-    await api({ action: "progress", job_id: job.id, line: `Cloudflare security check on ${host}, waiting for it to pass` }).catch(() => {});
+    await log(`Cloudflare security check on ${host}, waiting for it to pass`);
     await page.waitForTimeout(waitMs);
-    check = blockingCheck(await botSignals(page).catch(() => ({ title: "", text: "", frames: [], widget: false, solved: false, password: false })));
+    check = blockingCheck(await botSignals(page).catch(() => NONE));
     if (!check) return;
+    // Automatic solving comes before any pause: a real click on the box, then a solver service / paid solver if set up.
+    if (solve && (state.solves ?? 0) < 3) {
+      state.solves = (state.solves ?? 0) + 1;
+      const r = await solve(page, gone, log).catch(() => ({ ok: false }));
+      if (r.ok && (await gone())) { await log(`Cloudflare check on ${host} passed automatically`); return; }
+      check = blockingCheck(await botSignals(page).catch(() => NONE));
+      if (!check) return;
+    }
     if (state.reloads >= 2) {
       // With a live view the user can finish the check on their own device: pause and wait instead of failing.
       if (hold) {
@@ -293,16 +307,26 @@ export async function passBotCheck(page: Page, job: Job, api: Api, state: { relo
     await api({ action: "progress", job_id: job.id, line: `Cloudflare check didn't pass, reloading the page (${state.reloads}/2)` }).catch(() => {});
     await page.reload({ waitUntil: "domcontentloaded" }).catch(() => {});
     await page.waitForTimeout(Math.round(waitMs / 2));
-    check = blockingCheck(await botSignals(page).catch(() => ({ title: "", text: "", frames: [], widget: false, solved: false, password: false })));
+    check = blockingCheck(await botSignals(page).catch(() => NONE));
     if (!check) return;
   }
 }
 
+/** The automatic solve layer with the session's provider solver taken into account. */
+export function defaultSolve(provider?: string): SolveFn {
+  return (page, gone, log) => autoSolve(page, gone, { log, providerSolver: !!provider && providerSolverOn(provider) });
+}
+
+/** The page navigated while it was being read: retry the step instead of failing the job. */
+export const NAV_RACE = /execution context was destroyed|cannot find context with specified id|frame was detached|navigation interrupted|page is navigating|target page, context or browser has been closed.*navigat/i;
+export const isNavRace = (e: unknown) => NAV_RACE.test(String((e as Error)?.message ?? e));
+
 export const isCloudflareBlock = (e: unknown) => !!(e as { cloudflare?: boolean })?.cloudflare || String((e as Error)?.message ?? "").startsWith(CLOUDFLARE_BLOCKED);
 
-export async function runAuto(job: Job, page: Page, api: Api, deadline: number, link?: LiveLink | null, opts: { resumed?: boolean } = {}): Promise<string> {
+export async function runAuto(job: Job, page: Page, api: Api, deadline: number, link?: LiveLink | null, opts: { resumed?: boolean; provider?: string; solve?: SolveFn | null } = {}): Promise<string> {
   if (!opts.resumed) await page.goto(safeUrl(job.start_url), { waitUntil: "domcontentloaded" });
-  const cf = { reloads: 0 };
+  const cf: { reloads: number; solves?: number; provider?: string } = { reloads: 0, provider: opts.provider };
+  let navRetries = 0;
   const canPause = !!link?.interactive;
   const hold = canPause ? (check?: () => Promise<boolean>, reason?: string) => holdForUser(link!, page, deadline, { check, reason: reason ?? CHECK_LINE }) : undefined;
   for (let n = 0; n < (job.max_steps || 20) + 2; n++) {
@@ -315,13 +339,30 @@ export async function runAuto(job: Job, page: Page, api: Api, deadline: number, 
     if (Date.now() > deadline) throw Object.assign(new Error("Took too long in the cloud browser; try a shorter task"), { final: true });
     await page.waitForLoadState("domcontentloaded").catch(() => {});
     await page.waitForTimeout(700);
-    await passBotCheck(page, job, api, cf, 6000, hold ? (check) => hold(check) : undefined);
-    const snap = { ...(await snapshot(page)), ...(canPause ? { can_pause: true } : {}) };
+    let snap: Awaited<ReturnType<typeof snapshot>> & { can_pause?: boolean };
+    try {
+      await passBotCheck(page, job, api, cf, 6000, hold ? (check) => hold(check) : undefined, opts.solve === undefined ? defaultSolve(opts.provider) : opts.solve);
+      snap = { ...(await snapshot(page)), ...(canPause ? { can_pause: true } : {}) };
+    } catch (e) {
+      // A click that navigates (e.g. "Continue with Google") can destroy the page mid-read: read it again.
+      if (isNavRace(e) && navRetries < 6) {
+        navRetries++;
+        await page.waitForLoadState("domcontentloaded").catch(() => {});
+        await page.waitForTimeout(1500).catch(() => {});
+        continue;
+      }
+      throw e;
+    }
     const { action } = (await api({ action: "next", job_id: job.id, snapshot: snap })) as { action: Record<string, string & number> };
     const a = action;
     const el = (i: number) => page.locator(`[data-target-i="${i}"]`).first();
     try {
-      if (a.do === "done") return `${a.result}\n\nFinal page: ${await page.title()} (${page.url()})`;
+      if (a.do === "done") {
+        // Never "done" on a page that still shows an unpassed check.
+        const left = blockingCheck(await botSignals(page).catch(() => ({ title: "", text: "", frames: [], widget: false, solved: false, password: false })));
+        if (left) { await api({ action: "progress", job_id: job.id, line: `Not done yet: ${left.line}` }).catch(() => {}); continue; }
+        return `${a.result}\n\nFinal page: ${await page.title().catch(() => "")} (${page.url()})`;
+      }
       if (a.do === "fail") throw Object.assign(new Error(a.reason), { final: true });
       if (a.do === "need_user") {
         // A captcha or a step only the user can do: pause with the live view (only offered when there is one).
@@ -360,6 +401,7 @@ export async function runAuto(job: Job, page: Page, api: Api, deadline: number, 
       else if (a.do === "wait") await page.waitForTimeout(2500);
     } catch (e) {
       if ((e as { final?: boolean }).final || isHandoff(e)) throw e;
+      if (isNavRace(e)) { navRetries++; await page.waitForLoadState("domcontentloaded").catch(() => {}); }
     }
   }
   throw new Error("Ran out of steps before finishing");
@@ -445,7 +487,12 @@ async function runOnce(job: Job, browser: Browser, session: CdpSession, api: Api
       const { cookies } = (await api({ action: "cookies", job_id: job.id }).catch(() => ({ cookies: [] }))) as { cookies?: Parameters<typeof ctx.addCookies>[0] };
       if (cookies?.length) await ctx.addCookies(cookies).catch(() => {});
     }
-    const result = job.mode === "auto" ? await runAuto(job, page, api, deadline - 15000, link, { resumed }) : await runSteps(job, page, api);
+    const result = job.mode === "auto" ? await runAuto(job, page, api, deadline - 15000, link, { resumed, provider: session.provider }) : await runSteps(job, page, api);
+    // Save the sign-in only when it is proven: the result doesn't report a failure and no check is left on the page.
+    // (The server refuses too unless the job's log has a verified "done: signed in".)
+    const pageCheck = blockingCheck(await botSignals(page).catch(() => ({ title: "", text: "", frames: [], widget: false, solved: false, password: false })));
+    if (pageCheck) throw new CloudflareBlocked(pageCheck.line, new URL(page.url()).hostname);
+    if (resultSaysFailed(result)) throw Object.assign(new Error(`${NOT_SIGNED_IN}: ${result.replace(/\s+/g, " ").slice(0, 300)}`), { final: true });
     if (site) {
       const cookies = await ctx.cookies().catch(() => []);
       if (cookies.length) {
@@ -458,6 +505,9 @@ async function runOnce(job: Job, browser: Browser, session: CdpSession, api: Api
     link.stop();
   }
 }
+
+/** Providers whose sessions come with an interactive live view (so a job can pause for the user). */
+export const LIVE_PROVIDERS: ProviderId[] = ["steel", "hyperbrowser", "browserbase", "anchor"];
 
 /** Claim and run queued browser jobs until the time budget runs out. Returns a short summary per job. */
 export async function runQueuedJobs(opts: { budgetMs: number; secret: string; base?: string }): Promise<{ id: string; ok: boolean; provider?: string; error?: string; handoff?: boolean }[]> {
@@ -504,8 +554,15 @@ export async function runQueuedJobs(opts: { budgetMs: number; secret: string; ba
           }
           if (isHandoff(e)) throw Object.assign(new Error("Took too long waiting for you in the cloud browser"), { final: true });
           if (!isCloudflareBlock(e) || (e as { paused?: boolean }).paused) throw e;
+          // No live view on this browser means no pause was possible: the next browser must be one that has one,
+          // and it gets the chance even when time is short (a pause hands over to the next worker run).
+          const hadLive = !!out.link?.interactive;
+          if (!hadLive) {
+            const live = stealthLeft.filter((p) => LIVE_PROVIDERS.includes(p));
+            stealthLeft.splice(0, stealthLeft.length, ...live, ...stealthLeft.filter((p) => !live.includes(p)));
+          }
           const next = stealthLeft[0];
-          if (!next || tried.length >= 3 || Date.now() > deadline - 90000) {
+          if (!next || tried.length >= (hadLive ? 3 : 4) || Date.now() > deadline - (hadLive ? 90000 : 50000)) {
             throw Object.assign(new Error(`${String((e as Error).message).slice(0, 250)} (tried ${tried.length} cloud browser${tried.length === 1 ? "" : "s"}: ${tried.join(", ")})`), { final: true });
           }
           await api({ action: "progress", job_id: job.id, line: `Cloudflare blocked ${session.provider}; retrying on ${next} in stealth mode` }).catch(() => {});

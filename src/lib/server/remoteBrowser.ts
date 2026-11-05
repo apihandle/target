@@ -27,7 +27,8 @@ export interface SessionOpts { stealth?: boolean }
  * Free tiers (checked 2026-11-04): Steel stealthConfig yes, solveCaptcha needs a paid balance; Hyperbrowser useStealth yes,
  * solveCaptchas paid only; Browserless stealth flag accepted (its shared IPs still get Cloudflare's block page);
  * Anchor captcha solving needs its paid proxy. Paid captcha solving switches on with STEEL_SOLVE_CAPTCHA=1,
- * HYPERBROWSER_SOLVE_CAPTCHAS=1, BROWSERLESS_SOLVE_CAPTCHAS=1 or ANCHOR_SOLVE_CAPTCHA=1.
+ * HYPERBROWSER_SOLVE_CAPTCHAS=1, BROWSERLESS_SOLVE_CAPTCHAS=1 or ANCHOR_SOLVE_CAPTCHA=1: one env var each, applied to
+ * normal and stealth sessions alike. Steel's list price (steel.dev/pricing, 2026-11-05): CAPTCHA solves $3 / 1k on Launch.
  */
 export const STEALTH_ORDER: ProviderId[] = ["steel", "browserless", "hyperbrowser", "anchor", "browserbase"];
 const on = (v: string | undefined) => v === "1" || v === "true";
@@ -62,18 +63,22 @@ export async function startSession(p: ProviderId, env: Env = process.env, opts: 
       // A session made through the API has a live view (debugUrl) and survives a dropped connection; the bare connect
       // URL is the fallback when the API refuses.
       const key = env.STEEL_API_KEY!;
-      try {
-        const j = await postJson("https://api.steel.dev/v1/sessions", { "steel-api-key": key }, { timeout: 900000 });
-        const id = String(j.id ?? "");
-        if (!id) throw new Error("no session id");
-        return { provider: p, id, live: liveViewFrom(p, j), wsUrl: String(j.websocketUrl || `wss://connect.steel.dev?apiKey=${encodeURIComponent(key)}&sessionId=${id}`), release: steelRelease(key, id) };
-      } catch {
-        return { provider: p, wsUrl: `wss://connect.steel.dev?apiKey=${encodeURIComponent(key)}`, release: noop };
+      // Two tries: a session made through the API is the only kind with a live view (so the job can pause).
+      for (let i = 0; i < 2; i++) {
+        try {
+          const j = await postJson("https://api.steel.dev/v1/sessions", { "steel-api-key": key }, { timeout: 900000, ...(on(env.STEEL_SOLVE_CAPTCHA) ? { solveCaptcha: true } : {}) });
+          const id = String(j.id ?? "");
+          if (!id) throw new Error("no session id");
+          return { provider: p, id, live: liveViewFrom(p, j), wsUrl: String(j.websocketUrl || `wss://connect.steel.dev?apiKey=${encodeURIComponent(key)}&sessionId=${id}`), release: steelRelease(key, id) };
+        } catch {
+          if (i === 0) await new Promise((r) => setTimeout(r, 1500));
+        }
       }
+      return { provider: p, wsUrl: `wss://connect.steel.dev?apiKey=${encodeURIComponent(key)}`, release: noop };
     }
     case "browserless": {
       const host = env.BROWSERLESS_HOST || "production-sfo.browserless.io";
-      return { provider: p, wsUrl: `wss://${host}?token=${encodeURIComponent(env.BROWSERLESS_TOKEN!)}`, release: noop };
+      return { provider: p, wsUrl: `wss://${host}?token=${encodeURIComponent(env.BROWSERLESS_TOKEN!)}${on(env.BROWSERLESS_SOLVE_CAPTCHAS) ? "&solveCaptchas=true" : ""}`, release: noop };
     }
     case "browserbase": {
       const key = env.BROWSERBASE_API_KEY!;
@@ -86,13 +91,14 @@ export async function startSession(p: ProviderId, env: Env = process.env, opts: 
     }
     case "hyperbrowser": {
       const key = env.HYPERBROWSER_API_KEY!;
-      const j = await postJson("https://api.hyperbrowser.ai/api/session", { "x-api-key": key }, {});
+      const j = await postJson("https://api.hyperbrowser.ai/api/session", { "x-api-key": key }, on(env.HYPERBROWSER_SOLVE_CAPTCHAS) ? { solveCaptchas: true } : {});
       const id = String(j.id ?? "");
       return { provider: p, id, live: liveViewFrom(p, j), wsUrl: String(j.wsEndpoint), release: hyperRelease(key, id) };
     }
     case "anchor": {
       const key = env.ANCHOR_API_KEY!;
-      const j = await postJson("https://api.anchorbrowser.io/v1/sessions", { "anchor-api-key": key }, {});
+      const captcha = on(env.ANCHOR_SOLVE_CAPTCHA);
+      const j = await postJson("https://api.anchorbrowser.io/v1/sessions", { "anchor-api-key": key }, captcha ? { browser: { captcha_solver: { active: true } }, session: { proxy: { active: true, type: "anchor_proxy" } } } : {});
       const d = (j.data ?? j) as Record<string, unknown>;
       const id = String(d.id ?? "");
       return { provider: p, id, live: liveViewFrom(p, d), wsUrl: String(d.cdp_url ?? `wss://connect.anchorbrowser.io?apiKey=${encodeURIComponent(key)}&sessionId=${id}`), release: anchorRelease(key, id) };

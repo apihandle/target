@@ -118,11 +118,13 @@ describe("signup verdict", () => {
 });
 
 describe("paid surveys / earn tasks", () => {
-  it("are never filled with invented answers (browser and chat prompts)", () => {
-    expect(SURVEY_RULE).toMatch(/never fill in paid surveys/i);
+  it("are never done by the bot: no invented answers, no paid-to-click (browser and chat prompts)", () => {
+    expect(SURVEY_RULE).toMatch(/never do paid-to-click, watch-ads, offerwall or paid-survey earn tasks/i);
+    expect(SURVEY_RULE).toMatch(/no survey answers/i);
     expect(autoPrompt("Complete the survey", [], [], 10, true)).toContain(SURVEY_RULE);
     expect(autoPrompt("Complete the survey", [], [], 10, false)).toContain(SURVEY_RULE);
-    expect(SYSTEM_PROMPT).toMatch(/paid surveys and paid-to-click/i);
-    expect(SYSTEM_PROMPT).toMatch(/never fill them in with made-up answers/i);
+    expect(SYSTEM_PROMPT).toMatch(/paid-to-click, watch-ads-for-money, offerwall and paid-survey earn tasks/i);
+    expect(SYSTEM_PROMPT).toMatch(/never do them with the browser/i);
+    expect(SYSTEM_PROMPT).toMatch(/click fraud/i);
   });
 });

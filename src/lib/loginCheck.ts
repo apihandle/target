@@ -138,3 +138,9 @@ export function verifySignup(page: LoginPage, result?: string): SignupVerdict {
   if (passwords > 0) return { ok: false, code: NOT_CREATED, reason: "the sign-up form is still on the page" };
   return { ok: true, evidence: "the sign-up form is gone" };
 }
+
+
+/** The job's own step log has a server-verified sign-in ("done: signed in, verified: ..."). */
+export function sessionProven(log: string[]): boolean {
+  return log.some((l) => /^done: signed in, verified: /.test(l));
+}
