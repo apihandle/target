@@ -24,6 +24,8 @@ Add ONLY if the name does not exist yet (changing an existing value breaks saved
 
 Also needed from the owner: SUPABASE_SERVICE_ROLE_KEY (Supabase > Project Settings > API), ADMIN_EMAIL (owner's sign-in email). Optional: TAVILY_API_KEY (free key at tavily.com), POLLINATIONS_KEY (AI photo edits).
 
+Admin panel (/admin, 2026-11-05): add ADMIN_EMAILS = the owner's sign-in email(s), comma separated (e.g. the owner's Gmail). Without it /admin is a 404 for everyone. See docs/ADMIN.md.
+
 Then Deployments > latest Production > Redeploy.
 
 ## 2. GitHub > apihandle/target > Settings > Secrets and variables > Actions
@@ -47,3 +49,7 @@ On the free Space only browser jobs run (steps/auto). Code and video jobs need a
 
 - https://gettarget.vercel.app loads and sign-in works.
 - Settings > Browser tasks: a test task gets picked up by the worker.
+
+## Migration 0019 (admin panel, 2026-11-05)
+
+Run `supabase/migrations/0019_admin.sql` in Supabase > SQL editor. It adds admin_settings, admin_audit_log and user_presence (all server-only). Until it runs, /admin still opens but Controls refuse changes (nothing can be audited), and country/device/active-now stay empty. Nothing else in the app is affected.
