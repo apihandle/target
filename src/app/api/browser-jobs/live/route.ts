@@ -26,8 +26,14 @@ export async function GET(req: Request) {
   const url = safeLiveUrl(liveIn?.url);
   const live = url ? { provider: String(liveIn?.provider ?? ""), url, interactive: !!liveIn?.interactive } : null;
   const mode = viewMode({ status: String(j.status), live, frame: j.frame as string | null });
+  // A job waiting for approval: its pending card (approval_requests) so the live card can show Approve inline.
+  let approval_id: string | null = null;
+  if (j.status === "needs_approval") {
+    const { data: aps } = await db.from("approval_requests").select("id, payload, status").eq("user_id", a.user.id).eq("conversation_id", c).eq("status", "pending").limit(20);
+    approval_id = ((aps ?? []) as { id: string; payload: { browser_job_id?: string } | null }[]).find((x) => x.payload?.browser_job_id === j.id)?.id ?? null;
+  }
   const job = {
-    id: j.id, goal: j.goal, start_url: j.start_url, status: j.status, log, error: j.error, created_at: j.created_at, finished_at: j.finished_at,
+    id: j.id, approval_id, goal: j.goal, start_url: j.start_url, status: j.status, log, error: j.error, created_at: j.created_at, finished_at: j.finished_at,
     live: j.status === "running" ? live : null, mode,
     // The screenshot only travels when it is what the panel shows.
     frame: mode === "screens" ? j.frame : null, frame_url: j.frame_url ?? null, frame_at: j.frame_at ?? null,

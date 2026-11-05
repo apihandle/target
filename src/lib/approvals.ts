@@ -132,6 +132,16 @@ export const ACTION_DEFS: Record<string, Def> = {
     },
     describe: () => ({ summary: "Website account", destination: "Website" }),
   },
+  /** Created only by browser_task (a sign-in, typing steps, or submitting someone's form): approving it starts the browser. */
+  browser_task: {
+    label: "Browser task", provider: null, internal: true,
+    validate(r) {
+      const id = typeof r.browser_job_id === "string" ? r.browser_job_id : "";
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, error: "Bad browser task" };
+      return { ok: true, params: { browser_job_id: id } };
+    },
+    describe: () => ({ summary: "Run a browser task", destination: "Website" }),
+  },
   /** Created only after a booking job stopped before the final confirm: approving it lets the browser press it once. */
   reservation: {
     label: "Booking", provider: null, internal: true,

@@ -23,6 +23,15 @@ export async function waitForJob(ctx: BuiltinCtx, id: string, ms = 45000, every 
   }
 }
 
+/**
+ * How long a tool may wait for a worker job inside this chat reply: up to 150 s, but never past the chat's deadline
+ * (minus 25 s for the answer). Without a deadline (scheduled runs, tests) 100 s.
+ */
+export function jobWaitMs(ctx: Pick<BuiltinCtx, "deadline">, cap = 150000): number {
+  if (!ctx.deadline) return 100000;
+  return Math.max(0, Math.min(cap, ctx.deadline - 25000 - Date.now()));
+}
+
 /** Files from this chat the worker may download: short-lived signed links, never public paths. */
 export async function chatInputs(ctx: BuiltinCtx, names: string[]): Promise<{ name: string; url: string }[]> {
   if (!names.length) return [];
@@ -41,8 +50,10 @@ export async function chatInputs(ctx: BuiltinCtx, names: string[]): Promise<{ na
 function jobReply(j: JobView | null, id: string) {
   if (!j) return { job_id: id, status: "unknown" };
   if (j.status === "done") return { job_id: id, status: "done", result: j.result, files: j.files };
-  if (j.status === "failed") return { job_id: id, status: "failed", error: j.error };
-  return { job_id: id, status: j.status, note: "Still running on the worker. Tell the user it will show in Settings, Browser tasks, and that you can check with job_status." };
+  if (j.status === "failed") return { job_id: id, status: "failed", error: j.error, result: j.result, note: "The task FAILED. Say so plainly with the reason; never say it was done or submitted." };
+  if (j.status === "cancelled") return { job_id: id, status: "cancelled", note: "The user stopped it." };
+  if (j.status === "needs_approval") return { job_id: id, status: "needs_approval", note: "It waits for the user's Approve on its card in this chat. Don't call job_status again in this reply." };
+  return { job_id: id, status: j.status, note: "Still running after waiting as long as this reply can. Tell the user in one line that the live browser card in this chat shows it and the result is posted here when it ends. Don't call job_status again in this reply." };
 }
 
 export const IMAGE_OPS = z.object({
@@ -117,12 +128,14 @@ export const ROUND2_TOOLS: BuiltinTool[] = [
   }),
   tool({
     name: "job_status", label: "Checking the task",
-    description: "Check a browser, code or video task started earlier (by its job_id) and get its result.",
+    description: "Wait for a browser, code or video task started earlier (by its job_id) and get its result. It waits until the task ends (or as long as this reply can), so call it once, not in a loop.",
     input: z.object({ job_id: z.string().uuid() }),
     async execute(a, ctx) {
       const { data } = await ctx.db.from("browser_jobs").select(JOB_VIEW).eq("id", a.job_id).eq("user_id", ctx.userId).maybeSingle();
       if (!data) throw new Error("No such task");
-      return jobReply(data as JobView, a.job_id);
+      const ms = jobWaitMs(ctx);
+      const j = ["queued", "running"].includes((data as JobView).status) && ms > 3000 ? await waitForJob(ctx, a.job_id, ms, 3000) : (data as JobView);
+      return jobReply(j, a.job_id);
     },
   }),
   tool({

@@ -34,6 +34,7 @@ export function failureHint(error: string | null | undefined): FailureHint {
   if (/WRONG_LOGIN/i.test(e)) return { code: "WRONG_LOGIN", reason: "The site says the saved username or password is wrong.", next: "Update the login in the vault, then ask again." };
   if (/STOPPED_BY_USER|Stopped by you/i.test(e)) return { code: "STOPPED", reason: "You stopped the job.", next: "Ask again whenever you want." };
   if (/NOT_SIGNED_IN/i.test(e)) return { code: "NOT_SIGNED_IN", reason: `The sign-in wasn't confirmed on the page${detail ? `: ${detail.slice(0, 160)}` : ""}.`, next: "Ask again, or tap Take control to finish it yourself." };
+  if (/NOT_SUBMITTED/.test(e)) return { code: "NOT_SUBMITTED", reason: `The form was NOT submitted: ${detail || "the page never confirmed it"}.`, next: "Ask again, or tap Take control to check the fields and press Submit yourself." };
   if (/took too long|ran out of steps/i.test(e)) return { code: "TIMEOUT", reason: detail || "The job ran out of time.", next: "Try a shorter, more specific request." };
   return { code: "FAILED", reason: detail || "The browser stopped without a reason.", next: "Ask again, or tap Take control next time to see the page." };
 }

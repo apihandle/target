@@ -39,6 +39,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+/** Tools whose answer comes from a browser / worker job (its reply gets no web-search sources block). */
+const BROWSER_TOOLS = new Set(["browser_task", "job_status", "site_login", "checkout", "book", "site_register", "site_password_reset"]);
+
 export async function POST(req: Request) {
   const t0 = Date.now();
   // Server-Timing marks: how long each step before the first word took (visible in the browser's network tab).
@@ -296,6 +299,7 @@ export async function POST(req: Request) {
       const send = (s: string) => { if (cancelled) return; try { controller.enqueue(encoder.encode(s)); } catch { cancelled = true; } };
       let full = "";
       let signinRan = false;
+      let browserTurn = false;
       const login: { v: { status: string; site: string; at: number; line: string } | null } = { v: null };
       const cards: Record<string, string>[] = [];
       const autoCards: Record<string, string>[] = [];
@@ -303,7 +307,7 @@ export async function POST(req: Request) {
       let paused = false;
       try {
         if (toolsOff && loaded.connected.size) { const n = "_(Connector tools aren't available with the AI model answering right now, so this reply can't use your connected apps.)_\n\n"; full += n; send(n); }
-        const ctx = { db, userId: user.id, projectId, conversationId: convId, taskId: task?.id ?? null, userTexts: [...history.filter((m) => m.role === "user").slice(-2).map((m) => m.content), text] };
+        const ctx = { db, userId: user.id, projectId, conversationId: convId, taskId: task?.id ?? null, deadline: t0 + 265000, userTexts: [...history.filter((m) => m.role === "user").slice(-2).map((m) => m.content), text] };
         const result: AgentResult = intent ? await (async (): Promise<AgentResult> => {
           const step = "\n\n> Signing in\n\n"; full += step; send(step);
           const out = await executeToolCall(ctx, SITE_LOGIN, { site: intent.site, method: intent.google ? "google" : "password", check: text.slice(0, 200), ...(lang ? { lang } : {}) }, loaded);
@@ -351,6 +355,7 @@ export async function POST(req: Request) {
           onText: (d) => { full += d; send(d); },
           label: (call: ToolCall) => toolLabel(call.function.name),
           onTool: async (call: ToolCall) => {
+            if (BROWSER_TOOLS.has(call.function.name)) browserTurn = true;
             const out0 = await executeToolCall(ctx, call.function.name, call.function.arguments, loaded);
             // Task mode: the approval is made in code and the task carries on (payments and deletes still wait).
             let out: ToolOutcome = out0;
@@ -419,7 +424,8 @@ export async function POST(req: Request) {
         if (!cancelled) { interrupted = true; send("\n\n[connection interrupted]"); }
       } finally {
         if (cancelled && full) full += "\n\n_[Response stopped]_";
-        if (!cancelled && full && found?.results.length) {
+        // A reply about a browser job answers from the job, not from a web search: no stray sources under it.
+        if (!cancelled && full && found?.results.length && !browserTurn && !signinRan) {
           const src = sourcesFence(found);
           full += src; send(src);
         }

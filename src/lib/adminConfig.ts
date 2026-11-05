@@ -73,6 +73,7 @@ export function featuresForApproval(actionType: string, payload: unknown): Featu
     case "purchase": return ["checkout", "browser"];
     case "reservation": return ["booking", "browser"];
     case "site_account": return ["browser"];
+    case "browser_task": return ["browser"];
     case "create_schedule": return ["scheduled"];
     case "connector_tool": return p.connector === "google" && typeof p.tool === "string" && EMAIL_SEND_TOOLS.has(p.tool) ? ["email_send"] : [];
     default: return [];

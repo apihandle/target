@@ -5,12 +5,13 @@ import { isActive, stepText } from "@/lib/browserProgress";
 import { CHECK_LINE, safeLiveUrl, type Control, type ViewMode } from "@/lib/liveView";
 
 export type LiveJob = {
-  id: string; goal: string; start_url: string; status: string; log: string[]; error?: string | null;
+  id: string; goal: string; start_url: string; status: string; log: string[]; error?: string | null; approval_id?: string | null;
   live?: { provider: string; url: string; interactive: boolean } | null; mode?: ViewMode;
   frame?: string | null; frame_url?: string | null; control?: Control | null; control_reason?: string | null;
 };
 
 function title(job: LiveJob): string {
+  if (job.status === "needs_approval") return "Waiting for your approval";
   if (job.status === "queued") return job.control === "paused" || job.control === "user" ? "Needs you" : "Starting the browser";
   if (job.status === "running") return job.control === "paused" ? "Needs you" : job.control === "user" ? "You're in control" : job.control === "stop" ? "Stopping" : "Browser at work";
   if (job.status === "done") return "Done";
@@ -40,7 +41,8 @@ export default function BrowserLiveCard({ conversationId, streaming, firstDelayM
         const j = r.ok ? ((await r.json()) as { job: LiveJob | null }) : { job: null };
         if (stop) return;
         setJob(j.job);
-        active = !!j.job && isActive(j.job.status);
+        // A job waiting for approval keeps the card up (and polling) until it starts or is cancelled.
+        active = !!j.job && (isActive(j.job.status) || j.job.status === "needs_approval");
         if (active) setSeen(true);
       } catch { /* try again next tick */ }
       if (!stop && (active || streaming)) timer = setTimeout(tick, pollMs);
@@ -64,7 +66,38 @@ export default function BrowserLiveCard({ conversationId, streaming, firstDelayM
     setBusy(false);
   }, [job]);
 
+  const decide = async (approve: boolean) => {
+    if (!job) return;
+    setBusy(true); setNote("");
+    try {
+      const r = job.approval_id
+        ? await fetch(`/api/approvals/${job.approval_id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision: approve ? "approve" : "reject" }) })
+        : await fetch(`/api/browser-jobs/${job.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: approve ? "approve" : "cancel" }) });
+      if (!approve && job.approval_id) await fetch(`/api/browser-jobs/${job.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "cancel" }) }).catch(() => null);
+      const j = (await r.json().catch(() => ({}))) as { error?: string };
+      if (!r.ok) setNote(j.error ?? "Couldn't do that");
+      else setJob({ ...job, status: approve ? "queued" : "cancelled" });
+    } catch { setNote("Couldn't do that"); }
+    setBusy(false);
+  };
+
   if (!job) return null;
+  if (job.status === "needs_approval") {
+    let h = "";
+    try { h = new URL(job.start_url).hostname.replace(/^www\./, ""); } catch { /* keep empty */ }
+    return (
+      <div data-testid="browser-live" role="status" aria-live="polite" className="w-full rounded-[22px] rounded-bl-md border border-accent/30 bg-surface/85 px-3 py-3 backdrop-blur-xl sm:max-w-[92%] sm:px-4">
+        <p data-testid="browser-live-title" className="truncate text-sm font-medium text-ink">{title(job)}{h && <span className="text-muted"> · {h}</span>}</p>
+        <p data-testid="browser-approval-line" className="mt-1 text-xs text-ink-soft">{job.goal.slice(0, 300)}</p>
+        <p className="mt-1 text-xs text-muted">Nothing runs until you approve it here.</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button type="button" data-testid="browser-approve" disabled={busy} onClick={() => decide(true)} className="rounded-full bg-ok px-3 py-1.5 text-xs font-semibold text-bg disabled:opacity-50">Approve</button>
+          <button type="button" data-testid="browser-reject" disabled={busy} onClick={() => decide(false)} className="rounded-full border border-white/20 px-3 py-1.5 text-xs text-ink disabled:opacity-50">Cancel</button>
+        </div>
+        {note && <p className="mt-1 text-xs text-muted">{note}</p>}
+      </div>
+    );
+  }
   const active = isActive(job.status);
   if (!seen && !(streaming && active)) return null;
 

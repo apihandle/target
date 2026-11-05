@@ -1,4 +1,5 @@
-import { waitForJob } from "@/lib/builtins/round2";
+import { jobWaitMs, waitForJob } from "@/lib/builtins/round2";
+import { isFormSubmitGoal } from "@/lib/formFill";
 import { kickCloudWorker } from "@/lib/server/kickWorker";
 import { z } from "zod";
 import type { Db } from "@/lib/server/auth";
@@ -13,7 +14,7 @@ import {
   FILE_FORMATS, SITE, browserStep, captionsToText, chartInput, chartUrl, fileName, imageUrl, makePdf, slugFor, stepsNeedApproval, youtubeId, type FileFormat,
 } from "@/lib/builtins/helpers";
 
-export type BuiltinCtx = { db: Db; userId: string; conversationId: string | null; fetch?: typeof fetch; autoApproveBrowser?: boolean; userTexts?: string[] };
+export type BuiltinCtx = { db: Db; userId: string; conversationId: string | null; fetch?: typeof fetch; autoApproveBrowser?: boolean; userTexts?: string[]; /** Epoch ms by which a tool must answer (the chat's time budget). */ deadline?: number };
 export type BuiltinTool<S extends z.ZodTypeAny = z.ZodTypeAny> = {
   name: string; label: string; description: string; input: S;
   execute: (args: z.infer<S>, ctx: BuiltinCtx) => Promise<unknown>;
@@ -149,22 +150,33 @@ export const BUILTIN_TOOLS: BuiltinTool[] = [
         const { data } = await ctx.db.from("vault_secrets").select("id").eq("user_id", ctx.userId).in("id", ids);
         if ((data ?? []).length !== new Set(ids).size) throw new Error("A vault item in the steps doesn't exist");
       }
-      // Smart tasks without a login just look things up, so they run at once; sign-ins and typing steps wait for the user.
-      const needs = (smart ? a.secret_ids.length > 0 : stepsNeedApproval(a.steps)) && !ctx.autoApproveBrowser;
+      // Smart tasks without a login just look things up, so they run at once. Sign-ins, typing steps and submitting
+      // someone else's form wait for the user's Approve on a card in this chat (Task mode approves it in code).
+      const formSubmit = smart && isFormSubmitGoal(a.goal, a.start_url);
+      const needs = (smart ? a.secret_ids.length > 0 || formSubmit : stepsNeedApproval(a.steps)) && !ctx.autoApproveBrowser;
       const { data, error } = await ctx.db.from("browser_jobs").insert({
         user_id: ctx.userId, goal: a.goal, start_url: a.start_url, steps: smart ? [] : a.steps, mode: smart ? "auto" : "steps", allowed_secrets: smart ? a.secret_ids : [],
         status: needs ? "needs_approval" : "queued", conversation_id: ctx.conversationId,
       }).select("id").single();
       if (error || !data) throw new Error("Couldn't create the browser task");
-      if (!needs) {
-        await kickCloudWorker();
-        const done = await waitForJob(ctx, data.id, 100000, 3000);
-        if (done && (done.status === "done" || done.status === "failed"))
-          return { job_id: data.id, status: done.status, result: done.result, error: done.error, files: done.files, note: "The cloud browser finished. Answer the user from this result now." };
+      if (needs) {
+        let host = "the site";
+        try { host = new URL(a.start_url).hostname.replace(/^www\./, ""); } catch { /* keep */ }
+        const summary = (formSubmit ? `Fill in and submit the form on ${host}: ${a.goal}` : `Let the browser act on ${host}${smart && a.secret_ids.length ? " with your saved login" : ""}: ${a.goal}`).slice(0, 300);
+        const { data: ap, error: e2 } = await ctx.db.from("approval_requests").insert({
+          user_id: ctx.userId, action_type: "browser_task", summary, destination: host, status: "pending", conversation_id: ctx.conversationId,
+          payload: { browser_job_id: data.id },
+        }).select("id").single();
+        if (e2 || !ap) throw new Error("Couldn't prepare the approval card");
+        return { __approval: { id: ap.id as string, summary } };
       }
+      await kickCloudWorker();
+      const done = await waitForJob(ctx, data.id, jobWaitMs(ctx), 3000);
+      if (done && ["done", "failed", "cancelled"].includes(done.status))
+        return { job_id: data.id, status: done.status, result: done.result, error: done.error, files: done.files, note: "The cloud browser finished. Answer the user from this result now: say exactly what the result says; a failed task failed." };
       return {
-        job_id: data.id, status: needs ? "needs_approval" : "queued", manage_url: `${SITE}/app/settings/browser`,
-        note: needs ? "Tell the user it waits for their approval in Settings, Browser tasks." : "It runs now in a cloud browser; the result is posted into this chat when it finishes (also in Settings, Browser tasks).",
+        job_id: data.id, status: "queued",
+        note: "It runs now in a cloud browser (the live browser card in this chat shows it). The result is posted into this chat when it finishes; call job_status with job_id to wait for it.",
       };
     },
   }),

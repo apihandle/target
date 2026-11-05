@@ -7,6 +7,7 @@ import { openVault } from "@/lib/builtins/vault";
 import { checkLimit } from "@/lib/connectors/rateLimit";
 import { sendPushToUser } from "@/lib/server/push";
 import { decideNext, describeVideo, snapshotSchema } from "@/lib/server/autoBrowser";
+import { advanceKind, formReport, isFormSubmitGoal, mergeReadback, NOT_SUBMITTED, submissionConfirmed, type FormField } from "@/lib/formFill";
 import { withAiUsage } from "@/lib/aiUsage";
 import { decryptWithAny, decryptionKeys } from "@/lib/connectors/crypto";
 import { loadSiteCookies, saveSiteSession } from "@/lib/server/siteSessions";
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
 
   const id = typeof b.job_id === "string" && UUID_RE.test(b.job_id) ? b.job_id : null;
   if (!id) return badRequest("job_id required");
-  const { data: job } = await db.from("browser_jobs").select("id, user_id, goal, status, steps, mode, allowed_secrets, max_steps, log, conversation_id, inputs, claimed_at, live, control, paused_until").eq("id", id).maybeSingle();
+  const { data: job } = await db.from("browser_jobs").select("id, user_id, goal, start_url, status, steps, mode, allowed_secrets, max_steps, log, conversation_id, inputs, claimed_at, live, control, paused_until").eq("id", id).maybeSingle();
   if (!job || job.status !== "running") return json({ error: "Job is not running" }, 409);
 
   // ---- live view and control (the chat panel)
@@ -143,6 +144,9 @@ export async function POST(req: Request) {
   const signin = signinOf(job.inputs)
     ?? (account ? { site: account.site, via: "password", goal: account.goal, lang: account.lang ?? null } : null)
     ?? (checkout ? { site: checkout.site, via: "password", goal: checkout.goal, lang: checkout.lang ?? null } : null);
+  // Filling and submitting someone else's form: done only on a page that confirms the submit.
+  const formJob = job.mode === "auto" && !account && !checkout && !signin && isFormSubmitGoal(String(job.goal ?? ""), String(job.start_url ?? ""));
+  const formState = ((job.inputs as { form?: { readback?: FormField[]; submit_clicked?: boolean } } | null)?.form) ?? {};
   if (b.action === "checkout_ready" || b.action === "checkout_state") {
     if (!checkout) return badRequest("Not a checkout job");
     if (b.action === "checkout_ready") {
@@ -217,7 +221,7 @@ export async function POST(req: Request) {
       if ("action" in g && g.pays) pays = true;
       return g;
     } : undefined;
-    let action = await withAiUsage({ userId: job.user_id as string, feature: "browser" }, () => decideNext(signin?.goal ?? (job.goal as string), snap.data, (secrets ?? []) as { id: string; kind: string; label: string; site: string | null }[], log, left, guard));
+    let action = await withAiUsage({ userId: job.user_id as string, feature: "browser" }, () => decideNext(signin?.goal ?? (job.goal as string), snap.data, (secrets ?? []) as { id: string; kind: string; label: string; site: string | null }[], log, left, guard, { form: formJob }));
     if (action.do === "ready_to_pay") {
       if (checkout?.phase === "prepare") {
         // Remember what the pay page showed (already checked against it by the guard); the card is built from this.
@@ -249,13 +253,28 @@ export async function POST(req: Request) {
       const bot = detectBotCheck({ title: snap.data.title, text: snap.data.text, frames: snap.data.bot?.frames, widget: snap.data.bot?.widget, solved: snap.data.bot?.solved });
       if (bot && (bot.kind === "page" || snap.data.elements.some((e) => e.type === "password"))) action = { do: "fail", reason: `${CLOUDFLARE_BLOCKED}: ${bot.line}`.slice(0, 400) };
     }
+    if (formJob) {
+      // Before every Next / Submit the page's field values are recorded: the report is built from them, never from the goal.
+      const adv = action.do === "click" ? advanceKind(snap.data.elements.find((e) => e.i === (action as { i: number }).i)?.text ?? "") : null;
+      if (adv) {
+        const inputs = (job.inputs ?? {}) as Record<string, unknown>;
+        await db.from("browser_jobs").update({ inputs: { ...inputs, form: { readback: mergeReadback(formState.readback, snap.data.fields), submit_clicked: formState.submit_clicked || adv === "submit" } } }).eq("id", id);
+      }
+      if (action.do === "done") {
+        const said = submissionConfirmed(snap.data);
+        if (said && formState.submit_clicked) {
+          verified = `verified: "${said}"`;
+          action = { do: "done", result: formReport({ confirmed: said, readback: formState.readback ?? [], log, url: snap.data.url }) };
+        } else action = { do: "fail", reason: `${NOT_SUBMITTED}: ${said ? "the confirmation showed without a Submit click by the browser" : "the page never confirmed the submit"} (${snap.data.url.slice(0, 120)})`.slice(0, 400) };
+      }
+    }
     if (action.do === "done" && account?.flow === "register") {
       // An account is only "created" when the page shows it (no form error, form gone or a created / verify-email message).
       const v = verifySignup(snap.data, action.result);
       if (v.ok) verified = `verified: ${v.evidence}`;
       else action = { do: "fail", reason: `${v.code}: ${v.reason}`.slice(0, 400) };
     }
-    const line = action.do === "done" || action.do === "fail" ? (verified ? `done: ${account?.flow === "register" ? "account created" : "signed in"}, ${verified}`.slice(0, 200) : action.do) : `${action.do}${"i" in action ? ` [${action.i}]` : ""}${action.do === "fill_secret" ? ` ${action.field}` : ""}${"why" in action && action.why ? `: ${action.why}` : ""}`.slice(0, 200);
+    const line = action.do === "done" || action.do === "fail" ? (verified ? `done: ${formJob ? "submitted" : account?.flow === "register" ? "account created" : "signed in"}, ${verified}`.slice(0, 200) : action.do) : `${action.do}${"i" in action ? ` [${action.i}]` : ""}${action.do === "fill_secret" ? ` ${action.field}` : ""}${"why" in action && action.why ? `: ${action.why}` : ""}`.slice(0, 200);
     await db.from("browser_jobs").update({ log: [...log, line, ...(pays && action.do !== "done" && action.do !== "fail" ? [PAY_PRESSED] : [])] }).eq("id", id);
     return json({ action });
   }
@@ -274,7 +293,18 @@ export async function POST(req: Request) {
       ok = false;
       b.error = `${CLOUDFLARE_BLOCKED}: ${String(b.result).replace(/\s+/g, " ").slice(0, 300)}`;
     }
+    // A form job is done only when its log has the page's submit confirmation; its report is the one built from the page.
+    let formFail = "";
+    if (formJob && ok && !((job.log ?? []) as string[]).some((l) => l.startsWith("done: submitted"))) {
+      ok = false;
+      b.error = `${NOT_SUBMITTED}: the page never confirmed the submit`;
+    }
+    if (formJob && !ok && !stoppedByUser) formFail = formReport({ confirmed: null, readback: formState.readback ?? [], log: (job.log ?? []) as string[], url: String(job.start_url ?? "") });
     let result = typeof b.result === "string" ? b.result : null;
+    if (formJob && ok) {
+      const built = String(b.result ?? "").split("\n\nFinal page:")[0];
+      result = built.startsWith("Submitted.") ? `${built}` : result;
+    }
     // Video jobs: the worker sends frames + captions; TARGET turns them into a description.
     if (ok && job.mode === "video") {
       const frames = Array.isArray(b.frames) ? (b.frames as unknown[]).filter((f): f is string => typeof f === "string" && f.length < 400000).slice(0, 8) : [];
@@ -311,7 +341,7 @@ export async function POST(req: Request) {
       const head = account ? accountPost(account, ok) : stoppedByUser ? `⏹ **Browser task stopped:** ${job.goal}` : si ? signinPostHead(si.site, ok, si.lang) : ok ? `🌐 **Browser task done:** ${job.goal}` : `⚠️ **Browser task failed:** ${job.goal}`;
       // A failure always says exactly why and what can be done next (Take control, connect Gmail, enable a solver...).
       const next = `**Next:** ${failureHint(String(b.error ?? "")).next}`;
-      const body = ok ? (result ?? "").slice(0, 6000) : stoppedByUser ? "Stopped by you." : si ? `${signinFailure(String(b.error ?? ""), si.site, si.lang).line}\n\n${next}` : failureLine(String(b.error ?? "")).replace(" Next: ", "\n\n**Next:** ");
+      const body = ok ? (result ?? "").slice(0, 6000) : stoppedByUser ? "Stopped by you." : si ? `${signinFailure(String(b.error ?? ""), si.site, si.lang).line}\n\n${next}` : `${failureLine(String(b.error ?? "")).replace(" Next: ", "\n\n**Next:** ")}${formFail ? `\n\n${formFail}` : ""}`;
       const links = files.map((f) => `- [${f.name}](${f.url})`).join("\n");
       const content = [head, body, links].filter(Boolean).join("\n\n");
       await db.from("messages").insert({ conversation_id: job.conversation_id, user_id: job.user_id, role: "assistant", content });

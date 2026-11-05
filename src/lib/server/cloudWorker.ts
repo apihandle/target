@@ -203,7 +203,35 @@ async function runSteps(job: Job, page: Page, api: Api): Promise<string> {
 
 async function snapshot(page: Page) {
   const data = await page.evaluate(() => {
-    const sel = "a[href], button, input:not([type=hidden]), select, textarea, [role=button], [role=link], [role=checkbox], [role=tab], [role=option], [contenteditable=true], summary, label";
+    const sel = "a[href], button, input:not([type=hidden]), select, textarea, [role=button], [role=link], [role=checkbox], [role=radio], [role=switch], [role=listbox], [role=combobox], [role=tab], [role=option], [contenteditable=true], summary, label";
+    const txt = (n: Element | null | undefined) => ((n as HTMLElement | null)?.innerText ?? n?.textContent ?? "").replace(/\s+/g, " ").trim();
+    const byIds = (ids: string | null) => (ids ?? "").split(/\s+/).map((x) => txt(document.getElementById(x))).filter(Boolean).join(" ");
+    // Checkbox / radio / switch state: native inputs and ARIA widgets (Google Forms uses div role=checkbox / radio).
+    const stateOf = (e: HTMLElement): boolean | null => {
+      const role = e.getAttribute("role") || "";
+      const t = String((e as HTMLInputElement).type || "").toLowerCase();
+      if (e.tagName === "INPUT" && (t === "checkbox" || t === "radio")) return (e as HTMLInputElement).checked;
+      if (/^(checkbox|radio|switch|menuitemcheckbox|menuitemradio)$/.test(role)) return e.getAttribute("aria-checked") === "true";
+      return null;
+    };
+    const ownLabel = (e: HTMLElement) => {
+      const f = e as HTMLInputElement;
+      return e.getAttribute("aria-label") || byIds(e.getAttribute("aria-labelledby")) || (f.labels && f.labels[0] ? txt(f.labels[0]) : "") || e.getAttribute("data-value") || txt(e) || f.value || "";
+    };
+    // The question a control belongs to: its group's heading / legend / label, else its own label.
+    const questionOf = (e: HTMLElement) => {
+      // Walk up: an option's own list item has no heading, the question's container does.
+      let g: HTMLElement | null = e.parentElement;
+      for (let up = 0; g && up < 10; up++, g = g.parentElement) {
+        if (!g.matches("[role=listitem], fieldset, [role=radiogroup], [role=group], [role=list]")) continue;
+        const own = ownLabel(e);
+        const h = g.querySelector("[role=heading], legend, h1, h2, h3, h4");
+        const q = (g.getAttribute("role") !== "listitem" ? g.getAttribute("aria-label") : "") || byIds(g.getAttribute("aria-labelledby")) || txt(h);
+        if (q && q !== own) return q.slice(0, 150);
+      }
+      const f = e as HTMLInputElement;
+      return (e.getAttribute("aria-label") || byIds(e.getAttribute("aria-labelledby")) || (f.labels && f.labels[0] ? txt(f.labels[0]) : "") || e.getAttribute("placeholder") || e.getAttribute("name") || "").slice(0, 150);
+    };
     const els: { i: number; tag: string; type?: string; text: string; name?: string }[] = [];
     let i = 0;
     document.querySelectorAll("[data-target-i]").forEach((e) => e.removeAttribute("data-target-i"));
@@ -217,18 +245,45 @@ async function snapshot(page: Page) {
       const secret = ftype === "password" || /cc-|card|cvv|cvc|expir|security.?code/i.test(`${e.getAttribute("autocomplete") || ""} ${e.getAttribute("name") || ""} ${e.id || ""}`);
       // Form fields show their label and what is filled in ("Visit Date = 10/12/2026"), never a password or card value.
       const field = (e.tagName === "INPUT" && !/^(button|submit|reset|image|checkbox|radio|file)$/i.test(ftype)) || e.tagName === "TEXTAREA" || e.tagName === "SELECT";
-      const val = !field || secret ? "" : e.tagName === "SELECT" ? (f.selectedOptions?.[0]?.text ?? "") : f.value;
-      const label = e.getAttribute("aria-label") || (field ? "" : e.innerText) || e.getAttribute("placeholder") || e.getAttribute("title") || (field ? e.getAttribute("name") || "" : "") || (!field && !secret ? f.value : "") || e.getAttribute("alt") || "";
-      const text = (val ? `${label} = ${val}` : label).replace(/\s+/g, " ").trim().slice(0, 110);
+      const listbox = /^(listbox|combobox)$/.test(e.getAttribute("role") || "") && e.tagName !== "INPUT";
+      const picked = listbox ? txt(e.querySelector("[role=option][aria-selected=true]")) : "";
+      const val = listbox ? picked : !field || secret ? "" : e.tagName === "SELECT" ? (f.selectedOptions?.[0]?.text ?? "") : f.value;
+      const label = e.getAttribute("aria-label") || byIds(e.getAttribute("aria-labelledby")) || (field || listbox ? "" : e.innerText) || e.getAttribute("placeholder") || e.getAttribute("title") || (field ? e.getAttribute("name") || "" : "") || (!field && !secret ? f.value : "") || e.getAttribute("alt") || (listbox ? questionOf(e) : "");
+      const on = stateOf(e);
+      const text = `${val ? `${label} = ${val}` : label}${on === null ? "" : on ? " [x]" : " [ ]"}`.replace(/\s+/g, " ").trim().slice(0, 110);
       els.push({ i, tag: e.tagName.toLowerCase(), type: e.getAttribute("type") || undefined, text, name: (e.getAttribute("name") || "").slice(0, 70) || undefined });
       if (++i >= 180) break;
     }
-    return { els, text: document.body ? document.body.innerText.replace(/\n{2,}/g, "\n").slice(0, 5500) : "" };
+    // Form fields read back from the page, one per question: text values, ticked options, the chosen dropdown option.
+    const fields: { q: string; v: string; kind: "text" | "choice" | "multi" | "select" }[] = [];
+    const put = (q: string, v: string, kind: "text" | "choice" | "multi" | "select") => {
+      if (!q) return;
+      const k = fields.find((x) => x.q === q);
+      if (!k) { if (fields.length < 60) fields.push({ q, v, kind }); return; }
+      if (v) k.v = kind === "multi" && k.v ? `${k.v}, ${v}` : v;
+    };
+    for (const e of Array.from(document.querySelectorAll<HTMLElement>("input:not([type=hidden]), textarea, select, [role=checkbox], [role=radio], [role=switch], [role=listbox]"))) {
+      const r = e.getBoundingClientRect();
+      if (r.width < 2 && r.height < 2) continue;
+      const t = String((e as HTMLInputElement).type || "").toLowerCase();
+      if (/^(button|submit|reset|image|file|password|hidden)$/.test(t)) continue;
+      if (/cc-|card|cvv|cvc|expir|security.?code/i.test(`${e.getAttribute("autocomplete") || ""} ${e.getAttribute("name") || ""} ${e.id || ""}`)) continue;
+      const role = e.getAttribute("role") || "";
+      const on = stateOf(e);
+      if (on !== null) {
+        const multi = t === "checkbox" || role === "checkbox" || role === "switch";
+        put(questionOf(e), on ? ownLabel(e).slice(0, 80) : "", multi ? "multi" : "choice");
+      } else if (role === "listbox") put(questionOf(e), txt(e.querySelector("[role=option][aria-selected=true]")).replace(/^(choose|select|-+)$/i, ""), "select");
+      else if (e.tagName === "SELECT") put(questionOf(e), ((e as HTMLSelectElement).selectedOptions?.[0]?.text ?? "").replace(/^(choose|select|-+)$/i, ""), "select");
+      else put(questionOf(e), String((e as HTMLInputElement).value ?? "").slice(0, 200), "text");
+    }
+    return { els, fields: fields.map((x) => ({ ...x, q: x.q.slice(0, 150), v: x.v.slice(0, 290) })), text: document.body ? document.body.innerText.replace(/\n{2,}/g, "\n").slice(0, 5500) : "" };
   });
   const shot = (await page.screenshot({ type: "jpeg", quality: 45 }).catch(() => null))?.toString("base64");
   const bot = await botSignals(page).catch(() => null);
   return {
     url: page.url().slice(0, 2000), title: (await page.title()).slice(0, 290), text: data.text, elements: data.els,
+    ...(data.fields?.length ? { fields: data.fields } : {}),
     ...(shot && shot.length < 390000 ? { screenshot: shot } : {}),
     ...(bot && (bot.frames.length || bot.widget) ? { bot: { frames: bot.frames, widget: bot.widget, solved: bot.solved } } : {}),
   };

@@ -45,6 +45,13 @@ export const EXECUTORS: Record<string, Executor> = {
     await kickCloudWorker();
     return { browser_job_id: p.browser_job_id, note: "The browser is placing the order now. You'll get a notification when it's done." };
   },
+  /** A browser task the user approved on its card in the chat (sign-in, typing steps, a form submit): queue it. */
+  async browser_task(p, { db, userId }) {
+    const { data } = await db.from("browser_jobs").update({ status: "queued" }).eq("id", p.browser_job_id).eq("user_id", userId).in("status", ["needs_approval"]).select("id");
+    if (!data?.length) throw new Error("This browser task was already started or cancelled.");
+    await kickCloudWorker();
+    return { browser_job_id: p.browser_job_id, note: "The browser is running it now; the result is posted in this chat when it ends. Call job_status with this id to wait for it." };
+  },
   /** A booking that stopped before the final confirm: the user's tap queues the confirm job. */
   async reservation(p, { db, userId }) {
     const { data } = await db.from("browser_jobs").update({ status: "queued" }).eq("id", p.browser_job_id).eq("user_id", userId).in("status", ["needs_approval", "failed"]).select("id");
