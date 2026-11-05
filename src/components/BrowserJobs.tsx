@@ -18,6 +18,7 @@ export default function BrowserJobs() {
   const [worker, setWorker] = useState(true);
   const [error, setError] = useState("");
   const load = async () => { const r = await fetch("/api/browser-jobs", { cache: "no-store" }); const j = await r.json().catch(() => ({})); if (!r.ok) setError(j.error ?? "Couldn't load"); setJobs(j.jobs ?? []); setWorker(!!j.worker); };
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- loads data on mount; state is set from the async fetch result
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, []);
   async function act(id: string, action: "approve" | "cancel") {
     const r = await fetch(`/api/browser-jobs/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });

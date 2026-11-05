@@ -26,8 +26,10 @@ export default async function ConnectorsPage(
 ) {
   const searchParams = await props.searchParams;
   const { supabase, user } = await getSessionOrRedirect("/app/connectors");
-  let loadError = false;
-  const conns = await listConnections(supabase as unknown as Db, user.id).catch(() => { loadError = true; return []; });
+  const { conns, loadError } = await listConnections(supabase as unknown as Db, user.id).then(
+    (conns) => ({ conns, loadError: false }),
+    () => ({ conns: [] as Awaited<ReturnType<typeof listConnections>>, loadError: true }),
+  );
   // Only the connectors that work end to end today, in this order.
   const all = connectorViews(process.env, conns);
   const views = SHOWN_CONNECTORS.map((id) => all.find((v) => v.id === id)).filter((v): v is NonNullable<typeof v> => !!v);

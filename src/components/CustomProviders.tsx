@@ -36,6 +36,7 @@ export default function CustomProviders() {
     if (!r?.ok) setError(j?.error ?? "Couldn't load your providers");
     setItems(j?.providers ?? []);
   };
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- loads data on mount; state is set from the async fetch result
   useEffect(() => { load(); }, []);
 
   const editing = f.id ? items?.find((p) => p.id === f.id) : undefined;

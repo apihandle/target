@@ -13,6 +13,7 @@ export function PagesList() {
   const [items, setItems] = useState<PageItem[] | null>(null);
   const [error, setError] = useState("");
   const load = async () => { const r = await fetch("/api/pages", { cache: "no-store" }); const j = await r.json().catch(() => ({})); if (!r.ok) setError(j.error ?? "Couldn't load"); setItems(j.pages ?? []); };
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- loads data on mount; state is set from the async fetch result
   useEffect(() => { load(); }, []);
   async function act(id: string, how: "hide" | "show" | "delete") {
     if (how === "delete" && !confirm("Delete this Page? The link stops working.")) return;
@@ -45,6 +46,7 @@ export function PagesList() {
 export function FilesList() {
   const [items, setItems] = useState<FileItem[] | null>(null);
   const load = async () => { const r = await fetch("/api/files", { cache: "no-store" }); const j = await r.json().catch(() => ({})); setItems(j.files ?? []); };
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- loads data on mount; state is set from the async fetch result
   useEffect(() => { load(); }, []);
   async function del(id: string) { if (!confirm("Delete this file?")) return; await fetch(`/api/files/${id}`, { method: "DELETE" }); load(); }
   if (!items) return <p className="text-sm text-muted">Loading…</p>;

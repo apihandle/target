@@ -48,6 +48,7 @@ export default function Sidebar({ conversations, activeId, email, section = "cha
 
   useEffect(() => {
     const q = query.trim();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clears results when the query gets too short; same effect drives the debounced search
     if (q.length < 2) { setHits(null); setSearching(false); return; }
     const n = ++seq.current;
     setSearching(true);

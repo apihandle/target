@@ -25,6 +25,7 @@ export default function VoiceButton({ onText, disabled, fallback = null }: { onT
   const [error, setError] = useState<string | null>(null);
   const rec = useRef<Recognition | null>(null);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- reads a browser-only API after mount so server and client markup match
   useEffect(() => { setSupported(!!getRecognition()); return () => rec.current?.abort(); }, []);
   if (!supported) return <>{fallback}</>;
 

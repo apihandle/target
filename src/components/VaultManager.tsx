@@ -14,6 +14,7 @@ export default function VaultManager() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const load = async () => { const r = await fetch("/api/vault", { cache: "no-store" }); const j = await r.json().catch(() => ({})); if (!r.ok) setError(j.error ?? "Couldn't load your vault"); setItems(j.items ?? []); };
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- loads data on mount; state is set from the async fetch result
   useEffect(() => { load(); }, []);
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
 

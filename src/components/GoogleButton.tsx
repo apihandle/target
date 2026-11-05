@@ -7,6 +7,7 @@ export default function GoogleButton({ next = "/app", variant = "dark" }: { next
   const [loading, setLoading] = useState(false);
   const [inApp, setInApp] = useState<InApp>(null);
   const [copied, setCopied] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- reads a browser-only API after mount so server and client markup match
   useEffect(() => { setInApp(detectInApp(navigator.userAgent)); }, []);
 
   async function copyLink() {
@@ -19,6 +20,7 @@ export default function GoogleButton({ next = "/app", variant = "dark" }: { next
     setError(null);
     setLoading(true);
     // Runs on TARGET's own domain so Google shows gettarget.vercel.app, and also connects Gmail, Calendar and Drive.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- intentional full-page navigation: /auth/google is a route handler that redirects to Google OAuth
     window.location.assign(`/auth/google?next=${encodeURIComponent(next)}`);
   }
 

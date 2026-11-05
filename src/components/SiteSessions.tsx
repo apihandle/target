@@ -19,6 +19,7 @@ export default function SiteSessions({ google }: { google: { status: string; ema
     if (!r.ok) { setError(j.error ?? "Couldn't load saved sign-ins"); setRows([]); return; }
     setRows(j.sessions ?? []);
   }
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- loads data on mount; state is set from the async fetch result
   useEffect(() => { load(); }, []);
 
   async function signOut(id: string | "all" | "expired") {
@@ -32,6 +33,7 @@ export default function SiteSessions({ google }: { google: { status: string; ema
   }
 
   if (rows === null) return <p className="px-1 text-sm text-muted">Loading…</p>;
+  // eslint-disable-next-line react-hooks/purity -- current time is read on each render on purpose to mark expired sign-ins
   const now = Date.now();
   const expiredCount = rows.filter((s) => s.status !== "active" || Date.parse(s.expires_at) <= now).length;
   const gOk = google?.status === "connected";

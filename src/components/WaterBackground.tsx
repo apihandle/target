@@ -18,10 +18,12 @@ export default function WaterBackground() {
   useEffect(() => {
     const nav = navigator as Navigator & { connection?: { saveData?: boolean } };
     const small = window.matchMedia?.("(max-width: 900px)").matches || nav.connection?.saveData;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- picks the video size from viewport and data-saver after mount so server and client markup match
     setSrc(small ? "/water-loop-sm.mp4" : "/water-loop.mp4");
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads prefers-reduced-motion after mount so server and client markup match
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) setPlaying(false);
   }, []);
 

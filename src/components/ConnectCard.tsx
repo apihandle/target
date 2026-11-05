@@ -19,6 +19,7 @@ export default function ConnectCard({ connector, taskId }: { connector: string; 
     const u = new URL(window.location.href);
     if (taskId) u.searchParams.set("resume", taskId);
     const path = u.pathname + u.search;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads window.location after mount so server and client markup match
     if (path.startsWith("/app")) setBack(path);
   }, [connector, taskId]);
   const name = info?.name ?? connector;

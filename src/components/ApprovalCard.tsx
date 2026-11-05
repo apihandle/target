@@ -56,7 +56,7 @@ export default function ApprovalCard({ id, initial, onChange }: { id: string; in
       setA(j.approval);
     } catch { setLoadError("Couldn't load this request"); }
   }
-  useEffect(() => { if (!initial) load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!initial) load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect -- loads the approval on mount when the server did not pass one
 
   async function decide(decision: "approve" | "reject") {
     setBusy(decision); setError("");

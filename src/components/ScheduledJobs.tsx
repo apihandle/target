@@ -26,6 +26,7 @@ export default function ScheduledJobs({ initial, projects, unavailable }: { init
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fills the user's timezone and today's date after mount so server and client markup match
     try { const tz = Intl.DateTimeFormat().resolvedOptions().timeZone; if (tz) setForm((f) => ({ ...f, timezone: tz })); } catch { /* keep default */ }
     const d = new Date(); const pad = (n: number) => String(n).padStart(2, "0");
     setForm((f) => ({ ...f, run_on: f.run_on || `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }));

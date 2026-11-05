@@ -26,6 +26,7 @@ export default function WelcomeTour() {
   const [step, setStep] = useState<number | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads localStorage after mount so server and client markup match
     try { if (!localStorage.getItem(KEY)) setStep(0); } catch { /* storage blocked */ }
   }, []);
 

@@ -31,6 +31,7 @@ export default function SessionKeeper() {
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("online", wake);
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- intentional full-page navigation on sign-out so all client state is dropped
       if (event === "SIGNED_OUT") window.location.href = "/login";
     });
     return () => {
