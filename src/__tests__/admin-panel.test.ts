@@ -33,6 +33,11 @@ import * as cronRoute from "@/app/api/admin/cron/route";
 import * as healthRoute from "@/app/api/admin/health/route";
 import * as usersExport from "@/app/api/admin/users/export/route";
 import * as errorsExport from "@/app/api/admin/errors/export/route";
+import * as activityRoute from "@/app/api/admin/stats/activity/route";
+import { adminSearch, bucketActivity, clearNavCache, loadDashboard, loadNavCounts, shareTable, spark } from "@/lib/server/adminStats";
+import { clearHealthSummary, healthSummary } from "@/lib/server/adminHealth";
+import { countryFrom, deviceFrom, flagOf, countryName } from "@/lib/presence";
+import { resetPresence, touchPresence } from "@/lib/server/presence";
 
 const SHARE = "55555555-5555-4555-8555-555555555555";
 let users: U[] = [];
@@ -83,6 +88,9 @@ beforeEach(() => {
   h.session = null;
   h.cron = [];
   clearAdminSettingsCache();
+  clearNavCache();
+  clearHealthSummary();
+  resetPresence();
 });
 afterEach(() => { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } });
 
@@ -151,9 +159,10 @@ describe("every /api/admin route is 404 for anonymous and non-admin users", () =
     settingsRoute.GET(),
     settingsRoute.POST(post("/api/admin/settings", { key: "maintenance", value: { enabled: true }, confirm: true })),
     cronRoute.POST(post("/api/admin/cron", { job: "scheduled", confirm: true })),
-    healthRoute.GET(),
+    healthRoute.GET(new Request("http://t/api/admin/health")),
     usersExport.GET(new Request("http://t/api/admin/users/export")),
     errorsExport.GET(new Request("http://t/api/admin/errors/export")),
+    activityRoute.GET(new Request("http://t/api/admin/stats/activity?range=7d")),
   ];
   for (const who of ["anonymous", "non-admin", "unconfirmed admin email"] as const) {
     it(who, async () => {
@@ -349,7 +358,7 @@ describe("health: env vars are only set/missing, secrets never echoed", () => {
   });
   it("GET /api/admin/health for an admin", async () => {
     h.session = ADMIN;
-    const j = await (await healthRoute.GET()).json();
+    const j = await (await healthRoute.GET(new Request("http://t/api/admin/health"))).json();
     expect(Array.isArray(j.checks)).toBe(true);
     expect(Array.isArray(j.env)).toBe(true);
   });
@@ -390,5 +399,131 @@ describe("pure helpers", () => {
     expect(startOfTodayIST(new Date("2026-11-05T03:41:00Z"))).toBe("2026-11-04T18:30:00.000Z");
     expect(startOfTodayIST(new Date("2026-11-04T19:00:00Z"))).toBe("2026-11-04T18:30:00.000Z");
     expect(likeTerm("50%_off")).toBe("%50\\%\\_off%");
+  });
+});
+
+describe("presence: country + coarse device, never the IP", () => {
+  it("parses the Vercel country header and a coarse device", () => {
+    expect(countryFrom("in")).toBe("IN");
+    expect(countryFrom("XX")).toBeNull();
+    expect(countryFrom("India")).toBeNull();
+    expect(countryFrom(null)).toBeNull();
+    expect(deviceFrom("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36")).toBe("Android · Chrome");
+    expect(deviceFrom("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1")).toBe("iOS · Safari");
+    expect(deviceFrom("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 Edg/130.0")).toBe("Windows · Edge");
+    expect(flagOf("IN")).toBe("\u{1F1EE}\u{1F1F3}");
+    expect(countryName("IN")).toBe("India");
+  });
+  it("touchPresence stores country/device/last_seen only, at most every 5 minutes", async () => {
+    const headers = new Headers({ "x-vercel-ip-country": "IN", "x-forwarded-for": "203.0.113.7", "x-real-ip": "203.0.113.7", "user-agent": "Mozilla/5.0 (Linux; Android 14) Chrome/130.0 Mobile" });
+    const t = Date.parse("2026-11-05T04:00:00Z");
+    expect(await touchPresence(BOB.id, headers, t)).toBe(true);
+    expect(await touchPresence(BOB.id, headers, t + 60000)).toBe(false);
+    const rows = db.rows("user_presence");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ user_id: BOB.id, country: "IN", device: "Android · Chrome", last_seen_at: "2026-11-05T04:00:00.000Z" });
+    expect(JSON.stringify(rows)).not.toContain("203.0.113.7");
+    expect(Object.keys(rows[0]).some((k) => /ip|agent/i.test(k))).toBe(false);
+    expect(await touchPresence(BOB.id, headers, t + 6 * 60000)).toBe(true);
+    expect(db.rows("user_presence")[0].last_seen_at).toBe("2026-11-05T04:06:00.000Z");
+  });
+  it("the proxy records presence for signed-in users", async () => {
+    h.session = BOB;
+    const waits: Promise<unknown>[] = [];
+    await updateSession(new NextRequest("http://t/app", { headers: { "x-vercel-ip-country": "PK", "x-forwarded-for": "198.51.100.1" } }), { waitUntil: (p: Promise<unknown>) => { waits.push(p); } });
+    await Promise.all(waits);
+    expect(db.rows("user_presence")[0]).toMatchObject({ user_id: BOB.id, country: "PK" });
+    h.session = null;
+    resetPresence();
+    await updateSession(new NextRequest("http://t/login"), { waitUntil: (p: Promise<unknown>) => { waits.push(p); } });
+    expect(db.rows("user_presence")).toHaveLength(1);
+  });
+});
+
+describe("dashboard numbers", () => {
+  const NOW = Date.parse("2026-11-05T06:00:00Z"); // 11:30 IST
+  it("buckets activity by range with distinct users", () => {
+    const rows = [
+      { user_id: "a", created_at: "2026-11-05T05:50:00Z" }, { user_id: "a", created_at: "2026-11-05T05:55:00Z" },
+      { user_id: "b", created_at: "2026-11-05T05:56:00Z" }, { user_id: "c", created_at: "2026-11-04T05:00:00Z" },
+    ];
+    const b = bucketActivity(rows, "3h", NOW);
+    expect(b).toHaveLength(12);
+    expect(b[11]).toMatchObject({ messages: 3, users: 2 });
+    expect(b.reduce((a, x) => a + x.messages, 0)).toBe(3); // yesterday's row is outside 3h
+    expect(bucketActivity(rows, "30d", NOW)).toHaveLength(30);
+    expect(spark(["2026-11-05T05:00:00Z", "2026-11-04T07:00:00Z"], 2, 86400000, NOW)).toEqual([1, 1]);
+  });
+  it("share tables keep the top N and an Others row", () => {
+    const t = shareTable(new Map([["IN", 6], ["PK", 2], ["US", 1], ["BD", 1]]), 2);
+    expect(t.map((r) => [r.key, r.count, Math.round(r.pct)])).toEqual([["IN", 6, 60], ["PK", 2, 20], ["others", 2, 20]]);
+    expect(shareTable(new Map(), 3)).toEqual([]);
+  });
+  it("loadDashboard against the real table shapes", async () => {
+    db.rows("messages").push({ id: "m2", user_id: EVE.id, role: "user", content: "x", created_at: "2026-11-05T05:00:00Z" }, { id: "m3", user_id: EVE.id, role: "assistant", content: "y", created_at: "2026-11-05T05:00:01Z" });
+    db.rows("user_presence").push(
+      { user_id: BOB.id, country: "IN", device: "Android · Chrome", last_seen_at: "2026-11-05T05:55:00Z" },
+      { user_id: EVE.id, country: "IN", device: "iOS · Safari", last_seen_at: "2026-11-04T05:00:00Z" },
+      { user_id: ADMIN.id, country: null, device: null, last_seen_at: "2026-11-05T01:00:00Z" },
+    );
+    db.rows("browser_jobs").push({ id: "j1", user_id: BOB.id, status: "done", created_at: "2026-11-05T01:00:00Z" }, { id: "j2", user_id: BOB.id, status: "failed", created_at: "2026-11-05T02:00:00Z" }, { id: "j3", user_id: BOB.id, status: "running", created_at: "2026-11-05T03:00:00Z" });
+    db.rows("activity_events").push({ id: "a1", user_id: BOB.id, category: "task", title: "Booked", status: "completed", created_at: "2026-11-05T05:00:00Z" });
+    const d = await loadDashboard(db as never, NOW);
+    expect(d.users).toMatchObject({ total: 3, newWeek: 1 });
+    expect(d.users.spark).toHaveLength(14);
+    expect(d.active.now15).toBe(1);
+    expect(d.active.today).toBe(3); // BOB + EVE (messages today), ADMIN (presence today)
+    expect(d.messages.today).toBe(2); // user messages only
+    expect(d.errors.last24h).toBe(2);
+    expect(d.jobs).toMatchObject({ done: 1, failed: 1, running: 1, total: 3 });
+    expect(d.countries[0]).toMatchObject({ code: "IN", users: 2 });
+    expect(d.countries.find((c) => c.code === null)?.users).toBe(1);
+    expect(d.devices.map((x) => x.label).sort()).toEqual(["Android · Chrome", "iOS · Safari"]);
+    expect(d.activity[0]).toMatchObject({ title: "Booked", email: BOB.email });
+    expect(d.recentErrors).toHaveLength(2);
+  });
+  it("no presence table → dashboard still loads, presence marked not ready", async () => {
+    const orig = db.from.bind(db);
+    db.from = ((t: string) => (t === "user_presence" ? { select: () => ({ limit: async () => ({ data: null, error: { message: "relation does not exist" } }) }) } : orig(t))) as typeof db.from;
+    const d = await loadDashboard(db as never, NOW);
+    expect(d.presenceReady).toBe(false);
+    expect(d.active.now15).toBeNull();
+    expect(d.users.total).toBe(3);
+  });
+  it("activity API returns buckets for the range (admin)", async () => {
+    h.session = ADMIN;
+    const j = await (await activityRoute.GET(new Request("http://t/api/admin/stats/activity?range=30d"))).json();
+    expect(j.range).toBe("30d");
+    expect(j.buckets).toHaveLength(30);
+    const def = await (await activityRoute.GET(new Request("http://t/api/admin/stats/activity?range=bogus"))).json();
+    expect(def.range).toBe("24h");
+  });
+  it("nav badge counts", async () => {
+    db.rows("browser_jobs").push({ id: "q1", user_id: BOB.id, status: "queued", created_at: "2026-11-05T01:00:00Z" });
+    db.rows("scheduled_jobs").push({ id: "s1", user_id: BOB.id, status: "active" });
+    const n = await loadNavCounts(db as never, 2, Date.now());
+    expect(n).toMatchObject({ users: 3, jobsActive: 1, scheduledActive: 1, sharesActive: 1, switchesOff: 2 });
+  });
+  it("global search finds users, jobs by id or goal, and errors", async () => {
+    db.rows("browser_jobs").push({ id: "99999999-9999-4999-8999-999999999999", user_id: BOB.id, goal: "Book a table at Toit", status: "done", created_at: "2026-11-05T01:00:00Z" });
+    expect((await adminSearch(db as never, "bob@")).users.map((u) => u.email)).toEqual(["bob@x.test"]);
+    expect((await adminSearch(db as never, "toit")).jobs).toHaveLength(1);
+    expect((await adminSearch(db as never, "99999999-9999-4999-8999-999999999999")).jobs).toHaveLength(1);
+    expect((await adminSearch(db as never, "boom")).errors.map((e) => e.id)).toEqual(["e1"]);
+    expect(await adminSearch(db as never, "  ")).toMatchObject({ users: [], jobs: [], errors: [] });
+  });
+  it("health summary: degraded when a live check is down, cached 60 s", async () => {
+    let calls = 0;
+    const f = (async () => { calls++; return new Response("{}", { status: 500 }); }) as unknown as typeof fetch;
+    const s = await healthSummary(db as never, { NVIDIA_API_KEY: "k" }, f, 1000);
+    expect(s).toMatchObject({ state: "degraded", down: ["NVIDIA NIM"] });
+    await healthSummary(db as never, { NVIDIA_API_KEY: "k" }, f, 30000);
+    expect(calls).toBe(1);
+    clearHealthSummary();
+    expect((await healthSummary(db as never, {}, f, 1000)).state).toBe("ok");
+    h.session = ADMIN;
+    clearHealthSummary();
+    const j = await (await healthRoute.GET(new Request("http://t/api/admin/health?summary=1"))).json();
+    expect(["ok", "degraded"]).toContain(j.state);
   });
 });

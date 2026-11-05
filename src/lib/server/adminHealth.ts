@@ -126,3 +126,15 @@ export async function runHealthChecks(db: Db, env: Env = process.env, f: typeof 
 
   return { checks: await Promise.all(tasks), checkedAt: new Date(now).toISOString() };
 }
+
+/** Top-bar status: "degraded" when any live check is down. Cached 60 s per server instance (each check is a network call). */
+let summaryCache: { at: number; value: { state: "ok" | "degraded"; down: string[]; checkedAt: string } } | null = null;
+export function clearHealthSummary() { summaryCache = null; }
+export async function healthSummary(db: Db, env: Env = process.env, f: typeof fetch = fetch, now = Date.now()) {
+  if (summaryCache && now - summaryCache.at < 60000) return summaryCache.value;
+  const { checks, checkedAt } = await runHealthChecks(db, env, f, now);
+  const down = checks.filter((c) => c.state === "down").map((c) => c.name);
+  const value = { state: (down.length ? "degraded" : "ok") as "ok" | "degraded", down, checkedAt };
+  summaryCache = { at: now, value };
+  return value;
+}

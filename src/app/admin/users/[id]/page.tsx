@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireAdminPage, isAdminEmailListed } from "@/lib/server/adminAuth";
 import { isBanned, loadUserDetail } from "@/lib/server/adminData";
 import { isUuid } from "@/lib/ids";
+import { countryName, flagOf } from "@/lib/presence";
 import { Badge, toneFor } from "@/components/ui/Badge";
 import ConfirmAction from "@/components/admin/ConfirmAction";
 import { Empty, fmt, KV, LoadError, num, Panel, truncate } from "@/components/admin/ui";
@@ -52,6 +53,9 @@ export default async function AdminUserDetail(props: { params: Promise<{ id: str
           <dl className="mt-2 divide-y divide-line">
             <KV k="Joined" v={fmt(u.created_at)} />
             <KV k="Last sign-in" v={fmt(u.last_sign_in_at)} />
+            <KV k="Last seen in the app" v={fmt(d.presence?.last_seen_at)} />
+            <KV k="Country" v={d.presence?.country ? `${flagOf(d.presence.country)} ${countryName(d.presence.country)}` : "—"} />
+            <KV k="Device" v={d.presence?.device ?? "—"} />
             {banned && <KV k="Disabled until" v={fmt(u.banned_until)} />}
             <KV k="Chats" v={num(d.counts.conversations)} />
             <KV k="Messages" v={num(d.counts.messages)} />

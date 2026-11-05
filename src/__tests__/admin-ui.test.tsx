@@ -7,7 +7,9 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }), usePathname:
 
 import ConfirmAction from "@/components/admin/ConfirmAction";
 import ControlsPanel from "@/components/admin/ControlsPanel";
-import AdminNav from "@/components/admin/AdminNav";
+import AdminFrame from "@/components/admin/AdminFrame";
+import ActivityChart from "@/components/admin/ActivityChart";
+import { Donut, LineChart, SparkBars } from "@/components/admin/charts";
 import { ALL_ON } from "@/lib/adminConfig";
 
 let calls: { url: string; body: Record<string, unknown> }[] = [];
@@ -78,11 +80,49 @@ describe("ControlsPanel", () => {
   });
 });
 
-describe("AdminNav", () => {
-  it("marks the current section and lists every section", () => {
-    render(<AdminNav />);
-    expect(screen.getByTestId("admin-tab-users")).toHaveAttribute("aria-current", "page");
-    expect(screen.getByTestId("admin-tab-overview")).not.toHaveAttribute("aria-current");
-    for (const t of ["errors", "jobs", "scheduled", "shares", "health", "controls", "audit"]) expect(screen.getByTestId(`admin-tab-${t}`)).toBeInTheDocument();
+describe("AdminFrame", () => {
+  const badges = { users: 1234, errors24h: 7, jobsActive: 0, scheduledActive: 3, sharesActive: 2, switchesOff: 1 };
+  it("sidebar with count badges, current section, version, search, bell and status slot", () => {
+    render(<AdminFrame badges={badges} version="v0.1.0 · abc1234" email="owner@example.com" statusSlot={<span data-testid="slot">OK</span>}><p>child</p></AdminFrame>);
+    expect(screen.getByTestId("admin-nav-users")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByTestId("admin-nav-users")).toHaveTextContent("1,234");
+    expect(screen.getByTestId("admin-nav-errors")).toHaveTextContent("7");
+    expect(screen.getByTestId("admin-nav-jobs")).not.toHaveTextContent(/\d/); // zero active jobs: no green badge
+    expect(screen.getByTestId("admin-nav-controls")).toHaveTextContent("1");
+    for (const t of ["dashboard", "scheduled", "shares", "activity", "health", "audit"]) expect(screen.getByTestId(`admin-nav-${t}`)).toBeInTheDocument();
+    expect(screen.getByTestId("admin-version")).toHaveTextContent("abc1234");
+    expect(screen.getByTestId("admin-bell")).toHaveTextContent("7");
+    expect(screen.getByTestId("admin-search").closest("form")).toHaveAttribute("action", "/admin/search");
+    expect(screen.getByTestId("slot")).toBeInTheDocument();
+    expect(screen.getByText("child")).toBeInTheDocument();
+    expect(screen.queryByText(/payout/i)).toBeNull();
+  });
+  it("hamburger opens and closes the drawer on phones", () => {
+    render(<AdminFrame badges={badges} version="v" email="o@x.test" statusSlot={null}><p>c</p></AdminFrame>);
+    const side = screen.getByTestId("admin-sidebar");
+    expect(side.className).toContain("-translate-x-full");
+    fireEvent.click(screen.getByTestId("admin-menu"));
+    expect(screen.getByTestId("admin-menu")).toHaveAttribute("aria-expanded", "true");
+    expect(side.className).not.toContain("-translate-x-full");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(side.className).toContain("-translate-x-full");
+  });
+});
+
+describe("charts", () => {
+  it("render SVG with accessible labels", () => {
+    const { container } = render(<div><SparkBars values={[1, 2, 3]} label="spark" /><Donut centre="10" sub="jobs" slices={[{ label: "Done", value: 7, color: "#0f0" }, { label: "Failed", value: 3, color: "#f00" }]} /><LineChart points={[{ t: "2026-11-05T00:00:00Z", a: 1, b: 1 }, { t: "2026-11-05T01:00:00Z", a: 5, b: 2 }]} labelA="messages" labelB="users" formatT={() => "t"} /></div>);
+    expect(screen.getByRole("img", { name: "spark" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /Done 7, Failed 3/ })).toBeInTheDocument();
+    expect(container.querySelectorAll("path").length).toBeGreaterThan(1);
+  });
+  it("activity chart: range picker loads the new range; empty and error states", async () => {
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => { calls.push({ url: String(url), body: {} }); return new Response(JSON.stringify({ buckets: [] }), { status: 200 }); }) as unknown as typeof fetch;
+    render(<ActivityChart initial={{ buckets: [{ t: "2026-11-05T00:00:00Z", messages: 4, users: 2 }, { t: "2026-11-05T01:00:00Z", messages: 1, users: 1 }], error: false, capped: false }} />);
+    expect(screen.getByTestId("activity-chart")).toHaveTextContent("5 messages");
+    fireEvent.click(screen.getByTestId("range-7d"));
+    await waitFor(() => expect(calls[0].url).toBe("/api/admin/stats/activity?range=7d"));
+    await waitFor(() => expect(screen.getByTestId("activity-empty")).toBeInTheDocument());
+    expect(screen.getByTestId("range-7d")).toHaveAttribute("aria-pressed", "true");
   });
 });

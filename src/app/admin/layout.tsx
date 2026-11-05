@@ -1,8 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import AppShell from "@/components/AppShell";
-import { Page } from "@/components/ui/Card";
-import AdminNav from "@/components/admin/AdminNav";
+import AdminFrame from "@/components/admin/AdminFrame";
+import HealthPill from "@/components/admin/HealthPill";
+import SessionKeeper from "@/components/SessionKeeper";
 import { requireAdminPage } from "@/lib/server/adminAuth";
+import { getAdminSettings } from "@/lib/server/adminSettings";
+import { loadNavCounts } from "@/lib/server/adminStats";
+import { FEATURES } from "@/lib/adminConfig";
+import pkg from "../../../package.json";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Admin · TARGET", robots: { index: false, follow: false } };
@@ -13,17 +17,15 @@ export const viewport: Viewport = { themeColor: "#05090c" };
  * check again on the server (requireAdminPage → notFound()).
  */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { user } = await requireAdminPage();
+  const { user, db } = await requireAdminPage();
+  const settings = await getAdminSettings(db);
+  const badges = await loadNavCounts(db, FEATURES.filter((f) => !settings.features[f]).length);
+  const sha = (process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7);
+  const version = `v${pkg.version} · ${sha || "local build"}`;
   return (
-    <AppShell user={user} section="settings">
-      <Page wide>
-        <header>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-soft">Owner only</p>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-[28px]">Admin</h1>
-        </header>
-        <AdminNav />
-        <div className="pb-8">{children}</div>
-      </Page>
-    </AppShell>
+    <AdminFrame badges={badges} version={version} email={user.email ?? ""} avatar={(user.user_metadata?.avatar_url as string | undefined) || undefined} statusSlot={<HealthPill />}>
+      <SessionKeeper />
+      {children}
+    </AdminFrame>
   );
 }

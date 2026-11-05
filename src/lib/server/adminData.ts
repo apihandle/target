@@ -124,6 +124,7 @@ export type UserDetail = {
   activity: { id: string; category: string; title: string; status: string | null; created_at: string }[];
   jobs: { id: string; goal: string; mode: string; status: string; error: string | null; created_at: string }[];
   errors: { id: string; source: string; message: string; created_at: string }[];
+  presence: { country: string | null; device: string | null; last_seen_at: string } | null;
 };
 
 export async function loadUserDetail(db: Db, id: string): Promise<UserDetail | null | "error"> {
@@ -135,15 +136,16 @@ export async function loadUserDetail(db: Db, id: string): Promise<UserDetail | n
   } catch { return "error"; }
   const own = (q: CountQuery) => q.eq("user_id", id);
   const safe = async <T,>(p: PromiseLike<{ data: unknown; error: unknown }>): Promise<T[]> => { try { const r = await p; return r.error ? [] : ((r.data ?? []) as T[]); } catch { return []; } };
-  const [conversations, messages, browser_jobs, scheduled_jobs, vault_items, custom_providers, share_links, connections, activity, jobs, errors] = await Promise.all([
+  const [conversations, messages, browser_jobs, scheduled_jobs, vault_items, custom_providers, share_links, connections, activity, jobs, errors, presence] = await Promise.all([
     count(db, "conversations", own), count(db, "messages", own), count(db, "browser_jobs", own), count(db, "scheduled_jobs", own),
     count(db, "vault_secrets", own), count(db, "custom_providers", own), count(db, "conversation_shares", own),
     safe<UserDetail["connections"][number]>(db.from("connections").select("connector_id, status, connected_at").eq("user_id", id).limit(50)),
     safe<UserDetail["activity"][number]>(db.from("activity_events").select("id, category, title, status, created_at").eq("user_id", id).order("created_at", { ascending: false }).limit(20)),
     safe<UserDetail["jobs"][number]>(db.from("browser_jobs").select("id, goal, mode, status, error, created_at").eq("user_id", id).order("created_at", { ascending: false }).limit(10)),
     safe<UserDetail["errors"][number]>(db.from("error_events").select("id, source, message, created_at").eq("user_id", id).order("created_at", { ascending: false }).limit(10)),
+    safe<NonNullable<UserDetail["presence"]>>(db.from("user_presence").select("country, device, last_seen_at").eq("user_id", id).limit(1)),
   ]);
-  return { user, counts: { conversations, messages, browser_jobs, scheduled_jobs, vault_items, custom_providers, share_links }, connections, activity, jobs, errors };
+  return { user, counts: { conversations, messages, browser_jobs, scheduled_jobs, vault_items, custom_providers, share_links }, connections, activity, jobs, errors, presence: presence[0] ?? null };
 }
 
 export type ErrorRow = { id: string; source: string; message: string; stack: string | null; url: string | null; fingerprint: string; user_id: string | null; created_at: string };
@@ -253,5 +255,23 @@ export async function loadAudit(db: Db, opts: { page: number; action?: string })
     if (error) return { rows: [], total: 0, page: 1, pages: 1, error: true };
     const t = total ?? 0;
     return { rows: (data ?? []) as AuditRow[], total: t, page: opts.page, pages: pages(t), error: false };
+  } catch { return { rows: [], total: 0, page: 1, pages: 1, error: true }; }
+}
+
+export type ActivityRow = { id: string; user_id: string; category: string; title: string; detail: string; status: string | null; created_at: string; email?: string };
+export const ACTIVITY_CATEGORIES = ["task", "approval", "outcome", "project", "panel", "connection", "memory"] as const;
+
+/** Everyone's activity_events (what TARGET did for users), newest first. */
+export async function loadActivity(db: Db, opts: { page: number; category?: string }): Promise<Paged<ActivityRow>> {
+  try {
+    let qb = db.from("activity_events").select("id, user_id, category, title, detail, status, created_at", { count: "exact" });
+    if (opts.category && (ACTIVITY_CATEGORIES as readonly string[]).includes(opts.category)) qb = qb.eq("category", opts.category);
+    const [a, b] = range(opts.page);
+    const { data, count: total, error } = await qb.order("created_at", { ascending: false }).range(a, b);
+    if (error) return { rows: [], total: 0, page: 1, pages: 1, error: true };
+    const rows = (data ?? []) as ActivityRow[];
+    const emails = await emailsFor(db, rows.map((r) => r.user_id));
+    const t = total ?? 0;
+    return { rows: rows.map((r) => ({ ...r, email: emails.get(r.user_id) ?? "" })), total: t, page: opts.page, pages: pages(t), error: false };
   } catch { return { rows: [], total: 0, page: 1, pages: 1, error: true }; }
 }
