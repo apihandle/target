@@ -73,10 +73,13 @@ export async function injectToken(page: Page, token: string, callback: string | 
     }
     const w = window as unknown as { turnstile?: { getResponse?: () => string; isExpired?: () => boolean } } & Record<string, unknown>;
     if (w.turnstile) { w.turnstile.getResponse = () => token; w.turnstile.isExpired = () => false; }
-    if (callback) {
-      const fn = callback.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), w);
-      if (typeof fn === "function") { try { (fn as (t: string) => void)(token); } catch { /* the page's own callback */ } }
-    }
+    const fns: unknown[] = [];
+    if (callback) fns.push(callback.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), w));
+    // Pages that render the widget from JS keep their callbacks in a window.turnstileCallbacks map (TimeBucks: its Log In
+    // button stays disabled until the form's callback runs). Hooking turnstile.render instead breaks api.js ("already loaded").
+    const map = w.turnstileCallbacks;
+    if (map && typeof map === "object") fns.push(...Object.values(map as Record<string, unknown>));
+    for (const fn of new Set(fns)) if (typeof fn === "function") { try { (fn as (t: string) => void)(token); } catch { /* the page's own callback */ } }
   }, { token, callback });
 }
 
