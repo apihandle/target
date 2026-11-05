@@ -53,3 +53,11 @@ On the free Space only browser jobs run (steps/auto). Code and video jobs need a
 ## Migration 0019 (admin panel, 2026-11-05)
 
 Run `supabase/migrations/0019_admin.sql` in Supabase > SQL editor. It adds admin_settings, admin_audit_log and user_presence (all server-only). Until it runs, /admin still opens but Controls refuse changes (nothing can be audited), and country/device/active-now stay empty. Nothing else in the app is affected.
+
+## Migration 0020 (AI usage + feedback, 2026-11-05) — run AFTER 0019
+
+Run `supabase/migrations/0020_ai_usage_feedback.sql` in Supabase > SQL editor, after `0019_admin.sql`. It adds:
+- `ai_usage` (server-only): one row per AI model call, counters only (no prompt/reply text, no keys). Powers /admin/ai-usage and the dashboard's Model usage card.
+- `feedback`: messages users send from Settings > Send feedback or the app sidebar (users insert/read only their own; admins manage them at /admin/feedback).
+
+Until it runs: chat works normally (usage rows are silently dropped), the feedback form answers "Couldn't send your feedback", and /admin/ai-usage + /admin/feedback show a "run migration 0020" message. No new env vars (optional: AI_USAGE_LOG=off to stop logging).
