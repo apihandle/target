@@ -56,6 +56,10 @@ export default async function SettingsPage() {
             {isAdminEmail(email) && <SettingsRow href="/app/settings/errors" icon="alert" title="Site errors" description="Errors from the live site (owner only)" testId="settings-errors" />}
           </SettingsGroup>
 
+          <SettingsGroup title="Help">
+            <SettingsRow href="/app/settings/feedback" icon="chat" title="Send feedback" description="Report a bug or share an idea" testId="settings-feedback" />
+          </SettingsGroup>
+
           <SettingsGroup title="About">
             <SettingsRow href="/terms" icon="doc" title="Terms of service" description="The rules for using TARGET" />
             <SettingsRow href="/privacy" icon="lock" title="Privacy policy" description="How your data is handled" />

@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import FeedbackButton from "@/components/FeedbackButton";
 
 export type ConvItem = { id: string; title: string; pinned?: boolean };
 export type Section = "home" | "chat" | "projects" | "panels" | "scheduled" | "activity" | "connectors" | "settings" | "memory";
@@ -221,6 +222,7 @@ export default function Sidebar({ conversations, activeId, email, section = "cha
           {pinError && <p role="alert" className="px-3 py-1 text-xs text-danger">{pinError}</p>}
         </nav>
         <div className="mt-2 border-t border-line px-1 pt-3">
+          <FeedbackButton onOpen={close} />
           <p data-testid="user-email" className="truncate px-2 text-xs text-muted">{email}</p>
           <form action="/auth/signout" method="post">
             <button data-testid="signout" className="mt-2 h-9 w-full rounded-full border border-line-strong text-sm text-ink-soft hover:bg-surface-2">Sign out</button>
