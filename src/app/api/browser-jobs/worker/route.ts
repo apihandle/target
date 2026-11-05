@@ -14,6 +14,7 @@ import { gmailSigninCode, gmailSiteLink } from "@/lib/server/signinMail";
 import { WAITING_FOR_CODE } from "@/lib/builtins/signin";
 import { isLang, type Lang } from "@/lib/lang";
 import { signinFailure, signinPostHead } from "@/lib/signin";
+import { failureHint, failureLine } from "@/lib/jobFailure";
 import { CLOUDFLARE_BLOCKED, detectBotCheck, NOT_SIGNED_IN, resultSaysFailed, sessionProven, verifyLogin, verifySignup } from "@/lib/loginCheck";
 import { accountOf, accountPost } from "@/lib/siteAccount";
 import { settleSiteAccount } from "@/lib/server/siteAccountRun";
@@ -308,7 +309,9 @@ export async function POST(req: Request) {
     if (job.conversation_id) {
       const si = signinOf(job.inputs);
       const head = account ? accountPost(account, ok) : stoppedByUser ? `⏹ **Browser task stopped:** ${job.goal}` : si ? signinPostHead(si.site, ok, si.lang) : ok ? `🌐 **Browser task done:** ${job.goal}` : `⚠️ **Browser task failed:** ${job.goal}`;
-      const body = ok ? (result ?? "").slice(0, 6000) : stoppedByUser ? "Stopped by you." : si ? signinFailure(String(b.error ?? ""), si.site, si.lang).line : String(b.error ?? "The browser task failed").slice(0, 500);
+      // A failure always says exactly why and what can be done next (Take control, connect Gmail, enable a solver...).
+      const next = `**Next:** ${failureHint(String(b.error ?? "")).next}`;
+      const body = ok ? (result ?? "").slice(0, 6000) : stoppedByUser ? "Stopped by you." : si ? `${signinFailure(String(b.error ?? ""), si.site, si.lang).line}\n\n${next}` : failureLine(String(b.error ?? "")).replace(" Next: ", "\n\n**Next:** ");
       const links = files.map((f) => `- [${f.name}](${f.url})`).join("\n");
       const content = [head, body, links].filter(Boolean).join("\n\n");
       await db.from("messages").insert({ conversation_id: job.conversation_id, user_id: job.user_id, role: "assistant", content });

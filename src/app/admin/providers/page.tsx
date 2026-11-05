@@ -1,5 +1,5 @@
 import { requireAdminPage } from "@/lib/server/adminAuth";
-import { loadProviderStates } from "@/lib/server/providerStatus";
+import { capabilities, loadProviderStates } from "@/lib/server/providerStatus";
 import { Badge } from "@/components/ui/Badge";
 import { fmt, KV, Panel, SectionHeading } from "@/components/admin/ui";
 
@@ -11,7 +11,17 @@ export default async function AdminProviders() {
   return (
     <>
       <SectionHeading title="Browser providers" description="Cloud browsers used for browser jobs, tried in order until one starts. Updated each time a job starts a browser. Keys are never shown, only whether they are set." />
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="providers">
+      <h3 className="mt-4 text-sm font-semibold text-ink">What works</h3>
+      <ul className="mt-2 divide-y divide-line rounded-2xl border border-line bg-surface/80 px-4" data-testid="capabilities">
+        {capabilities().map((c) => (
+          <li key={c.name} className="flex flex-col gap-1 py-2.5 sm:flex-row sm:items-start sm:gap-3">
+            <span className="shrink-0"><Badge tone={c.works ? "ok" : "neutral"}>{c.works ? "Works" : "Not available"}</Badge></span>
+            <span className="min-w-0 text-sm"><span className="font-medium text-ink">{c.name}</span><span className="text-muted [overflow-wrap:anywhere]"> · {c.reason}</span></span>
+          </li>
+        ))}
+      </ul>
+      <h3 className="mt-6 text-sm font-semibold text-ink">Providers</h3>
+      <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="providers">
         {states.map((p) => {
           const status = !p.keyPresent ? { t: "No key", tone: "neutral" as const }
             : p.limit ? { t: "Out of credit / limit", tone: "danger" as const }

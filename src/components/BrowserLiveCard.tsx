@@ -1,4 +1,5 @@
 "use client";
+import { failureLine } from "@/lib/jobFailure";
 import { useCallback, useEffect, useState } from "react";
 import { isActive, stepText } from "@/lib/browserProgress";
 import { CHECK_LINE, safeLiveUrl, type Control, type ViewMode } from "@/lib/liveView";
@@ -116,7 +117,7 @@ export default function BrowserLiveCard({ conversationId, streaming, firstDelayM
 
   const status = !active ? (
     <p data-testid="browser-final" className={`mt-2 text-xs ${job.status === "done" ? "text-ok" : "text-muted"}`}>
-      {job.status === "done" ? "Finished" : job.status === "cancelled" ? "Stopped by you" : (job.error || "The browser task failed").slice(0, 200)}
+      {job.status === "done" ? "Finished" : job.status === "cancelled" ? "Stopped by you" : failureLine(job.error).slice(0, 320)}
     </p>
   ) : null;
 

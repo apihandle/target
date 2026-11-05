@@ -292,7 +292,7 @@ describe("chat panel", () => {
       .mockResolvedValue(ok({ job: { ...base, status: "failed", error: "CLOUDFLARE_BLOCKED: check not completed", live: null, frame: "ZmluYWw=" } }));
     vi.stubGlobal("fetch", f);
     render(<BrowserLiveCard conversationId={CONV} streaming firstDelayMs={0} pollMs={1} />);
-    expect(await screen.findByTestId("browser-final")).toHaveTextContent("CLOUDFLARE_BLOCKED");
+    expect(await screen.findByTestId("browser-final")).toHaveTextContent(/Cloudflare check could not be solved automatically.*Next: .*Take control/);
     expect(screen.getByTestId("browser-live-title")).toHaveTextContent("Failed");
     expect(screen.getByTestId("browser-live-shot")).toHaveAttribute("src", "data:image/jpeg;base64,ZmluYWw=");
     expect(screen.queryByTestId("browser-stop")).toBeNull();
