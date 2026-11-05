@@ -100,3 +100,22 @@ export function PctBar({ pct, className = "bg-accent" }: { pct: number; classNam
     </span>
   );
 }
+
+export type ShareItem = { label: string; count: number; pct: number; note?: string };
+
+/** Labelled share bars ("label · count · %"), first bar in gold. Used for provider / model / feature splits. */
+export function ShareBars({ items, testId, barClass = "bg-sky-accent/80" }: { items: ShareItem[]; testId?: string; barClass?: string }) {
+  return (
+    <ul className="space-y-2.5" data-testid={testId}>
+      {items.map((v, i) => (
+        <li key={v.label} data-testid={testId ? `${testId}-row` : undefined}>
+          <div className="flex items-baseline justify-between gap-2 text-sm">
+            <span className="min-w-0 truncate text-ink-soft" title={v.label}>{v.label}</span>
+            <span className="shrink-0 tabular-nums text-muted">{v.count.toLocaleString("en-IN")} · {v.pct.toFixed(1)}%{v.note ? <span className="ml-1.5 text-danger/90">{v.note}</span> : null}</span>
+          </div>
+          <div className="mt-1"><PctBar pct={v.pct} className={i === 0 ? "bg-accent" : barClass} /></div>
+        </li>
+      ))}
+    </ul>
+  );
+}

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
-export type NavBadges = { users: number | null; errors24h: number | null; jobsActive: number | null; scheduledActive: number | null; sharesActive: number | null; switchesOff: number };
+export type NavBadges = { users: number | null; errors24h: number | null; jobsActive: number | null; scheduledActive: number | null; sharesActive: number | null; feedbackNew?: number | null; switchesOff: number };
 
 const ICONS: Record<string, ReactNode> = {
   dashboard: <path d="M4 11.5 12 5l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z" />,
@@ -13,6 +13,8 @@ const ICONS: Record<string, ReactNode> = {
   scheduled: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></>,
   shares: <><circle cx="6.5" cy="12" r="2.5" /><circle cx="17.5" cy="6" r="2.5" /><circle cx="17.5" cy="18" r="2.5" /><path d="m8.7 10.8 6.6-3.6M8.7 13.2l6.6 3.6" /></>,
   activity: <path d="M3 12h4l3-7 4 14 3-7h4" />,
+  ai: <><rect x="6" y="6" width="12" height="12" rx="2.5" /><path d="M9.5 10h5M9.5 14h3M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3" /></>,
+  feedback: <><path d="M5 5h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-4 3.5V6a1 1 0 0 1 1-1z" /><path d="M9 10h6M9 13h4" /></>,
   health: <path d="M12 20s-7.5-4.4-7.5-10A4.5 4.5 0 0 1 12 7a4.5 4.5 0 0 1 7.5 3c0 5.6-7.5 10-7.5 10z" />,
   controls: <><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></>,
   audit: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13h6M9 17h4" /></>,
@@ -59,6 +61,8 @@ export default function AdminFrame({ badges, version, email, avatar, statusSlot,
     { href: "/admin/scheduled", label: "Scheduled", icon: "scheduled", badge: <Badge n={badges.scheduledActive} tone="neutral" /> },
     { href: "/admin/shares", label: "Share links", icon: "shares", badge: <Badge n={badges.sharesActive} tone="neutral" /> },
     { href: "/admin/activity", label: "Activity", icon: "activity" },
+    { href: "/admin/ai-usage", label: "AI usage", icon: "ai" },
+    { href: "/admin/feedback", label: "Feedback", icon: "feedback", badge: <Badge n={badges.feedbackNew ?? null} tone="warn" /> },
     { href: "/admin/health", label: "Health", icon: "health" },
     { href: "/admin/controls", label: "Controls", icon: "controls", badge: <Badge n={badges.switchesOff} tone="warn" /> },
     { href: "/admin/audit", label: "Audit log", icon: "audit" },

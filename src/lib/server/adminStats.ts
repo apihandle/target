@@ -180,7 +180,7 @@ export async function loadDashboard(db: Db, now = Date.now()): Promise<Dashboard
 }
 
 /** Badge counts for the admin sidebar, cached 30 s per server instance. */
-export type NavCounts = { users: number | null; errors24h: number | null; jobsActive: number | null; scheduledActive: number | null; sharesActive: number | null; switchesOff: number };
+export type NavCounts = { users: number | null; errors24h: number | null; jobsActive: number | null; scheduledActive: number | null; sharesActive: number | null; feedbackNew: number | null; switchesOff: number };
 let navCache: { at: number; value: NavCounts } | null = null;
 export function clearNavCache() { navCache = null; }
 
@@ -189,14 +189,15 @@ export async function loadNavCounts(db: Db, switchesOff: number, now = Date.now(
   const c = async (table: string, f: (q: ReturnType<ReturnType<Db["from"]>["select"]>) => unknown) => {
     try { const { count, error } = await (f(db.from(table).select("id", { count: "exact", head: true })) as PromiseLike<{ count: number | null; error: unknown }>); return error ? null : count ?? 0; } catch { return null; }
   };
-  const [u, errors24h, jobsActive, scheduledActive, sharesActive] = await Promise.all([
+  const [u, errors24h, jobsActive, scheduledActive, sharesActive, feedbackNew] = await Promise.all([
     allUsers(db).then((r) => r.users.length, () => null),
     c("error_events", (q) => q.gte("created_at", new Date(now - DAY).toISOString())),
     c("browser_jobs", (q) => q.in("status", ["queued", "running"])),
     c("scheduled_jobs", (q) => q.eq("status", "active")),
     c("conversation_shares", (q) => q.is("revoked_at", null)),
+    c("feedback", (q) => q.eq("status", "new")),
   ]);
-  const value = { users: u, errors24h, jobsActive, scheduledActive, sharesActive, switchesOff };
+  const value = { users: u, errors24h, jobsActive, scheduledActive, sharesActive, feedbackNew, switchesOff };
   navCache = { at: now, value };
   return value;
 }

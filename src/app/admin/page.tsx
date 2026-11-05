@@ -3,11 +3,12 @@ import type { ReactNode } from "react";
 import { requireAdminPage } from "@/lib/server/adminAuth";
 import { loadOverview } from "@/lib/server/adminData";
 import { loadActivitySeries, loadDashboard } from "@/lib/server/adminStats";
+import { loadModelShare } from "@/lib/server/adminAiUsage";
 import { getAdminSettings } from "@/lib/server/adminSettings";
 import { FEATURES, FEATURE_LABELS } from "@/lib/adminConfig";
 import { countryName, flagOf } from "@/lib/presence";
 import ActivityChart from "@/components/admin/ActivityChart";
-import { Donut, PctBar, SparkBars } from "@/components/admin/charts";
+import { Donut, PctBar, ShareBars, SparkBars } from "@/components/admin/charts";
 import { fmt, num, truncate } from "@/components/admin/ui";
 
 export const dynamic = "force-dynamic";
@@ -76,7 +77,7 @@ const time = (iso: string) => new Date(iso).toLocaleString("en-IN", { timeZone: 
 
 export default async function AdminDashboard() {
   const { db } = await requireAdminPage();
-  const [d, o, series, settings] = await Promise.all([loadDashboard(db), loadOverview(db), loadActivitySeries(db, "24h"), getAdminSettings(db)]);
+  const [d, o, series, settings, models] = await Promise.all([loadDashboard(db), loadOverview(db), loadActivitySeries(db, "24h"), getAdminSettings(db), loadModelShare(db)]);
   const off = FEATURES.filter((f) => !settings.features[f]);
   const failed = d.users.total == null && d.messages.today == null;
   const jobsDone = d.jobs.done + d.jobs.failed;
@@ -144,6 +145,13 @@ export default async function AdminDashboard() {
             </table>
           )}
         </Card>
+        <div className="flex flex-col gap-3">
+        <Card title={<>Model usage <span className="font-normal text-muted">({num(models?.total ?? null)} answers)</span></>} testId="model-usage" action={viewAll("/admin/ai-usage?range=7d", "ai-view-all")}>
+          {models === null ? <p className="py-6 text-center text-sm text-muted">Starts once migration 0020 has run.</p>
+            : models.models.length === 0 ? <p className="py-6 text-center text-sm text-muted">No AI answers in the last 7 days yet.</p>
+            : <ShareBars testId="model-share" items={models.models.map((m) => ({ label: m.key === "others" ? "Others" : m.key, count: m.count, pct: m.pct }))} />}
+          <p className="mt-3 text-[11px] text-muted-soft">Which model answered, last 7 days{models?.capped ? " (newest 20,000)" : ""}.</p>
+        </Card>
         <Card title="Devices & browsers" testId="devices" action={<span className="text-[11px] text-muted">by user</span>}>
           {d.devices.length === 0 ? <p className="py-6 text-center text-sm text-muted">{d.presenceReady ? "No devices recorded yet." : "Starts once migration 0019 has run."}</p> : (
             <ul className="space-y-2.5">
@@ -155,8 +163,8 @@ export default async function AdminDashboard() {
               ))}
             </ul>
           )}
-          <p className="mt-3 text-[11px] text-muted-soft">AI usage per model isn&apos;t logged yet, so this shows devices instead.</p>
         </Card>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6" data-testid="overview-more">

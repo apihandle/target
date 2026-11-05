@@ -1,6 +1,7 @@
 import type { Db } from "@/lib/server/auth";
 import { configuredProviders } from "@/lib/server/remoteBrowser";
 import { loadCronStatus } from "@/lib/server/adminData";
+import { aiUsagePulse } from "@/lib/server/adminAiUsage";
 
 /**
  * /admin → System health. Live checks use read-only, free endpoints with a 6 s timeout. Secrets are only ever
@@ -14,7 +15,7 @@ export type Check = { id: string; name: string; state: CheckState; detail: strin
 export const ENV_GROUPS: { group: string; vars: string[] }[] = [
   { group: "Supabase", vars: ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"] },
   { group: "Admin", vars: ["ADMIN_EMAILS", "ADMIN_EMAIL"] },
-  { group: "AI", vars: ["NVIDIA_API_KEY", "NVIDIA_MODELS", "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "VISION_MODELS"] },
+  { group: "AI", vars: ["NVIDIA_API_KEY", "NVIDIA_MODELS", "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "VISION_MODELS", "AI_USAGE_LOG"] },
   { group: "Search", vars: ["TAVILY_API_KEY"] },
   { group: "Encryption", vars: ["CONNECTOR_ENCRYPTION_KEY", "TOKEN_ENCRYPTION_KEY"] },
   { group: "Browser", vars: ["STEEL_API_KEY", "BROWSERLESS_TOKEN", "BROWSERBASE_API_KEY", "BROWSERBASE_PROJECT_ID", "HYPERBROWSER_API_KEY", "ANCHOR_API_KEY", "SESSION_WORKER_SECRET"] },
@@ -79,6 +80,28 @@ export async function runHealthChecks(db: Db, env: Env = process.env, f: typeof 
       if (error) return { id: "custom", name: "Custom AI providers", state: "unknown" as const, detail: "Table not readable (migration 0016?)" };
       return { id: "custom", name: "Custom AI providers", state: (count ? "ok" : "not_configured") as CheckState, detail: `${count ?? 0} saved by users. Not called from here: they use the users' own keys.` };
     } catch { return { id: "custom", name: "Custom AI providers", state: "unknown" as const, detail: "Could not count" }; }
+  })());
+
+  // AI usage log (migration 0020): is it being written, and how many calls failed in the last 24 h.
+  // "Down" only for a clear outage signal (at least 20 requests and half of them got no answer).
+  tasks.push((async () => {
+    if ((env.AI_USAGE_LOG ?? "").toLowerCase() === "off") return notConfigured("ai_usage", "AI usage log", "Turned off (AI_USAGE_LOG=off)");
+    const p = await aiUsagePulse(db, now);
+    if (!p.ready) return { id: "ai_usage", name: "AI usage log", state: "unknown" as const, detail: "Table not readable: run migration 0020" };
+    const rate = p.requests ? p.failed / p.requests : 0;
+    const state: CheckState = p.requests >= 20 && rate >= 0.5 ? "down" : p.lastAt ? "ok" : "unknown";
+    const detail = p.requests
+      ? `${p.requests}${p.capped ? "+" : ""} AI requests in 24 h, ${Math.round(rate * 100)}% got no answer · last call ${ago(p.lastAt, now)}`
+      : `No AI calls in 24 h · last call ${ago(p.lastAt, now)}`;
+    return { id: "ai_usage", name: "AI usage log", state, detail };
+  })());
+  // Feedback (migration 0020): readable, and how many are waiting.
+  tasks.push((async () => {
+    try {
+      const { count, error } = await db.from("feedback").select("id", { count: "exact", head: true }).eq("status", "new");
+      if (error) return { id: "feedback", name: "Feedback", state: "unknown" as const, detail: "Table not readable: run migration 0020" };
+      return { id: "feedback", name: "Feedback", state: "ok" as const, detail: `${count ?? 0} new ${count === 1 ? "message" : "messages"} waiting` };
+    } catch { return { id: "feedback", name: "Feedback", state: "unknown" as const, detail: "Could not count" }; }
   })());
 
   // Web search.
