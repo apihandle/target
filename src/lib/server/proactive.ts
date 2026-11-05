@@ -54,6 +54,7 @@ export async function scanUser(db: Db, userId: string, f: typeof fetch = fetch):
   if (!mail && !events) return 0;
   const today = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "full", timeStyle: "short" });
   const reply = await llmText({
+    usage: { userId, feature: "proactive" },
     maxTokens: 1200, temperature: 0.2, timeoutMs: 30000,
     messages: [{ role: "system", content: `${PROACTIVE_PROMPT}\nNow: ${today} (IST).` },
       { role: "user", content: `<untrusted_data source="gmail">\n${JSON.stringify(mail ?? []).slice(0, 12000)}\n</untrusted_data>\n<untrusted_data source="calendar">\n${JSON.stringify(events ?? []).slice(0, 6000)}\n</untrusted_data>` }],

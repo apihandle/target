@@ -1,6 +1,7 @@
 import { badRequest, dbError, json, readJson, requireUser, unauthorized } from "@/lib/server/auth";
 import { MANUAL_KINDS, PANEL_COLS, validatePanel } from "@/lib/panels";
 import { computePanelData } from "@/lib/panels-server";
+import { withAiUsage } from "@/lib/aiUsage";
 import { logActivity } from "@/lib/server/activity";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
   // Gather data before saving so a bad city / coin fails fast instead of leaving a broken panel.
   let data: Record<string, unknown> | null = {};
   if (!MANUAL_KINDS.includes(v.value.kind) || v.value.kind === "countdown") {
-    try { data = await computePanelData(v.value); } catch (e) {
+    try { data = await withAiUsage({ userId: a.user.id, feature: "panels" }, () => computePanelData(v.value)); } catch (e) {
       return json({ error: e instanceof Error ? e.message : "Couldn't load data" }, 422);
     }
   }

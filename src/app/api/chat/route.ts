@@ -205,7 +205,7 @@ export async function POST(req: Request) {
     }
   }
   // Fact extraction for memory runs alongside the reply instead of after it.
-  const factsP: Promise<string[]> = settings.memory_enabled && !explicit ? extractFacts(text, known).catch(() => []) : Promise.resolve([]);
+  const factsP: Promise<string[]> = settings.memory_enabled && !explicit ? extractFacts(text, known, user.id).catch(() => []) : Promise.resolve([]);
   const memNote = savedExplicit ? `\n(You just saved this to memory: "${explicit}". Confirm briefly.)`
     : !settings.memory_enabled && explicitRemember(text) ? "\n(The user has turned memory off in Settings, so nothing is saved. Tell them briefly if they ask you to remember something.)" : "";
 
@@ -254,11 +254,13 @@ export async function POST(req: Request) {
   ];
   // Quick turns get a short reply budget and the fast models; real work keeps the strong models, with a slow
   // starter raced against the next model after a few seconds (see llm()).
+  // usage: who/what for the ai_usage log (counters only, never the text).
+  const usage = { userId: user.id, feature: quick ? "chat_quick" : "chat" };
   const callOpts = custom
-    ? { stream: true, timeoutMs: 60000, maxTokens: quick ? 900 : maxTokens, custom }
+    ? { stream: true, timeoutMs: 60000, maxTokens: quick ? 900 : maxTokens, custom, usage }
     : quick
-    ? { stream: true, timeoutMs: 25000, maxTokens: 900, fast: true, prefer: picked }
-    : { stream: true, timeoutMs: 60000, maxTokens, prefer, only };
+    ? { stream: true, timeoutMs: 25000, maxTokens: 900, fast: true, prefer: picked, usage }
+    : { stream: true, timeoutMs: 60000, maxTokens, prefer, only, usage };
   mark("prompt");
 
   const failTask = async (msg: string) => {
@@ -423,7 +425,7 @@ export async function POST(req: Request) {
         }
         if (!cancelled && full && !quick && text.length >= 12 && (!/```actions?/i.test(full) || (taskMode && autoCards.length > 0 && !paused))) {
           try {
-            const { actions, proposals } = await suggestActions(text, full);
+            const { actions, proposals } = await suggestActions(text, full, user.id);
             const extra: Action[] = [];
             if (proposals.length) {
               const connected = await connectedProviders(db, user.id);
@@ -494,9 +496,10 @@ function signinLine(content: string, site: string, lang: Lang | null): string {
   return signinStatusLine(toolJson(content) ?? {}, site, lang);
 }
 
-async function extractFacts(text: string, known: string[]): Promise<string[]> {
+async function extractFacts(text: string, known: string[], userId: string): Promise<string[]> {
   if (text.length < 8) return [];
   const raw = await llmText({
+    usage: { userId, feature: "memory" },
     temperature: 0, maxTokens: 300, fast: true, timeoutMs: 10000, firstTokenMs: 5000,
     messages: [
       { role: "system", content: EXTRACT_PROMPT },
@@ -526,8 +529,9 @@ function nowLine(): string {
 }
 
 /** Ask the model for buttons. Ordinary buttons are sanitized; "propose" items are validated against the action catalogue. */
-async function suggestActions(userText: string, reply: string): Promise<{ actions: Action[]; proposals: ReturnType<typeof parseProposal>[] }> {
+async function suggestActions(userText: string, reply: string, userId: string): Promise<{ actions: Action[]; proposals: ReturnType<typeof parseProposal>[] }> {
   const raw = await llmText({
+    usage: { userId, feature: "suggestions" },
     temperature: 0, maxTokens: 500, fast: true, timeoutMs: 8000, firstTokenMs: 4000,
     messages: [
       { role: "system", content: "You pick action buttons for a chat reply." + nowLine() + ACTIONS_PROMPT +

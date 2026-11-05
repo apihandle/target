@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { computePanelData } from "@/lib/panels-server";
 import { PANEL_COLS as COLS, type Panel } from "@/lib/panels";
+import { withAiUsage } from "@/lib/aiUsage";
 import { isUuid } from "@/lib/ids";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export async function POST(_req: Request, props: { params: Promise<{ id: string 
     return Response.json({ panel: p, throttled: true });
   let update: Record<string, unknown>;
   try {
-    update = { data: await computePanelData(p as Panel), error: null, refreshed_at: new Date().toISOString() };
+    update = { data: await withAiUsage({ userId: user.id, feature: "panels" }, () => computePanelData(p as Panel)), error: null, refreshed_at: new Date().toISOString() };
   } catch (e) {
     update = { error: e instanceof Error ? e.message : "Refresh failed" };
   }

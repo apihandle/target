@@ -1,4 +1,5 @@
 import type { ChatMsg } from "@/lib/ai";
+import { aiUsageContext, logAiUsage, readUsage, usageFromSse, type AiUsageContext } from "@/lib/aiUsage";
 
 type Provider = {
   name: string; url: string; key: string; models: string[]; extra?: Record<string, unknown>; headers?: Record<string, string>; minTokens?: number;
@@ -68,6 +69,11 @@ export type LLMOpts = {
   firstTokenMs?: number;
   /** The user picked one of their own custom models: use only that endpoint (see CustomRoute). */
   custom?: CustomRoute | null;
+  /**
+   * Who / what this call is for, recorded in ai_usage (never the prompt or the reply). Merged over the context set
+   * with withAiUsage() by the caller's route; missing feature = "other".
+   */
+  usage?: AiUsageContext;
 };
 
 export type ModelRef = { provider: string; model: string };
@@ -129,7 +135,52 @@ export class LLMError extends Error {
 
 type Candidate = { p: Provider; model: string };
 type Win = { win: Response; ctrl: AbortController };
-type Fail = { status: number; toolRefused: boolean };
+type Fail = { status: number; toolRefused: boolean; code: string };
+
+/**
+ * One ai_usage row per attempt, written at most once (the first finish wins). Holds only counters and labels:
+ * the prompt and the reply never pass through here.
+ */
+type Rec = {
+  start: number; ttft: number | null; raceWon: boolean | null; done: boolean;
+  finish: (o: { success: boolean; code?: string | null; tokens?: { input: number | null; output: number | null } | null; raceWon?: boolean | null }) => void;
+};
+type RecBase = { provider: string; model: string; requestId: string; attempt: number; streamed: boolean; ctx: AiUsageContext };
+
+function recorder(b: RecBase): Rec {
+  const rec: Rec = {
+    start: Date.now(), ttft: null, raceWon: null, done: false,
+    finish(o) {
+      if (rec.done) return;
+      rec.done = true;
+      try {
+        logAiUsage({
+          user_id: b.ctx.userId ?? null, request_id: b.requestId, provider: b.provider, model: b.model, feature: b.ctx.feature ?? "other",
+          attempt: b.attempt, streamed: b.streamed, input_tokens: o.tokens?.input ?? null, output_tokens: o.tokens?.output ?? null,
+          latency_ms: Date.now() - rec.start, ttft_ms: rec.ttft, success: o.success, error_code: o.code ?? null,
+          race_won: o.raceWon !== undefined ? o.raceWon : rec.raceWon,
+        });
+      } catch { /* logging never breaks a call */ }
+    },
+  };
+  return rec;
+}
+
+function usageCtx(opts: LLMOpts): AiUsageContext {
+  const out: AiUsageContext = { ...aiUsageContext() };
+  if (opts.usage?.userId !== undefined) out.userId = opts.usage.userId;
+  if (opts.usage?.feature !== undefined) out.feature = opts.usage.feature;
+  return out;
+}
+
+const newRequestId = () => { try { return globalThis.crypto.randomUUID(); } catch { return ""; } };
+
+/** Non-streaming winner: read token counts from a clone of the JSON body in the background, then log. */
+function finishFromJson(win: Response, rec: Rec) {
+  let copy: Response;
+  try { copy = win.clone(); } catch { rec.finish({ success: true }); return; }
+  copy.json().then((j: { usage?: unknown }) => rec.finish({ success: true, tokens: readUsage(j?.usage) }), () => rec.finish({ success: true }));
+}
 
 /** True once an SSE buffer holds a visible word or a tool call (thinking deltas don't count). */
 export function sseHasAnswer(buffer: string): "answer" | "empty" | null {
@@ -150,22 +201,44 @@ export function sseHasAnswer(buffer: string): "answer" | "empty" | null {
 const sleep = (ms: number) => { let t: ReturnType<typeof setTimeout> | undefined; const p = new Promise<null>((r) => { t = setTimeout(() => r(null), Math.max(0, ms)); }); return { p, cancel: () => clearTimeout(t) }; };
 
 /** Body for a streaming Response that replays what was already read, then the rest; errors if it goes quiet. */
-function replay(prefix: Uint8Array[], reader: ReadableStreamDefaultReader<Uint8Array>, ctrl: AbortController, idleMs: number): ReadableStream<Uint8Array> {
+function replay(prefix: Uint8Array[], reader: ReadableStreamDefaultReader<Uint8Array>, ctrl: AbortController, idleMs: number, rec?: Rec): ReadableStream<Uint8Array> {
+  // Token counts arrive in the stream's last chunk(s) as a `usage` object; only lines mentioning it are parsed.
+  const dec = new TextDecoder();
+  let tail = "";
+  let tokens: { input: number | null; output: number | null } | null = null;
+  const scan = (b: Uint8Array) => {
+    if (!rec) return;
+    try {
+      tail += dec.decode(b, { stream: true });
+      const cut = tail.lastIndexOf("\n");
+      if (cut < 0) { if (tail.length > 65536) tail = ""; return; }
+      const u = usageFromSse(tail.slice(0, cut));
+      if (u) tokens = u;
+      tail = tail.slice(cut + 1);
+    } catch { /* counting is best effort */ }
+  };
+  const end = (success: boolean, code: string | null) => {
+    if (!rec) return;
+    if (tail) { const u = usageFromSse(tail); if (u) tokens = u; tail = ""; }
+    rec.finish({ success, code, tokens });
+  };
+  for (const b of prefix) scan(b);
   return new ReadableStream<Uint8Array>({
     start(c) { for (const b of prefix) c.enqueue(b); },
     async pull(c) {
       const idle = sleep(idleMs);
       try {
         const r = await Promise.race([reader.read(), idle.p]);
-        if (r === null) { ctrl.abort(); c.error(new Error("AI stream went quiet")); return; }
-        if (r.done) c.close(); else c.enqueue(r.value);
-      } catch (e) { c.error(e); } finally { idle.cancel(); }
+        if (r === null) { ctrl.abort(); end(false, "stream_idle"); c.error(new Error("AI stream went quiet")); return; }
+        if (r.done) { c.close(); end(true, null); } else { scan(r.value); c.enqueue(r.value); }
+      } catch (e) { end(false, "stream_error"); c.error(e); } finally { idle.cancel(); }
     },
-    cancel() { reader.cancel().catch(() => undefined); ctrl.abort(); },
+    // The reader stopped early (user pressed stop, or the caller had what it needed): the model did answer.
+    cancel() { end(true, "client_closed"); reader.cancel().catch(() => undefined); ctrl.abort(); },
   });
 }
 
-async function attempt(c: Candidate, opts: LLMOpts, ctrl: AbortController): Promise<Win | Fail> {
+async function attempt(c: Candidate, opts: LLMOpts, ctrl: AbortController, rec?: Rec): Promise<Win | Fail> {
   const withTools = !!opts.tools?.length;
   const fast = !!opts.fast && !!c.p.fastModels?.includes(c.model);
   try {
@@ -184,7 +257,7 @@ async function attempt(c: Candidate, opts: LLMOpts, ctrl: AbortController): Prom
     if (!r.ok || !r.body) {
       await r.text().catch(() => "");
       // 400/404/422 with tools attached usually means "this model/route can't do tool calling".
-      return { status: r.ok ? 502 : r.status, toolRefused: withTools && (r.status === 400 || r.status === 404 || r.status === 422) };
+      return { status: r.ok ? 502 : r.status, toolRefused: withTools && (r.status === 400 || r.status === 404 || r.status === 422), code: r.ok ? "no_body" : `http_${r.status}` };
     }
     if (!opts.stream) return { win: r, ctrl };
     // Read until the first visible word / tool call, so a model that is still "thinking" can be raced.
@@ -196,20 +269,20 @@ async function attempt(c: Candidate, opts: LLMOpts, ctrl: AbortController): Prom
       const { value, done } = await reader.read();
       if (done) {
         // A body with no SSE at all (e.g. a plain-text proxy) is passed through; an SSE stream with no words is empty.
-        if (prefix.length && !/^\s*data:/m.test(buf)) break;
-        return { status: 502, toolRefused: false };
+        if (prefix.length && !/^\s*data:/m.test(buf)) { if (rec) rec.ttft = Date.now() - rec.start; break; }
+        return { status: 502, toolRefused: false, code: "empty" };
       }
       prefix.push(value);
       buf += dec.decode(value, { stream: true });
       const seen = sseHasAnswer(buf);
-      if (seen === "answer") break;
-      if (seen === "empty") return { status: 502, toolRefused: false };
+      if (seen === "answer") { if (rec) rec.ttft = Date.now() - rec.start; break; }
+      if (seen === "empty") return { status: 502, toolRefused: false, code: "empty" };
       // Keep only the unfinished last line plus a little context.
       if (buf.length > 20000) buf = buf.slice(buf.lastIndexOf("\n", buf.length - 1) - 10000);
     }
-    return { win: new Response(replay(prefix, reader, ctrl, opts.timeoutMs ?? 60000), { status: r.status, headers: r.headers }), ctrl };
+    return { win: new Response(replay(prefix, reader, ctrl, opts.timeoutMs ?? 60000, rec), { status: r.status, headers: r.headers }), ctrl };
   } catch {
-    return { status: 504, toolRefused: false };
+    return { status: 504, toolRefused: false, code: ctrl.signal.aborted ? "timeout" : "network" };
   }
 }
 
@@ -243,22 +316,29 @@ export async function llm(opts: LLMOpts): Promise<Response> {
   const hedgeMs = opts.firstTokenMs ?? (opts.stream ? (opts.fast ? 3000 : 8000) : Infinity);
   let last = 502, rateLimited = false, toolRefusals = 0, attempts = 0, n = 0;
   const skip = new Set<string>(); // OpenRouter routes across its own list itself; one attempt is enough after a 429.
-  const running = new Map<number, { ctrl: AbortController; done: Promise<{ i: number; r: Win | Fail; c: Candidate }>; timer: ReturnType<typeof setTimeout> }>();
+  const running = new Map<number, { ctrl: AbortController; done: Promise<{ i: number; r: Win | Fail; c: Candidate }>; timer: ReturnType<typeof setTimeout>; rec: Rec }>();
+  const ctx = usageCtx(opts);
+  const requestId = newRequestId();
   const startNext = (): boolean => {
     while (queue.length) {
       const c = queue.shift()!;
       if (skip.has(c.p.name)) continue;
       const i = n++;
       const ctrl = new AbortController();
+      const rec = recorder({ provider: c.p.name, model: c.model, requestId, attempt: i, streamed: !!opts.stream, ctx });
       // Non-streaming calls (and the wait for headers) are capped per attempt; streams are capped by the deadline.
       const perAttempt = opts.stream ? Math.max(0, deadline - Date.now()) : Math.min(totalMs, Math.max(0, deadline - Date.now()));
       const timer = setTimeout(() => ctrl.abort(), perAttempt);
-      running.set(i, { ctrl, timer, done: attempt(c, opts, ctrl).then((r) => ({ i, r, c })) });
+      running.set(i, { ctrl, timer, rec, done: attempt(c, opts, ctrl, rec).then((r) => ({ i, r, c })) });
       return true;
     }
     return false;
   };
-  const stopAll = () => { for (const r of running.values()) { clearTimeout(r.timer); r.ctrl.abort(); } running.clear(); };
+  // Models still running when the call ends: "cancelled" (another model won the race) or "timeout" (deadline).
+  const stopAll = (code: "cancelled" | "timeout") => {
+    for (const r of running.values()) { r.rec.finish({ success: false, code, raceWon: code === "cancelled" ? false : null }); clearTimeout(r.timer); r.ctrl.abort(); }
+    running.clear();
+  };
   startNext();
   while (running.size) {
     const remaining = deadline - Date.now();
@@ -272,13 +352,20 @@ export async function llm(opts: LLMOpts): Promise<Response> {
     clearTimeout(slot.timer);
     running.delete(got.i);
     attempts++;
-    if ("win" in got.r) { stopAll(); return got.r.win; }
+    if ("win" in got.r) {
+      // Won the race when at least one other model was tried (in parallel or before it).
+      slot.rec.raceWon = n > 1 ? true : null;
+      stopAll("cancelled");
+      if (!opts.stream) finishFromJson(got.r.win, slot.rec);
+      return got.r.win;
+    }
+    slot.rec.finish({ success: false, code: got.r.code });
     last = got.r.status;
     if (last === 429) { rateLimited = true; if (got.c.p.name === "openrouter") skip.add("openrouter"); }
     if (got.r.toolRefused) toolRefusals++;
     if (!running.size) startNext();
   }
-  stopAll();
+  stopAll("timeout");
   const e = new LLMError(rateLimited && last === 429 ? "TARGET's free AI quota is used up for now. Try again later." : `AI error ${last}`, rateLimited && last === 429 ? 429 : 502);
   e.toolsRejected = withTools && toolRefusals > 0 && !rateLimited && toolRefusals >= Math.ceil(attempts / 2);
   throw e;
@@ -291,9 +378,12 @@ export const chatUrl = (base: string) => `${base.replace(/\/+$/, "")}/chat/compl
 async function llmCustom(opts: LLMOpts, c: CustomRoute): Promise<Response> {
   const p: Provider = { name: "custom", url: c.url, key: c.key, models: [c.model], fetch: c.fetch };
   const ctrl = new AbortController();
+  // Logged as provider "custom" + the model id only: never the provider's name, URL or key.
+  const rec = recorder({ provider: "custom", model: c.model, requestId: newRequestId(), attempt: 0, streamed: !!opts.stream, ctx: usageCtx(opts) });
   const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 45000);
-  const r = await attempt({ p, model: c.model }, opts, ctrl).finally(() => clearTimeout(timer));
-  if ("win" in r) return r.win;
+  const r = await attempt({ p, model: c.model }, opts, ctrl, rec).finally(() => clearTimeout(timer));
+  if ("win" in r) { if (!opts.stream) finishFromJson(r.win, rec); return r.win; }
+  rec.finish({ success: false, code: r.code });
   const s = r.status;
   const msg = s === 401 || s === 403 ? `${c.name} rejected the API key (error ${s}). Check it in Settings → AI providers.`
     : s === 429 ? `${c.name} is rate-limiting requests right now (429). Try again in a bit.`

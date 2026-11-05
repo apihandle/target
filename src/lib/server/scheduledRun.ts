@@ -79,20 +79,20 @@ export async function runScheduledJob(db: Db, job: ScheduledJob & { user_id: str
     let first: Response;
     let tools = toolSpecs.length ? toolSpecs : undefined;
     try {
-      first = await llm({ messages, stream: true, timeoutMs: 25000, tools, prefer, custom });
+      first = await llm({ messages, stream: true, timeoutMs: 25000, tools, prefer, custom, usage: { userId: uid, feature: "scheduled" } });
     } catch (e) {
       if (!(e instanceof LLMError) || !e.toolsRejected) throw e;
       tools = undefined;
-      first = await llm({ messages: messages.map((m) => (m.role === "system" ? { ...m, content: String(m.content).replace(connectorNote, "") } : m)), stream: true, timeoutMs: 25000, prefer, custom });
+      first = await llm({ messages: messages.map((m) => (m.role === "system" ? { ...m, content: String(m.content).replace(connectorNote, "") } : m)), stream: true, timeoutMs: 25000, prefer, custom, usage: { userId: uid, feature: "scheduled" } });
     }
     if (taskId) await db.from("tasks").update({ status: "in_progress", progress: "TARGET is working on it…", updated_at: now() }).eq("id", taskId).eq("user_id", uid);
 
     let full = "";
     const result = await runAgent({
       messages, first, maxRounds: 5, deadline: opts.deadline - 40000,
-      next: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 25000, tools, prefer, custom }),
+      next: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 25000, tools, prefer, custom, usage: { userId: uid, feature: "scheduled" } }),
       // Out of rounds or time: answer from what the tools returned instead of stopping mid-task.
-      final: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 25000, prefer, custom }),
+      final: (msgs) => llm({ messages: msgs, stream: true, timeoutMs: 25000, prefer, custom, usage: { userId: uid, feature: "scheduled" } }),
       onText: (d) => { full += d; },
       label: (call: ToolCall) => call.function.name.replace("__", " · ").replace(/_/g, " "),
       onTool: (call: ToolCall) => executeToolCall({ db, userId: uid, projectId, conversationId: convId, taskId, autoApproveBrowser: job.allow_browser === true }, call.function.name, call.function.arguments, loaded),

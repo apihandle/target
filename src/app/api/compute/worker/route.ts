@@ -2,6 +2,7 @@ import { badRequest, json, readJson, type Db } from "@/lib/server/auth";
 import { COMPUTE_MODES, UUID_RE, workerAuth } from "@/lib/server/worker";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { describeVideo } from "@/lib/server/autoBrowser";
+import { withAiUsage } from "@/lib/aiUsage";
 import { storeJobFiles } from "@/lib/server/jobFiles";
 import { sendPushToUser } from "@/lib/server/push";
 
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
     let result = typeof b.result === "string" ? b.result : null;
     if (ok && job.mode === "video") {
       const frames = Array.isArray(b.frames) ? (b.frames as unknown[]).filter((f): f is string => typeof f === "string" && f.length < 400000).slice(0, 8) : [];
-      result = await describeVideo(job.goal as string, typeof b.title === "string" ? b.title.slice(0, 300) : "", typeof b.captions === "string" ? b.captions : "", frames);
+      result = await withAiUsage({ userId: job.user_id as string, feature: "video" }, () => describeVideo(job.goal as string, typeof b.title === "string" ? b.title.slice(0, 300) : "", typeof b.captions === "string" ? b.captions : "", frames));
     }
     const files = job.mode === "code" ? await storeJobFiles(db, job.user_id as string, b.files) : [];
     const error = ok ? null : String(b.error ?? "The task failed").slice(0, 500);

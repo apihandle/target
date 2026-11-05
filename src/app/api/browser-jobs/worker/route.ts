@@ -7,6 +7,7 @@ import { openVault } from "@/lib/builtins/vault";
 import { checkLimit } from "@/lib/connectors/rateLimit";
 import { sendPushToUser } from "@/lib/server/push";
 import { decideNext, describeVideo, snapshotSchema } from "@/lib/server/autoBrowser";
+import { withAiUsage } from "@/lib/aiUsage";
 import { decryptWithAny, decryptionKeys } from "@/lib/connectors/crypto";
 import { loadSiteCookies, saveSiteSession } from "@/lib/server/siteSessions";
 import { gmailSigninCode, gmailSiteLink } from "@/lib/server/signinMail";
@@ -213,7 +214,7 @@ export async function POST(req: Request) {
       if ("action" in g && g.pays) pays = true;
       return g;
     } : undefined;
-    let action = await decideNext(signin?.goal ?? (job.goal as string), snap.data, (secrets ?? []) as { id: string; kind: string; label: string; site: string | null }[], log, left, guard);
+    let action = await withAiUsage({ userId: job.user_id as string, feature: "browser" }, () => decideNext(signin?.goal ?? (job.goal as string), snap.data, (secrets ?? []) as { id: string; kind: string; label: string; site: string | null }[], log, left, guard));
     if (action.do === "ready_to_pay") {
       if (checkout?.phase === "prepare") {
         // Remember what the pay page showed (already checked against it by the guard); the card is built from this.
@@ -265,7 +266,7 @@ export async function POST(req: Request) {
     // Video jobs: the worker sends frames + captions; TARGET turns them into a description.
     if (ok && job.mode === "video") {
       const frames = Array.isArray(b.frames) ? (b.frames as unknown[]).filter((f): f is string => typeof f === "string" && f.length < 400000).slice(0, 8) : [];
-      result = await describeVideo(job.goal as string, typeof b.title === "string" ? b.title.slice(0, 300) : "", typeof b.captions === "string" ? b.captions : "", frames);
+      result = await withAiUsage({ userId: job.user_id as string, feature: "video" }, () => describeVideo(job.goal as string, typeof b.title === "string" ? b.title.slice(0, 300) : "", typeof b.captions === "string" ? b.captions : "", frames));
     }
     // Code jobs: files the program saved into out/ become downloads for the owner.
     const files = await storeJobFiles(db, job.user_id as string, b.files);

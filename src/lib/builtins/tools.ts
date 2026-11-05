@@ -116,13 +116,13 @@ export const BUILTIN_TOOLS: BuiltinTool[] = [
     name: "run_parallel", label: "Working on several things at once",
     description: "Research 2-4 independent sub-questions at the same time (for example compare three phones, or check flights, hotels and weather for a trip). Each runs on its own with a web search when useful; combine the answers in your reply.",
     input: z.object({ tasks: z.array(z.string().min(3).max(400)).min(2).max(4), web: z.boolean().default(true) }),
-    async execute(a) {
+    async execute(a, ctx) {
       const key = process.env.TAVILY_API_KEY;
       const started = Date.now();
       const results = await Promise.all(a.tasks.map(async (t) => {
         let ctxBlock = "";
         if (a.web && key) { try { ctxBlock = searchBlock(t, await tavilySearch(t, key)); } catch { /* answer without */ } }
-        const answer = await llmText({ messages: [{ role: "system", content: "Answer this one research question concisely with concrete facts, numbers and source URLs when given. No preamble." + ctxBlock }, { role: "user", content: t }], maxTokens: 900, timeoutMs: 25000 });
+        const answer = await llmText({ usage: { userId: ctx.userId, feature: "research" }, messages: [{ role: "system", content: "Answer this one research question concisely with concrete facts, numbers and source URLs when given. No preamble." + ctxBlock }, { role: "user", content: t }], maxTokens: 900, timeoutMs: 25000 });
         return { task: t, answer: answer || "(no answer in time)" };
       }));
       return { results, seconds: Math.round((Date.now() - started) / 1000) };
