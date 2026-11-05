@@ -152,7 +152,7 @@ export function accountAutofill(goal: string, snap: Snapshot, history: string[])
   const since = history.slice(history.map((h) => h.startsWith("click") || h.startsWith("press") || h.startsWith("goto")).lastIndexOf(true) + 1);
   const box = boxes.find((b) => !since.some((h) => h.startsWith(`fill_secret [${b.i}] password`)));
   if (box) return { do: "fill_secret", i: box.i, secret_id: id, field: "password", why: "New password from the vault" };
-  return accountFields(goal, snap, history);
+  return accountFields(goal, snap, history) ?? submitAccountForm(goal, snap, history, since);
 }
 
 /**
@@ -161,19 +161,44 @@ export function accountAutofill(goal: string, snap: Snapshot, history: string[])
  * corrected). A box that doesn't take the value after three fills is left to the model.
  */
 function accountFields(goal: string, snap: Snapshot, history: string[]): AutoAction | null {
-  if (!/^Create a new account for the user on/.test(goal)) return null;
+  const tries = (i: number) => history.filter((h) => h.startsWith(`fill [${i}]`)).length;
+  const next = fieldMismatches(goal, snap).find((m) => tries(m.i) < 3);
+  return next ? { do: "fill", i: next.i, value: next.want, why: /@/.test(next.want) ? "Account email" : "Chosen username" } : null;
+}
+
+/** Username / email boxes whose shown value isn't the one from the job's inputs. */
+function fieldMismatches(goal: string, snap: Snapshot): { i: number; want: string }[] {
+  if (!/^Create a new account for the user on/.test(goal)) return [];
   const username = goal.match(/ with the username ([A-Za-z0-9][A-Za-z0-9._-]{1,38}),/)?.[1];
   const email = goal.match(/ the email ([^\s,]+@[^\s,]+?)[\s,]/)?.[1];
   const shown = (t: string) => (t.includes(" = ") ? t.slice(t.indexOf(" = ") + 3).trim() : "");
-  const tries = (i: number) => history.filter((h) => h.startsWith(`fill [${i}]`)).length;
+  const out: { i: number; want: string }[] = [];
   for (const e of snap.elements) {
     if (e.tag !== "input" || (e.type && !/^(text|email)$/i.test(e.type))) continue;
     const label = `${e.name ?? ""} ${e.text.split(" = ")[0]}`;
     const want = /e-?mail/i.test(label) || (e.type ?? "").toLowerCase() === "email" ? email
       : /user.?name|user.?id|login|handle|nick/i.test(label) ? username : undefined;
-    if (want && shown(e.text) !== want && tries(e.i) < 3) return { do: "fill", i: e.i, value: want, why: /@/.test(want) ? "Account email" : "Chosen username" };
+    if (want && shown(e.text) !== want) out.push({ i: e.i, want });
   }
-  return null;
+  return out;
+}
+
+const SUBMIT_ACCOUNT = /^\s*(register|sign ?up|create( my| an| new)? account|create|join|submit|continue|save|reset( password)?|change password|update password)\b/i;
+const AUTO_SUBMIT_WHY = "Submit the filled form";
+
+/**
+ * Every box is filled (passwords, then username / email) and the form hasn't been submitted since: click its submit
+ * button. A model once stopped with a fully filled sign-up form and never pressed Register. At most twice per job,
+ * never while a text box is still empty or shows the wrong username / email (the model sorts those out).
+ */
+function submitAccountForm(goal: string, snap: Snapshot, history: string[], since: string[]): AutoAction | null {
+  if (!since.some((h) => h.startsWith("fill"))) return null;
+  if (history.filter((h) => h.includes(AUTO_SUBMIT_WHY)).length >= 2) return null;
+  if (fieldMismatches(goal, snap).length) return null;
+  const empty = snap.elements.some((e) => e.tag === "input" && (!e.type || /^(text|email|tel)$/i.test(e.type)) && !e.text.includes(" = "));
+  if (empty) return null;
+  const btn = snap.elements.find((e) => (e.tag === "button" || e.type === "submit") && SUBMIT_ACCOUNT.test(e.text.split(" = ")[0]));
+  return btn ? { do: "click", i: btn.i, why: AUTO_SUBMIT_WHY } : null;
 }
 
 /** A shorter page for a retry: form controls and buttons first, short text. */

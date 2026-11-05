@@ -112,13 +112,23 @@ describe("sign-up fields from the account inputs", () => {
     const p = registerPage();
     expect(accountAutofill(g, p, pw)).toEqual({ do: "fill", i: 2, value: "fakeuser01", why: "Chosen username" });
     p.elements[2].text = "username = fakeuser01";
-    expect(accountAutofill(g, p, [...pw, "fill [2]"])).toBeNull();
+    expect(accountAutofill(g, p, [...pw, "fill [2]"])).toEqual({ do: "click", i: 7, why: "Submit the filled form" });
+  });
+  it("submits a fully filled form itself (a model once stopped there), at most twice, never with an empty box", () => {
+    const p = registerPage();
+    p.elements[2].text = "username = fakeuser01";
+    const done = [...pw, "fill [2]"];
+    expect(accountAutofill(g, p, done)).toMatchObject({ do: "click", i: 7 });
+    expect(accountAutofill(g, p, [...done, "click [7]: Submit the filled form"])).toMatchObject({ do: "fill_secret", i: 4 }); // re-shown form: refill first
+    expect(accountAutofill(g, p, ["click [7]: Submit the filled form", "click [7]: Submit the filled form", ...done])).toBeNull();
+    p.elements.splice(1, 0, { i: 30, tag: "input", type: "text", text: "First name", name: "first" });
+    expect(accountAutofill(g, p, done)).toBeNull();
   });
   it("corrects the email typed into the username box, but stops after three tries", () => {
     const p = registerPage();
     p.elements[2].text = "username = nobody@example.com";
     expect(accountAutofill(g, p, pw)).toMatchObject({ do: "fill", i: 2, value: "fakeuser01" });
-    expect(accountAutofill(g, p, [...pw, "fill [2]", "fill [2]", "fill [2]"])).toBeNull();
+    expect(accountAutofill(g, p, [...pw, "fill [2]", "fill [2]", "fill [2]"])).toBeNull(); // and never submitted with the wrong value
   });
   it("fills an email box with the account email", () => {
     const p = registerPage();
