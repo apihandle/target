@@ -62,6 +62,8 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
   private mode: "one" | "maybe" | null = null;
   private countMode = false; private head = false;
   private lim = Infinity;
+  private off = 0;
+  private ranged = false;
   constructor(private db: FakeDb, private table: string) {}
   private cols = "";
   private conflict = "";
@@ -93,6 +95,8 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
   not(k: string, _op: string, _v: unknown) { this.filters.push((r) => r[k] != null); return this; }
   order() { return this; }
   limit(n: number) { this.lim = n; return this; }
+  /** PostgREST range (inclusive); with count: "exact" the count is the total before paging, like the real API. */
+  range(from: number, to: number) { this.off = from; this.lim = to - from + 1; this.ranged = true; return this; }
   maybeSingle() { this.mode = "maybe"; return this; }
   single() { this.mode = "one"; return this; }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -120,8 +124,9 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
       return { data: rows, error: null };
     };
     if (this.op === "select") {
-      const rows = match().slice(0, this.lim);
-      if (this.countMode) return { data: this.head ? null : rows, error: null, count: rows.length };
+      const matched = match();
+      const rows = matched.slice(this.off, this.off + this.lim);
+      if (this.countMode) return { data: this.head ? null : rows, error: null, count: this.ranged ? matched.length : rows.length };
       return finish(rows);
     }
     if (this.op === "insert" || this.op === "upsert") {
