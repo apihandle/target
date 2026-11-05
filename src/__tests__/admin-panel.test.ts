@@ -132,6 +132,17 @@ describe("proxy: /admin is 404 for everyone but admins", () => {
     expect(r.headers.get("cache-control")).toBe("no-store");
     expect(r.headers.get("x-robots-tag")).toContain("noindex");
   });
+  it("admin writes from another site are refused; same-site and GETs pass", async () => {
+    h.session = ADMIN;
+    const post = (headers: Record<string, string>) => updateSession(new NextRequest("http://t/api/admin/settings", { method: "POST", headers }));
+    expect((await post({ origin: "https://evil.example" })).status).toBe(403);
+    expect((await post({ "sec-fetch-site": "cross-site" })).status).toBe(403);
+    expect((await post({ origin: "http://t" })).status).toBe(200);
+    expect((await post({ "sec-fetch-site": "same-origin" })).status).toBe(200);
+    expect((await updateSession(new NextRequest("http://t/api/admin/health", { headers: { origin: "https://evil.example" } }))).status).toBe(200);
+    h.session = BOB;
+    expect((await post({ origin: "https://evil.example" })).status).toBe(404); // non-admins still see nothing
+  });
   it("maintenance closes /app and its APIs for non-admins only", async () => {
     db.rows("admin_settings").push({ key: "maintenance", value: { enabled: true, message: "Back at 5" } });
     h.session = BOB;

@@ -10,6 +10,20 @@ export const isAdminPath = (path: string) => path === "/admin" || path.startsWit
 /** API routes that keep working during maintenance (admin tools, client error reports, auth). */
 const MAINTENANCE_OPEN_API = ["/api/admin", "/api/errors", "/api/auth"];
 
+/**
+ * Admin writes must come from TARGET's own pages: a POST/PUT/PATCH/DELETE to /api/admin whose Origin (or, without
+ * one, Sec-Fetch-Site) says another site is refused, on top of the session cookie's SameSite=Lax.
+ */
+export function sameOriginWrite(request: Pick<NextRequest, "method" | "headers" | "nextUrl">): boolean {
+  if (["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())) return true;
+  const origin = request.headers.get("origin");
+  if (origin) {
+    try { return new URL(origin).host === (request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? request.nextUrl.host); } catch { return false; }
+  }
+  const site = request.headers.get("sec-fetch-site");
+  return !site || site === "same-origin" || site === "none";
+}
+
 function notFoundResponse(request: NextRequest, path: string) {
   if (path.startsWith("/api/")) return NextResponse.json({ error: "Not found" }, { status: 404 });
   // Rewrite to a path that has no page, so Next renders its normal not-found page with a 404 status.
@@ -49,6 +63,7 @@ export async function updateSession(request: NextRequest, event?: Pick<NextFetch
   }
   if (isAdminPath(path)) {
     if (!admin) return notFoundResponse(request, path);
+    if (!sameOriginWrite(request)) return NextResponse.json({ error: "Cross-site request refused" }, { status: 403 });
     response.headers.set("Cache-Control", "no-store");
     response.headers.set("X-Robots-Tag", "noindex, nofollow");
     return response;
