@@ -1,7 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { isAdminUser } from "@/lib/server/adminCheck";
 import { getAdminSettings } from "@/lib/server/adminSettings";
+import { touchPresence } from "@/lib/server/presence";
 
 /** /admin and /api/admin: anyone who isn't an admin gets the plain 404 page / JSON, never a login redirect. */
 export const isAdminPath = (path: string) => path === "/admin" || path.startsWith("/admin/") || path === "/api/admin" || path.startsWith("/api/admin/");
@@ -18,7 +19,7 @@ function notFoundResponse(request: NextRequest, path: string) {
   return NextResponse.rewrite(to, { status: 404 });
 }
 
-export async function updateSession(request: NextRequest) {
+export async function updateSession(request: NextRequest, event?: Pick<NextFetchEvent, "waitUntil">) {
   let response = NextResponse.next({ request });
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -41,6 +42,11 @@ export async function updateSession(request: NextRequest) {
   // getUser() also refreshes an expired access token with the refresh token and writes the new cookies.
   const { data: { user } } = await supabase.auth.getUser();
   const admin = isAdminUser(user);
+  // Presence for the admin dashboard (country code + coarse device, at most every 5 min per user; never the IP).
+  if (user) {
+    const p = touchPresence(user.id, request.headers).catch(() => false);
+    if (event) event.waitUntil(p);
+  }
   if (isAdminPath(path)) {
     if (!admin) return notFoundResponse(request, path);
     response.headers.set("Cache-Control", "no-store");
