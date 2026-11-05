@@ -25,11 +25,11 @@ describe("Connectors page", () => {
     const f = vi.fn().mockResolvedValue(ok({ ok: true, accountLabel: "octo" }));
     vi.stubGlobal("fetch", f);
     render(<ConnectorsGrid initial={connectorViews(ENV, [])} focus="figma" />);
-    fireEvent.change(screen.getByTestId("connector-key"), { target: { value: "figd_secret_value_1234567890" } });
+    fireEvent.change(screen.getByTestId("connector-key"), { target: { value: "figd_FAKE-not-a-real-token-0000" } });
     fireEvent.click(screen.getByTestId("connector-save"));
     await waitFor(() => expect(f).toHaveBeenCalledWith("/api/connectors/figma/connect", expect.objectContaining({ method: "POST" })));
     await waitFor(() => expect(screen.getAllByTestId("connector-card").find((c) => c.getAttribute("data-id") === "figma")).toHaveAttribute("data-status", "connected"));
-    expect(document.body.innerHTML).not.toContain("figd_secret_value_1234567890");
+    expect(document.body.innerHTML).not.toContain("figd_FAKE-not-a-real-token-0000");
   });
 
   it("OAuth connectors link to the server connect route, carrying the return path", () => {

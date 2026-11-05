@@ -28,8 +28,8 @@ const A = "11111111-1111-4111-8111-111111111111";
 const B = "22222222-2222-4222-8222-222222222222";
 const KEY = Buffer.alloc(32, 9).toString("base64");
 const OLD_KEY = Buffer.alloc(32, 3).toString("base64");
-const PAT = "sbp_" + "a1".repeat(20);
-const FIGMA_PAT = "figd_" + "b2".repeat(15);
+const PAT = "sbp_FAKE_not_a_real_token_0000";
+const FIGMA_PAT = "figd_FAKE-not-a-real-token-0001";
 const REF = "abcdefghijklmnopqrst";
 
 const ENV = {
@@ -148,9 +148,9 @@ describe("safety helpers", () => {
   });
   it("redacts credentials by pattern and by known value", () => {
     const fakeBearer = ["abcdefghijklmnop", "12345"].join(""); // fake fixture, built at runtime so secret scanners skip it
-    const s = `Authorization: ${"Bear" + "er"} ${fakeBearer} ${PAT} ghp_${"x".repeat(30)} xoxb-1234567890-abcdef ya29.${"a".repeat(30)} {"access_token":"zzzzzzzz"} custom-secret-123`;
+    const s = `Authorization: ${"Bear" + "er"} ${fakeBearer} ${PAT} ghp_FAKE_not_a_real_token_0002 xoxb-FAKE-not-a-real-token ya29.${"a".repeat(30)} {"access_token":"zzzzzzzz"} custom-secret-123`;
     const r = redact(s, ["custom-secret-123"]);
-    for (const leak of [fakeBearer, PAT, "ghp_x", "xoxb-1234567890", "ya29.aaa", "zzzzzzzz", "custom-secret-123"]) expect(r).not.toContain(leak);
+    for (const leak of [fakeBearer, PAT, "ghp_FAKE", "xoxb-FAKE", "ya29.aaa", "zzzzzzzz", "custom-secret-123"]) expect(r).not.toContain(leak);
     expect(safeJson({ token: PAT, rows: [1] }, [])).not.toContain(PAT);
     expect(safeJson("x".repeat(20000), [], 100).length).toBeLessThan(200);
   });
