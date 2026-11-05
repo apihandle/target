@@ -17,6 +17,8 @@ const ICONS: Record<string, ReactNode> = {
   feedback: <><path d="M5 5h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-4 3.5V6a1 1 0 0 1 1-1z" /><path d="M9 10h6M9 13h4" /></>,
   health: <path d="M12 20s-7.5-4.4-7.5-10A4.5 4.5 0 0 1 12 7a4.5 4.5 0 0 1 7.5 3c0 5.6-7.5 10-7.5 10z" />,
   controls: <><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></>,
+  approvals: <><path d="M5 12.5 9.5 17 19 7.5" /></>,
+  providers: <><rect x="3.5" y="5" width="17" height="5" rx="1.5" /><rect x="3.5" y="14" width="17" height="5" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01" /></>,
   audit: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13h6M9 17h4" /></>,
 };
 
@@ -58,6 +60,8 @@ export default function AdminFrame({ badges, version, email, avatar, statusSlot,
     { href: "/admin/users", label: "Users", icon: "users", badge: <Badge n={badges.users} tone="neutral" /> },
     { href: "/admin/errors", label: "Errors", icon: "errors", badge: <Badge n={badges.errors24h} tone="danger" /> },
     { href: "/admin/jobs", label: "Browser jobs", icon: "jobs", badge: <Badge n={badges.jobsActive} tone="ok" /> },
+    { href: "/admin/approvals", label: "Approvals", icon: "approvals" },
+    { href: "/admin/providers", label: "Browser providers", icon: "providers" },
     { href: "/admin/scheduled", label: "Scheduled", icon: "scheduled", badge: <Badge n={badges.scheduledActive} tone="neutral" /> },
     { href: "/admin/shares", label: "Share links", icon: "shares", badge: <Badge n={badges.sharesActive} tone="neutral" /> },
     { href: "/admin/activity", label: "Activity", icon: "activity" },

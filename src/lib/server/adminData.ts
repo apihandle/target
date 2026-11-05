@@ -275,3 +275,90 @@ export async function loadActivity(db: Db, opts: { page: number; category?: stri
     return { rows: rows.map((r) => ({ ...r, email: emails.get(r.user_id) ?? "" })), total: t, page: opts.page, pages: pages(t), error: false };
   } catch { return { rows: [], total: 0, page: 1, pages: 1, error: true }; }
 }
+
+export type JobDetail = JobRow & {
+  start_url: string | null; result: string | null; log: string[]; control: string | null; control_reason: string | null; paused_until: string | null;
+  frame: string | null; frame_url: string | null; frame_at: string | null; live: { provider: string; url: string; interactive: boolean } | null;
+  /** Why Retry is off for this job (null = it can be retried). The inputs themselves never leave the server. */
+  retry_block: string | null;
+};
+
+/** One job for /admin/jobs/[id]: status, step log, control state, last screenshot and live view. Never inputs or code. */
+export async function loadJobDetail(db: Db, id: string): Promise<JobDetail | null | "error"> {
+  try {
+    const { data, error } = await db.from("browser_jobs")
+      .select("id, user_id, goal, mode, status, error, created_at, claimed_at, finished_at, start_url, result, log, control, control_reason, paused_until, frame, frame_url, frame_at, live, inputs")
+      .eq("id", id).maybeSingle();
+    if (error) return "error";
+    if (!data) return null;
+    const { inputs, ...j } = data as Record<string, unknown>;
+    const { retryable } = await import("@/lib/adminConfig");
+    const retry_block = retryable({ status: String(j.status), goal: j.goal, inputs });
+    const emails = await emailsFor(db, [String(j.user_id)]);
+    const live = j.live as { provider?: string; url?: string; interactive?: boolean } | null;
+    const { safeLiveUrl } = await import("@/lib/liveView");
+    const url = live ? safeLiveUrl(live.url) : null;
+    return {
+      ...(j as unknown as JobRow), email: emails.get(String(j.user_id)) ?? "",
+      start_url: (j.start_url as string | null) ?? null, result: (j.result as string | null) ?? null,
+      log: Array.isArray(j.log) ? (j.log as unknown[]).map(String).slice(-80) : [],
+      control: (j.control as string | null) ?? null, control_reason: (j.control_reason as string | null) ?? null, paused_until: (j.paused_until as string | null) ?? null,
+      frame: typeof j.frame === "string" && /^(data:image\/(jpeg|png|webp);base64,)?[A-Za-z0-9+/=]+$/.test(j.frame) ? (j.frame.startsWith("data:") ? j.frame : `data:image/jpeg;base64,${j.frame}`) : null,
+      frame_url: (j.frame_url as string | null) ?? null, frame_at: (j.frame_at as string | null) ?? null,
+      live: live && url ? { provider: String(live.provider ?? ""), url, interactive: !!live.interactive } : null,
+      retry_block,
+    };
+  } catch { return "error"; }
+}
+
+export type ApprovalRow = { id: string; user_id: string; action_type: string; summary: string; status: string; auto: boolean; decided_at: string | null; executed_at: string | null; error: string | null; created_at: string; email?: string };
+export { APPROVAL_STATUSES } from "@/lib/approvals";
+import { APPROVAL_STATUSES } from "@/lib/approvals";
+
+/** Approvals log: what was asked, how it was decided, and whether Task mode approved it (auto). Never the payload. */
+export async function loadApprovals(db: Db, opts: { page: number; status?: string; auto?: string }): Promise<Paged<ApprovalRow>> {
+  try {
+    let qb = db.from("approval_requests").select("id, user_id, action_type, summary, status, auto, decided_at, executed_at, error, created_at", { count: "exact" });
+    if (opts.status && (APPROVAL_STATUSES as readonly string[]).includes(opts.status)) qb = qb.eq("status", opts.status);
+    if (opts.auto === "auto") qb = qb.eq("auto", true);
+    if (opts.auto === "user") qb = qb.eq("auto", false);
+    const [a, b] = range(opts.page);
+    const { data, count: total, error } = await qb.order("created_at", { ascending: false }).range(a, b);
+    if (error) return { rows: [], total: 0, page: 1, pages: 1, error: true };
+    // Newest first, sorted here too: never trust that order() was applied.
+    const rows = ([...(data ?? [])] as ApprovalRow[]).sort((x, y) => String(y.created_at).localeCompare(String(x.created_at)));
+    const emails = await emailsFor(db, rows.map((r) => r.user_id));
+    const t = total ?? 0;
+    const str = (v: unknown) => (v == null ? null : String(v));
+    return {
+      rows: rows.map((r) => ({
+        id: String(r.id), user_id: String(r.user_id), action_type: String(r.action_type ?? ""), summary: String(r.summary ?? ""), status: String(r.status ?? ""),
+        auto: !!r.auto, decided_at: str(r.decided_at), executed_at: str(r.executed_at), error: str(r.error), created_at: String(r.created_at ?? ""),
+        email: emails.get(r.user_id) ?? "",
+      })),
+      total: t, page: opts.page, pages: pages(t), error: false,
+    };
+  } catch { return { rows: [], total: 0, page: 1, pages: 1, error: true }; }
+}
+
+export type UserExtras = {
+  vault: { label: string; kind: string; site: string | null }[];
+  sessions: { domain: string; status: string; updated_at: string }[];
+  taskModeChats: number | null;
+};
+
+/** Labels only: vault item label / kind / site (never the value or its preview), saved site sign-ins by domain, Task mode chats. */
+export async function loadUserExtras(db: Db, id: string): Promise<UserExtras> {
+  const safe = async <T,>(p: PromiseLike<{ data: unknown; error: unknown }>): Promise<T[]> => { try { const r = await p; return r.error ? [] : ((r.data ?? []) as T[]); } catch { return []; } };
+  const [vault, sessions, taskModeChats] = await Promise.all([
+    safe<UserExtras["vault"][number]>(db.from("vault_secrets").select("label, kind, site").eq("user_id", id).order("created_at", { ascending: false }).limit(100)),
+    safe<UserExtras["sessions"][number]>(db.from("site_sessions").select("domain, status, updated_at").eq("user_id", id).order("updated_at", { ascending: false }).limit(50)),
+    count(db, "conversations", (q) => q.eq("user_id", id).eq("task_mode", true)),
+  ]);
+  // Map to the label fields explicitly so a value, its preview or the sealed cookies can never ride along.
+  return {
+    vault: vault.map((v) => ({ label: String(v.label ?? ""), kind: String(v.kind ?? ""), site: v.site == null ? null : String(v.site) })),
+    sessions: sessions.map((s) => ({ domain: String(s.domain ?? ""), status: String(s.status ?? ""), updated_at: String(s.updated_at ?? "") })),
+    taskModeChats,
+  };
+}

@@ -1,4 +1,5 @@
 import type { Browser, BrowserContext, Page } from "playwright-core";
+import { recordProviderResult } from "./providerStatus";
 import { configuredProviders, redact, resumeSession, RESUMABLE, startSession, STEALTH_ORDER, type CdpSession, type ProviderId, type SessionOpts } from "./remoteBrowser";
 import { CHECK_LINE, liveViewFrom, PAUSE_MS, PAUSE_TIMEOUT, STOPPED, type Control, type LiveView } from "@/lib/liveView";
 import { kickCloudWorker } from "./kickWorker";
@@ -373,9 +374,11 @@ export async function connectCloudBrowser(env: Record<string, string | undefined
     try {
       session = await startSession(p, env, { stealth: opts.stealth });
       const browser = await chromium.connectOverCDP(session.wsUrl, { timeout: 25000 });
+      void recordProviderResult(p, true);
       return { browser, session };
     } catch (e) {
       errors.push(`${p}: ${redact(String((e as Error).message)).slice(0, 120)}`);
+      void recordProviderResult(p, false, redact(String((e as Error).message)));
       await session?.release().catch(() => {});
     }
   }

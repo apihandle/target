@@ -107,3 +107,13 @@ export function pageFrom(v: unknown): number {
 
 /** Supabase auth ban length used for "Disable user": long enough to mean "until enabled again". */
 export const BAN_DURATION = "876000h";
+
+/** Can an admin queue this browser job again? null = yes, else the reason. */
+const NO_RETRY_GOAL = /\b(pay|buy|purchase|order|checkout|book|reserve|send|post|publish|delete|remove|transfer)\b/i;
+export function retryable(job: { status: string; goal?: unknown; inputs?: unknown }): string | null {
+  if (!["failed", "cancelled"].includes(job.status)) return "Only a failed or cancelled job can be retried";
+  const inputs = (job.inputs ?? {}) as Record<string, unknown>;
+  if (inputs.checkout || inputs.booking || inputs.payment) return "Checkout and booking jobs can't be retried from here";
+  if (NO_RETRY_GOAL.test(String(job.goal ?? ""))) return "Jobs that pay, book, send, post or delete can't be retried from here";
+  return null;
+}

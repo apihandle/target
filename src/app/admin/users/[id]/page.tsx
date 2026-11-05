@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdminPage, isAdminEmailListed } from "@/lib/server/adminAuth";
-import { isBanned, loadUserDetail } from "@/lib/server/adminData";
+import { isBanned, loadUserDetail, loadUserExtras } from "@/lib/server/adminData";
 import { isUuid } from "@/lib/ids";
 import { countryName, flagOf } from "@/lib/presence";
 import { Badge, toneFor } from "@/components/ui/Badge";
@@ -19,6 +19,7 @@ export default async function AdminUserDetail(props: { params: Promise<{ id: str
   const back = <Link href="/admin/users" className="mt-5 inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-ink">← Users</Link>;
   if (d === "error") return <>{back}<div className="mt-3"><LoadError retryHref={`/admin/users/${id}`}>Couldn&apos;t load this user.</LoadError></div></>;
   const u = d.user;
+  const x = await loadUserExtras(db, id);
   const banned = isBanned(u);
   const self = u.id === me.id;
   const admin = isAdminEmailListed(u.email);
@@ -47,7 +48,7 @@ export default async function AdminUserDetail(props: { params: Promise<{ id: str
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+      <div className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Panel>
           <h3 className="text-sm font-semibold text-ink">Account</h3>
           <dl className="mt-2 divide-y divide-line">
@@ -66,8 +67,36 @@ export default async function AdminUserDetail(props: { params: Promise<{ id: str
             <KV k="Custom AI providers" v={`${num(d.counts.custom_providers)} (keys never shown)`} />
           </dl>
         </Panel>
+        <Panel testId="user-task-mode">
+          <h3 className="text-sm font-semibold text-ink">Task mode</h3>
+          <p className="mt-1 text-sm text-muted">{x.taskModeChats == null ? "—" : x.taskModeChats === 0 ? "Off in every chat." : `On in ${x.taskModeChats} chat${x.taskModeChats === 1 ? "" : "s"}.`} Payments and deletes always wait for the user&apos;s card.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <ConfirmAction label="Turn off everywhere" title="Turn Task mode off?" message="Every chat of this user goes back to asking on approval cards." confirmLabel="Turn off"
+              disabled={!x.taskModeChats} url={`/api/admin/users/${u.id}/task-mode`} body={{ on: false }} testId="task-mode-off" successText="Task mode is off." />
+            <ConfirmAction label="Turn on everywhere" title="Turn Task mode on?" message="Approval cards in all of this user's chats are approved automatically (payments and deletes still wait)." confirmLabel="Turn on"
+              url={`/api/admin/users/${u.id}/task-mode`} body={{ on: true }} testId="task-mode-on" successText="Task mode is on." />
+          </div>
+        </Panel>
+        <Panel testId="user-vault">
+          <h3 className="text-sm font-semibold text-ink">Vault ({x.vault.length}) and saved sign-ins ({x.sessions.length})</h3>
+          <p className="mt-0.5 text-xs text-muted-soft">Labels only; values are never shown.</p>
+          {x.vault.length === 0 ? <p className="mt-2 text-sm text-muted">No vault items.</p> : (
+            <ul className="mt-2 divide-y divide-line">
+              {x.vault.map((v, i) => (
+                <li key={i} className="flex items-center justify-between gap-2 py-1.5 text-sm"><span className="min-w-0 truncate text-ink">{v.label}{v.site ? <span className="text-muted"> · {v.site}</span> : null}</span><Badge>{v.kind}</Badge></li>
+              ))}
+            </ul>
+          )}
+          {x.sessions.length > 0 && (
+            <ul className="mt-2 divide-y divide-line border-t border-line">
+              {x.sessions.map((s, i) => (
+                <li key={i} className="flex items-center justify-between gap-2 py-1.5 text-sm"><span className="min-w-0 truncate text-ink">{s.domain}</span><Badge tone={toneFor(s.status)}>{s.status}</Badge></li>
+              ))}
+            </ul>
+          )}
+        </Panel>
         <Panel>
-          <h3 className="text-sm font-semibold text-ink">Connected apps</h3>
+          <h3 className="text-sm font-semibold text-ink">Connected apps ({d.connections.length})</h3>
           {d.connections.length === 0 ? <p className="mt-2 text-sm text-muted">None.</p> : (
             <ul className="mt-2 divide-y divide-line">
               {d.connections.map((c) => (
@@ -88,7 +117,7 @@ export default async function AdminUserDetail(props: { params: Promise<{ id: str
         ))}
       </div>
 
-      <div className="mt-6 grid gap-3 lg:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-3 lg:grid-cols-2">
         <div>
           <h3 className="text-sm font-semibold text-ink">Recent browser jobs</h3>
           <div className="mt-2 space-y-2">
