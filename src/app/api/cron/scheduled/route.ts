@@ -5,6 +5,7 @@ import { claimJob, runScheduledJob } from "@/lib/server/scheduledRun";
 import { JOB_COLS, type ScheduledJob } from "@/lib/schedule";
 import { sendPushToUser } from "@/lib/server/push";
 import { reportError } from "@/lib/server/errors";
+import { featureOn, recordCronRun } from "@/lib/server/adminSettings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,9 +24,14 @@ async function handle(req: Request) {
   const auth = cronAuth(req);
   if (auth === "unconfigured") return json({ error: "Cron is not configured" }, 503);
   if (auth !== "ok") return json({ error: "Unauthorized" }, 401);
+  // The admin "Run cron now" button calls this handler on the server with the same bearer header and this marker
+  // (only read after the secret check, so it can't be spoofed from outside).
+  const by = req.headers.get("x-target-run-by") === "admin" ? "admin" : "cron";
 
   let db: Db;
   try { db = createAdminClient() as unknown as Db; } catch { return json({ error: "Server is missing SUPABASE_SERVICE_ROLE_KEY" }, 503); }
+  // Admin kill-switch: scheduled prompts paused site-wide. The heartbeat still records that cron is alive.
+  if (!(await featureOn("scheduled"))) { await recordCronRun(db, "scheduled", { ran: 0, by, disabled: true }); return json({ ran: 0, disabled: true }); }
   try { const { purgeExpiredSessions } = await import("@/lib/server/siteSessions"); await purgeExpiredSessions(); } catch { /* housekeeping only */ }
 
   const start = Date.now();
@@ -53,7 +59,9 @@ async function handle(req: Request) {
     if (failed) await reportError({ source: "cron", message: `Scheduled job failed: ${out.error!.slice(0, 300)}`, userId: job.user_id }, db);
     return { id: job.id, status: out.status };
   }));
-  return json({ ran: results.filter((r) => r.status !== "skipped").length, results });
+  const ran = results.filter((r) => r.status !== "skipped").length;
+  await recordCronRun(db, "scheduled", { ran, by });
+  return json({ ran, results });
 }
 
 export const GET = handle;

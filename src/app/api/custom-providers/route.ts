@@ -2,6 +2,8 @@ import { badRequest, dbError, json, readJson, requireUser, unauthorized } from "
 import { MAX_CUSTOM_PROVIDERS, providerInput, uniqueModels } from "@/lib/customProvider";
 import { listCustomProviders, PUBLIC_COLS, sealKey } from "@/lib/server/customProviders";
 import { adminOr503, checkBaseUrl, limitEdits, slowDown } from "@/lib/server/customProviderRoutes";
+import { featureOn } from "@/lib/server/adminSettings";
+import { DISABLED_MESSAGE } from "@/lib/adminConfig";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const a = await requireUser();
   if (!a) return unauthorized();
+  if (!(await featureOn("custom_providers"))) return json({ error: DISABLED_MESSAGE.custom_providers, disabled: true }, 403);
   if (!(await limitEdits(a.user.id))) return slowDown();
   const b = await readJson(req);
   if (!b) return badRequest("Bad JSON");

@@ -9,6 +9,8 @@ import { ConnectorError, MissingScopeError } from "@/lib/connectors/http";
 import { logActivity } from "@/lib/server/activity";
 import type { ConnectionInfo, ConnectorDef, Env, ToolDef, ToolPreview } from "@/lib/connectors/types";
 import { BUILTIN_ID, BUILTIN_TOOLS, getBuiltin } from "@/lib/builtins/tools";
+import { DISABLED_MESSAGE, featuresForTool, firstDisabled } from "@/lib/adminConfig";
+import { getAdminSettings } from "@/lib/server/adminSettings";
 
 /** Separator between connector id and tool name in the names the model sees. */
 export const SEP = "__";
@@ -123,6 +125,12 @@ export async function executeToolCall(ctx: ToolCtx, name: string, rawArgs: strin
   }
 
   const [cid, tname] = name.split(SEP);
+  // Admin kill-switches (/admin → Controls): a switched-off feature is refused before anything is prepared.
+  const needed = featuresForTool(name);
+  if (needed.length) {
+    const off = firstDisabled((await getAdminSettings()).features, needed);
+    if (off) return { kind: "error", connector: cid, tool: tname, content: err({ error: "disabled_by_admin", feature: off, message: DISABLED_MESSAGE[off] }) };
+  }
   if (cid === BUILTIN_ID) return runBuiltin(ctx, tname ?? "", args);
   const c = cid ? getConnector(cid) : undefined;
   if (!c || !tname) return { kind: "error", content: err({ error: "unknown_tool", tool: name.slice(0, 80) }) };

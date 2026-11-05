@@ -3,6 +3,8 @@ import type { Db } from "@/lib/server/auth";
 import { ACTION_DEFS, APPROVAL_COLS, availability, type Approval, type Params, type Proposal } from "@/lib/approvals";
 import { getConnector, isConfigured } from "@/lib/connectors/registry";
 import { logActivity } from "@/lib/server/activity";
+import { DISABLED_MESSAGE, featuresForApproval, firstDisabled } from "@/lib/adminConfig";
+import { getAdminSettings } from "@/lib/server/adminSettings";
 
 export type ExecCtx = { db: Db; userId: string; projectId: string | null };
 export type Executor = (params: Params, ctx: ExecCtx) => Promise<Record<string, unknown>>;
@@ -152,7 +154,10 @@ export async function executeApproval(db: Db, userId: string, id: string, execut
   await setTask(db, userId, row.task_id, { status: "in_progress", progress: "Approved. Running now…", error: null });
 
   let result: Record<string, unknown> | null = null, failure: string | null = null;
-  if (!exec || !av.available) failure = av.available ? "This action can't be performed." : av.reason;
+  // Admin kill-switches are checked again at execution: an approval card tapped after a feature was switched off fails.
+  const off = firstDisabled((await getAdminSettings()).features, featuresForApproval(row.action_type, row.payload));
+  if (off) failure = DISABLED_MESSAGE[off];
+  else if (!exec || !av.available) failure = av.available ? "This action can't be performed." : av.reason;
   else {
     try { result = await exec(row.payload as Params, { db, userId, projectId: row.project_id }); }
     catch (e) { failure = e instanceof Error ? e.message.slice(0, 400) : "Action failed"; }

@@ -3,6 +3,7 @@ import { cronAuth } from "@/lib/server/cron";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { scanUser } from "@/lib/server/proactive";
 import { sendPushToUser } from "@/lib/server/push";
+import { recordCronRun } from "@/lib/server/adminSettings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,8 @@ async function handle(req: Request) {
 
   const { data: conns } = await db.from("connections").select("user_id, status").eq("connector_id", "google");
   const ids = Array.from(new Set((conns ?? []).filter((c) => (c.status ?? "connected") === "connected").map((c) => c.user_id as string)));
-  if (!ids.length) return json({ scanned: 0 });
+  const by = req.headers.get("x-target-run-by") === "admin" ? "admin" : "cron";
+  if (!ids.length) { await recordCronRun(db, "proactive", { scanned: 0, by }); return json({ scanned: 0 }); }
   const { data: settings } = await db.from("user_settings").select("user_id, proactive_enabled, proactive_scanned_at").in("user_id", ids);
   const byUser = new Map((settings ?? []).map((s) => [s.user_id as string, s]));
   const cutoff = Date.now() - 20 * 3600000;
@@ -41,6 +43,7 @@ async function handle(req: Request) {
       return { new: n };
     } catch { return { new: 0, error: true }; }
   }));
+  await recordCronRun(db, "proactive", { scanned: results.length, by });
   return json({ scanned: results.length, new: results.reduce((s, r) => s + r.new, 0) });
 }
 

@@ -1,4 +1,6 @@
 import { badRequest, dbError, json, readJson, requireUser, unauthorized } from "@/lib/server/auth";
+import { featureOn } from "@/lib/server/adminSettings";
+import { DISABLED_MESSAGE } from "@/lib/adminConfig";
 import { JOB_COLS, MAX_JOBS_PER_USER, nextRunAt, validateJob, type ScheduledJob } from "@/lib/schedule";
 import { logActivity } from "@/lib/server/activity";
 
@@ -15,6 +17,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const a = await requireUser();
   if (!a) return unauthorized();
+  if (!(await featureOn("scheduled"))) return json({ error: DISABLED_MESSAGE.scheduled, disabled: true }, 403);
   const body = await readJson(req);
   if (!body) return badRequest("Bad JSON");
   const v = validateJob(body);

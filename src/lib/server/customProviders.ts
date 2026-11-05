@@ -2,6 +2,8 @@ import { decryptWithAny, decryptionKeys, encryptSecret, primaryKey } from "@/lib
 import { customModelId, isUnknownModelError, maskKey, normalizeBaseUrl, parseCustomModelId, scrub, CUSTOM_PREFIX } from "@/lib/customProvider";
 import { chatUrl, resolveModel, type CustomRoute, type ModelOption } from "@/lib/llm";
 import { BlockedAddressError, readCapped, safeFetch } from "@/lib/server/safeFetch";
+import { featureOn } from "@/lib/server/adminSettings";
+import { DISABLED_MESSAGE } from "@/lib/adminConfig";
 
 /**
  * Server side of custom AI providers: sealing the key, loading a user's providers, turning a picker value into
@@ -61,6 +63,8 @@ export async function resolvePick(adminDb: Db | null, userId: string, value: unk
   }
   const p = parseCustomModelId(value);
   if (!p || !adminDb) return { builtin: null, custom: null, id: null };
+  // Admin kill-switch: custom providers off means "Auto" for everyone, exactly like an unknown pick.
+  if (!(await featureOn("custom_providers"))) return { builtin: null, custom: null, id: null, error: DISABLED_MESSAGE.custom_providers };
   try {
     const { data } = await adminDb.from("custom_providers").select("id, name, base_url, models, key_box").eq("id", p.providerId).eq("user_id", userId).maybeSingle();
     const row = data as { id: string; name: string; base_url: string; models: string[]; key_box: string } | null;

@@ -1,4 +1,5 @@
 import { badRequest, json, readJson, type Db } from "@/lib/server/auth";
+import { featureOn } from "@/lib/server/adminSettings";
 import { COMPUTE_MODES, UUID_RE, computeEnabled, workerAuth } from "@/lib/server/worker";
 import { storeJobFiles } from "@/lib/server/jobFiles";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -18,6 +19,9 @@ import { settleSiteAccount } from "@/lib/server/siteAccountRun";
 import { checkoutOf, guardCheckout, PAY_PRESSED } from "@/lib/checkout";
 import { checkoutReady, checkoutState, finishCheckout } from "@/lib/server/checkoutRun";
 import { CHECK_LINE, nextControl, PAUSE_MS, safeLiveUrl, STOPPED, type Control } from "@/lib/liveView";
+
+/** Website job modes (code / video jobs are compute, not browser tasks). */
+const BROWSER_MODES = ["steps", "auto"];
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -56,8 +60,11 @@ export async function POST(req: Request) {
       .eq("status", "running").lt("claimed_at", new Date(Date.now() - 600000).toISOString());
     // With the separate compute worker on, code / video jobs are only handed to it (it holds no vault access).
     const compute = computeEnabled();
+    const browserOn = await featureOn("browser");
     const modes = (Array.isArray(b.modes) ? (b.modes as unknown[]).filter((m): m is string => typeof m === "string") : ["steps"])
-      .filter((m) => !compute || !(COMPUTE_MODES as readonly string[]).includes(m));
+      .filter((m) => !compute || !(COMPUTE_MODES as readonly string[]).includes(m))
+      // Admin kill-switch: with browser tasks off, no website job (steps/auto) is handed to any worker.
+      .filter((m) => browserOn || !BROWSER_MODES.includes(m));
     if (!modes.length) return json({ job: null });
     const { data: next } = await db.from("browser_jobs").select("id").eq("status", "queued").in("mode", modes).order("created_at", { ascending: true }).limit(1);
     if (!next?.length) return json({ job: null });

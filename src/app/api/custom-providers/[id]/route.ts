@@ -3,6 +3,8 @@ import { isUuid } from "@/lib/ids";
 import { CUSTOM_PREFIX, providerPatch, uniqueModels } from "@/lib/customProvider";
 import { PUBLIC_COLS, sealKey } from "@/lib/server/customProviders";
 import { adminOr503, checkBaseUrl, limitEdits, sameHost, slowDown } from "@/lib/server/customProviderRoutes";
+import { featureOn } from "@/lib/server/adminSettings";
+import { DISABLED_MESSAGE } from "@/lib/adminConfig";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +13,7 @@ export async function PATCH(req: Request, props: { params: Promise<{ id: string 
   const { id } = await props.params;
   const a = await requireUser();
   if (!a) return unauthorized();
+  if (!(await featureOn("custom_providers"))) return json({ error: DISABLED_MESSAGE.custom_providers, disabled: true }, 403);
   if (!isUuid(id)) return notFound();
   if (!(await limitEdits(a.user.id))) return slowDown();
   const b = await readJson(req);

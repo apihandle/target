@@ -4,6 +4,7 @@ import { AUTO_MODEL, modelOptions, providers, resolveModel } from "@/lib/llm";
 import { loadPreferredModel } from "@/lib/settings";
 import { isUuid } from "@/lib/ids";
 import { customOptions, listCustomProviders } from "@/lib/server/customProviders";
+import { featureOn } from "@/lib/server/adminSettings";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Chat · TARGET" };
@@ -51,7 +52,7 @@ export default async function ChatPage(
   }
   const options = modelOptions();
   // The user's own custom models (Settings → AI providers) are listed after the built-in ones.
-  const [custom, pref] = await Promise.all([listCustomProviders(supabase, user.id).then(customOptions), loadPreferredModel(supabase, user.id)]);
+  const [custom, pref] = await Promise.all([featureOn("custom_providers").then((on) => (on ? listCustomProviders(supabase, user.id).then(customOptions) : [])), loadPreferredModel(supabase, user.id)]);
   const models = options.length > 1 || custom.length > 0 ? [{ id: AUTO_MODEL, label: "Auto (best available)" },
     ...options.map((o) => ({ id: o.id, label: o.label, vision: o.vision })), ...custom.map((o) => ({ id: o.id, label: o.label }))] : [];
   const initialModel = models.length ? (custom.find((o) => o.id === pref)?.id ?? resolveModel(pref)?.id ?? AUTO_MODEL) : AUTO_MODEL;
