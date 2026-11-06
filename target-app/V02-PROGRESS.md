@@ -1,0 +1,35 @@
+# TARGET Android v0.2 — progress checklist
+
+Branch: `wip/android-v02` (continues the earlier attempt's branch `wip/android-v0.2`, commits 42200a7..c199d28).
+Every item is committed and pushed separately; this file is updated in each commit.
+
+Status words: **done** (built + tested in CI where an emulator can test it), **partial** (built, something missing),
+**untested** (built, needs a real phone), **todo**.
+
+| # | Item | Status | Notes |
+| --- | --- | --- | --- |
+| 1 | Bridge security (top frame + BASE_URL origin only) | todo | v0.2-start: still `addJavascriptInterface` + URL check (iframes could call it) |
+| 2 | Contacts lookup, call by name, SMS, fuzzy Hinglish match, "kaun sa?" list | done | ContactMatcher + JVM tests; real call/SMS need a phone |
+| 3 | WhatsApp open chat / send (intent), read via notification listener | done / untested | real WhatsApp needs a phone |
+| 4 | Music play/pause/next (media keys), "YouTube pe X chalao" | partial | media keys only; MediaSessionManager todo |
+| 5 | Accessibility service (opt-in) read/tap/scroll/back/home + Hinglish explanation | done | emulator test |
+| 6 | NotificationListenerService read + RemoteInput reply | done | emulator test (API 30 flaky, fixing) |
+| 7 | Call announce + answer/reject + speakerphone | untested | needs a real phone |
+| 8 | Wake word (sherpa-onnx KWS, download + SHA-256, energy gate, one-breath, slider, false-wake counter) | partial | native abort with the `-mobile` model on emulator, fixing |
+| 9 | Conversation mode | done | |
+| 10 | Native chat replies via /api/chat + WebView cookies, TTS, WebView fallback | done | live server call needs a signed-in phone |
+| 11 | Camera vision → chat API with the question | partial | photo goes to the WebView composer, no native upload yet |
+| 12 | System controls (torch, volume, brightness opt-in, Wi-Fi/BT panels, DND opt-in) | done | |
+| 13 | Reminders + alarms (AlarmClock + AlarmManager + notification) | done | |
+| 14 | Routines in DataStore | partial | stored in SharedPreferences, DataStore todo |
+| 15 | Personas sent with chat requests | done | |
+| 16 | BiometricPrompt app lock (optional) | partial | guard for risky actions exists; app lock on open todo |
+| 17 | Offline queue + local chat history (Room) | partial | queue in SharedPreferences + JobScheduler; Room history todo |
+| 18 | Settings + per-action "bina pooche" toggles + Google sign-in note | partial | settings exist; new items to add |
+| 19 | Full Hinglish strings | partial | new strings to add |
+
+## CI
+- `Android` workflow: `build` (compile + JVM tests, no APK) and `device-tests` (API 30, 34). No APK artifact; only test reports.
+
+## Needs a real phone
+Real calls (answer/reject/speaker), SMS sending, WhatsApp send/read, real-mic wake word accuracy, biometric prompt, camera capture.
