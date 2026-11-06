@@ -103,6 +103,12 @@ class IntentParserV2Test {
     @Test fun kaato() = assertEquals(Command.RejectCall, p("kaato"))
     @Test fun callKaatDo() = assertEquals(Command.RejectCall, p("call kaat do"))
     @Test fun rejectCall() = assertEquals(Command.RejectCall, p("reject the call"))
+    @Test fun speakerOn() = assertEquals(Command.Speaker(true), p("speaker on karo"))
+    @Test fun speakerOff() = assertEquals(Command.Speaker(false), p("turn off the speaker"))
+    @Test fun wakeUpTargetPrefix() = assertEquals(Command.Flashlight(true), p("wake up target, torch on"))
+    @Test fun soJao() = assertEquals(Command.Stop, p("so jao"))
+    @Test fun goToSleep() = assertEquals(Command.Stop, p("go to sleep"))
+    @Test fun heyTargetOneBreath() = assertEquals(Command.PlayMedia("", MediaApp.YOUTUBE), p("Hey Target, YouTube pe gaana chalao"))
     @Test fun alarmUthaDenaStillAlarm() = assertEquals(Command.Alarm(5, 0, null), p("subah 5 baje utha dena"))
 
     // ---- conversation / persona ----

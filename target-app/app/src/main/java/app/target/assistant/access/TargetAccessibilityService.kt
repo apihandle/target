@@ -82,14 +82,14 @@ class TargetAccessibilityService : AccessibilityService() {
     // ---- reading ---------------------------------------------------------------------------------
 
     /** Visible text of the apps on screen (our own overlay is skipped), top to bottom. */
-    fun screenText(maxChars: Int = 5000): String {
+    fun screenText(maxChars: Int = 5000, skipOwn: Boolean = true): String {
         val roots = try {
             windows.sortedByDescending { it.layer }.mapNotNull { it.root }
         } catch (_: Exception) { emptyList() }.ifEmpty { listOfNotNull(rootInActiveWindow) }
         val sb = StringBuilder()
         var last = ""
         for (r in roots) {
-            if (r.packageName?.toString() == packageName) continue
+            if (skipOwn && r.packageName?.toString() == packageName) continue
             walk(r) { n ->
                 if (!n.isVisibleToUser) return@walk
                 val t = (n.text?.toString() ?: n.contentDescription?.toString())?.trim().orEmpty()
@@ -149,8 +149,8 @@ class TargetAccessibilityService : AccessibilityService() {
         return tap(r.exactCenterX(), r.exactCenterY())
     }
 
-    fun clickText(label: String): Boolean {
-        val roots = try { windows.mapNotNull { it.root }.filter { it.packageName?.toString() != packageName } } catch (_: Exception) { emptyList() }
+    fun clickText(label: String, skipOwn: Boolean = true): Boolean {
+        val roots = try { windows.mapNotNull { it.root }.filter { !skipOwn || it.packageName?.toString() != packageName } } catch (_: Exception) { emptyList() }
             .ifEmpty { listOfNotNull(rootInActiveWindow) }
         for (r in roots) find(r, listOf(label))?.let { return click(it) }
         return false

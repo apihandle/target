@@ -102,11 +102,31 @@ object Phone {
 object CallControl {
     fun canControl(context: Context) = context.granted(Manifest.permission.ANSWER_PHONE_CALLS)
 
+    /** Picks up the ringing call and (by default) switches the speakerphone on a moment later. */
     @Suppress("DEPRECATION", "MissingPermission")
-    fun answer(context: Context): Boolean {
+    fun answer(context: Context, speaker: Boolean = true): Boolean {
         if (!canControl(context)) return false
         return try {
-            context.getSystemService(TelecomManager::class.java)?.acceptRingingCall(); true
+            context.getSystemService(TelecomManager::class.java)?.acceptRingingCall()
+            if (speaker) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ speakerphone(context, true) }, 1200)
+            true
+        } catch (_: Exception) { false }
+    }
+
+    /** Loudspeaker for the current call. */
+    fun speakerphone(context: Context, on: Boolean): Boolean {
+        val am = context.getSystemService(android.media.AudioManager::class.java) ?: return false
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (on) {
+                    val dev = am.availableCommunicationDevices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                    dev != null && am.setCommunicationDevice(dev)
+                } else { am.clearCommunicationDevice(); true }
+            } else {
+                @Suppress("DEPRECATION")
+                am.isSpeakerphoneOn = on
+                true
+            }
         } catch (_: Exception) { false }
     }
 

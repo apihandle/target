@@ -48,6 +48,7 @@ class AssistantController(private val context: Context, private val ui: Ui) {
     private var textHandler: ((String) -> Outcome)? = null
     private val steps = ArrayDeque<String>()
     private var closed = false
+    private var closedOnce = false
     private var bargeArmed = false
 
     private val listener = Listener(context,
@@ -66,12 +67,18 @@ class AssistantController(private val context: Context, private val ui: Ui) {
         Assistant.post(Assistant.Event.OPENED)
     }
 
-    fun startListening() {
+    /** Opened by "Hey Target": a session that ends without any words counts as a false wake. */
+    var fromWake = false
+    private var heardSomething = false
+    private var followUpTried = false
+
+    fun startListening(followUp: android.os.ParcelFileDescriptor? = null) {
         if (closed) return
         Tts.stop()
         bargeArmed = false
         ui.showListening(true)
-        listener.start()
+        if (followUp != null) followUpTried = true
+        listener.start(followUp)
     }
 
     fun stopListening() = listener.stop()
@@ -79,6 +86,8 @@ class AssistantController(private val context: Context, private val ui: Ui) {
     private var emptyTurns = 0
 
     private fun onListenError(err: String) {
+        // The words after "Hey Target" could not be read from the buffered audio: just listen normally.
+        if (followUpTried) { followUpTried = false; main.post { startListening() }; return }
         ui.showReply(err)
         // In conversation mode, two silent turns in a row end the loop quietly.
         if (conversationMode && waiting() == false && ++emptyTurns < 2) main.postDelayed({ startListening() }, 600)
@@ -92,6 +101,8 @@ class AssistantController(private val context: Context, private val ui: Ui) {
         val text = raw.trim()
         if (text.isEmpty() || closed) return
         emptyTurns = 0
+        heardSomething = true
+        followUpTried = false
         pending?.let { p ->
             when (ConfirmWords.classify(text)) {
                 Answer.YES -> { pending = null; ui.showConfirm(null); runConfirmed(p) }
@@ -220,6 +231,7 @@ class AssistantController(private val context: Context, private val ui: Ui) {
 
     /** Call when the UI goes away. */
     fun destroy() {
+        if (fromWake && !heardSomething && !closedOnce) { closedOnce = true; prefs.falseWakes = prefs.falseWakes + 1 }
         closed = true
         listener.destroy()
         Assistant.unlisten(sleepListener)

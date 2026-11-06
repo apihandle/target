@@ -84,7 +84,11 @@
     <string name="reply_replied">Replied to %1$s</string>
     <string name="reply_cleared">Notifications cleared</string>
     <string name="reply_need_calls">I need call permissions. Opening settings.</string>
-    <string name="reply_answered">Call answered</string>
+    <string name="reply_answered">Call answered, turning on the speaker</string>
+    <string name="reply_speaker_on">Speakerphone on</string>
+    <string name="reply_speaker_off">Speakerphone off</string>
+    <string name="wake_false_count">False wakes (nothing said): %1$d</string>
+    <string name="wake_false_reset">Reset</string>
     <string name="reply_rejected">Call rejected</string>
     <string name="reply_call_control_failed">Could not control the call</string>
     <string name="reply_bye">Okay, bye!</string>
@@ -163,7 +167,7 @@
     <string name="barge_in_help">Stop talking when you start speaking</string>
     <string name="native_chat">Answer inside the overlay</string>
     <string name="native_chat_help">Ask TARGET and speak the answer here (uses your TARGET login)</string>
-    <string name="wake_help">A small on-phone (offline) model (~5 MB) listens for \"Hey Target\" and \"Bye Target\". It downloads once from the official k2-fsa/sherpa-onnx release and is checked with a checksum. It pauses in battery saver or while another app uses the mic.</string>
+    <string name="wake_help">A small on-phone (offline) model (~5 MB) listens for \"Hey Target\" / \"Hello Target\" / \"Wake up Target\" and sleeps on \"Bye Target\" / \"So jao\" / \"Go to sleep\". You can say \"Hey Target, play music on YouTube\" in one breath (Android 13+). It downloads once from the official k2-fsa/sherpa-onnx release and is checked with a checksum. It pauses in battery saver or while another app uses the mic.</string>
     <string name="wake_downloading">Downloading model… %1$d%%</string>
     <string name="wake_download_failed">Download failed: %1$s</string>
     <string name="wake_on">✅ \"Hey Target\" is on</string>

@@ -1,7 +1,9 @@
 name: Android
 
-# Compiles the TARGET Android assistant (target-app/) and runs its unit tests.
-# No APK is built or uploaded by this job (user rule). No secrets are used.
+# 1) build: compiles the TARGET Android assistant (target-app/) and runs its JVM unit tests. No APK.
+# 2) device-tests: runs the instrumented tests on Android emulators (API 30 + 34). Gradle builds a test
+#    APK inside the runner for that; it is never uploaded. Only test reports are uploaded, on failure.
+# No secrets are used.
 on:
   push:
     paths:
@@ -46,11 +48,67 @@ jobs:
           key: sherpa-onnx-aar-2.0.1
       - uses: gradle/actions/setup-gradle@v4
       - name: Compile (no APK) + unit tests
-        run: ./gradlew --no-daemon --stacktrace compileDebugSources compileDebugUnitTestKotlin testDebugUnitTest
+        run: ./gradlew --no-daemon --stacktrace compileDebugSources compileDebugUnitTestKotlin compileDebugAndroidTestKotlin testDebugUnitTest
       - name: Upload test report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: unit-test-report
           path: target-app/app/build/reports/tests/
+          if-no-files-found: ignore
+
+  device-tests:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [30, 34]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android SDK packages
+        run: |
+          SDKM=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-36" "build-tools;36.0.0" > /dev/null
+      - name: Cache sherpa-onnx AAR
+        uses: actions/cache@v4
+        with:
+          path: target-app/app/libs
+          key: sherpa-onnx-aar-2.0.1
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build test code
+        working-directory: target-app
+        run: ./gradlew --no-daemon compileDebugAndroidTestKotlin
+      - name: Instrumented tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          working-directory: target-app
+          script: |
+            adb shell input keyevent 82 || true
+            adb shell settings put global stay_on_while_plugged_in 7 || true
+            ./gradlew --no-daemon connectedDebugAndroidTest
+      - name: Upload instrumented test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: device-test-report-api${{ matrix.api-level }}
+          path: |
+            target-app/app/build/reports/androidTests/
+            target-app/app/build/outputs/androidTest-results/
           if-no-files-found: ignore

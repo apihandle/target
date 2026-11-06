@@ -284,6 +284,10 @@ class SettingsActivity : ComponentActivity() {
             }
             Text(stringResource(R.string.wake_boost, prefs.wakeBoost))
             Slider(value = prefs.wakeBoost, onValueChange = { prefs.wakeBoost = it; refresh() }, valueRange = 0.5f..3f, onValueChangeFinished = { WakeWordService.reload(this@SettingsActivity) })
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.wake_false_count, prefs.falseWakes), modifier = Modifier.weight(1f))
+                TextButton(onClick = { prefs.falseWakes = 0; refresh() }) { Text(stringResource(R.string.wake_false_reset)) }
+            }
             Text(stringResource(R.string.wake_threshold, prefs.wakeThreshold))
             Slider(value = prefs.wakeThreshold, onValueChange = { prefs.wakeThreshold = it; refresh() }, valueRange = 0.05f..0.6f, onValueChangeFinished = { WakeWordService.reload(this@SettingsActivity) })
 

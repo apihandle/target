@@ -123,9 +123,11 @@ class TargetVoiceSession(context: Context) : VoiceInteractionSession(context), A
         c.runner.assistScreenText = assistText
         controller = c
         val text = args?.getString(Assistant.ARG_TEXT)
+        c.fromWake = args?.getBoolean(Assistant.ARG_FROM_WAKE) == true
+        val followUp = if (args?.getBoolean(Assistant.ARG_FOLLOW_UP) == true) app.target.assistant.wake.FollowUp.take() else null
         when {
             !text.isNullOrBlank() -> { transcript.text = text; c.userSaid(text) }
-            context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> c.startListening()
+            context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> c.startListening(followUp)
             else -> {
                 // The session cannot show a permission dialog; the activity can.
                 reply.text = context.getString(R.string.need_mic)

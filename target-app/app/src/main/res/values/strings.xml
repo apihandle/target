@@ -85,7 +85,11 @@
     <string name="reply_replied">%1$s ko reply bhej diya</string>
     <string name="reply_cleared">Notifications hata di</string>
     <string name="reply_need_calls">Call uthane/kaatne ki permission chahiye. Settings khol raha hoon.</string>
-    <string name="reply_answered">Call utha liya</string>
+    <string name="reply_answered">Call utha liya, speaker on kar raha hoon</string>
+    <string name="reply_speaker_on">Speaker on kar diya</string>
+    <string name="reply_speaker_off">Speaker band kar diya</string>
+    <string name="wake_false_count">Galti se jaaga (kuch nahi bola gaya): %1$d baar</string>
+    <string name="wake_false_reset">Reset</string>
     <string name="reply_rejected">Call kaat diya</string>
     <string name="reply_call_control_failed">Call control nahi ho paaya</string>
     <string name="reply_bye">Theek hai, bye!</string>
@@ -164,7 +168,7 @@
     <string name="barge_in_help">TARGET bol raha ho tab aap bolein to woh ruk jaaye</string>
     <string name="native_chat">Overlay mein hi jawab</string>
     <string name="native_chat_help">Sawal TARGET se poochh kar jawab yahin bolna (aapke TARGET login se)</string>
-    <string name="wake_help">Phone par hi (offline) chhota model (~5 MB) \"Hey Target\" aur \"Bye Target\" sunta hai. Model pehli baar on karne par k2-fsa/sherpa-onnx ki official release se download hota hai aur checksum se jaancha jaata hai. Battery saver on ho ya koi aur app mic use kare to ruk jaata hai.</string>
+    <string name="wake_help">Phone par hi (offline) chhota model (~5 MB) \"Hey Target\" / \"Hello Target\" / \"Wake up Target\" sunta hai, aur \"Bye Target\" / \"So jao\" / \"Go to sleep\" par so jaata hai. \"Hey Target, YouTube pe gaana chalao\" ek saath bol sakte hain (Android 13+). Model pehli baar on karne par k2-fsa/sherpa-onnx ki official release se download hota hai aur checksum se jaancha jaata hai. Battery saver on ho ya koi aur app mic use kare to ruk jaata hai.</string>
     <string name="wake_downloading">Model download ho raha hai… %1$d%%</string>
     <string name="wake_download_failed">Download nahi hua: %1$s</string>
     <string name="wake_on">✅ \"Hey Target\" on hai</string>

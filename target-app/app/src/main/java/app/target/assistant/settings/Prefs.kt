@@ -70,6 +70,10 @@ class Prefs(context: Context) {
     var wakeThreshold: Float
         get() = sp.getFloat("wake_threshold", app.target.assistant.wake.WakeKeywords.DEFAULT_THRESHOLD)
         set(v) = sp.edit().putFloat("wake_threshold", app.target.assistant.wake.WakeKeywords.clampThreshold(v)).apply()
+    /** Times "Hey Target" opened the assistant and nothing was said (shown in settings to tune sensitivity). */
+    var falseWakes: Int
+        get() = sp.getInt("false_wakes", 0)
+        set(v) = sp.edit().putInt("false_wakes", v).apply()
     var callAnnounce: Boolean
         get() = sp.getBoolean("call_announce", false)
         set(v) = sp.edit().putBoolean("call_announce", v).apply()

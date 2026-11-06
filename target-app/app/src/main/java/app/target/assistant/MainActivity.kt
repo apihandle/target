@@ -49,8 +49,13 @@ class MainActivity : ComponentActivity() {
         private val GOOGLE_AUTH_HOSTS = setOf("accounts.google.com", "accounts.youtube.com", "oauth2.googleapis.com")
     }
 
-    private lateinit var webView: WebView
-    private lateinit var bridge: TargetBridge
+    internal lateinit var webView: WebView
+        private set
+    internal lateinit var bridge: TargetBridge
+        private set
+    /** Last page that finished loading (tests). */
+    @Volatile internal var lastFinishedUrl: String? = null
+        private set
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private var pendingWebPermission: PermissionRequest? = null
 
@@ -101,6 +106,7 @@ class MainActivity : ComponentActivity() {
 
             override fun onPageFinished(view: WebView, url: String?) {
                 bridge.currentUrl = url
+                lastFinishedUrl = url
                 CookieManager.getInstance().flush()
                 // A camera photo / screenshot waiting to be attached ("camera se dekho", "screen dekho screenshot ke saath").
                 if (PendingImage.has() && TargetBridge.isOwnOrigin(url) && url?.contains(BuildConfig.APP_PATH) == true) {

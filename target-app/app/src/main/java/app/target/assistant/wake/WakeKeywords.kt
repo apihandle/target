@@ -7,18 +7,22 @@ package app.target.assistant.wake
  */
 object WakeKeywords {
     const val HEY = "HEY_TARGET"
-    const val OK = "OK_TARGET"
-    const val HI = "HI_TARGET"
+    const val HELLO = "HELLO_TARGET"
+    const val WAKE_UP = "WAKE_UP_TARGET"
     const val BYE = "BYE_TARGET"
+    const val SO_JAO = "SO_JAO"
+    const val GO_TO_SLEEP = "GO_TO_SLEEP"
     const val ANSWER = "ANSWER_CALL"
     const val REJECT = "REJECT_CALL"
 
-    /** name → BPE tokens (sentencepiece encode of the upper-case phrase). */
+    /** name → BPE tokens (sentencepiece encode of the upper-case phrase with the model's bpe.model). */
     val TOKENS: Map<String, String> = linkedMapOf(
         HEY to "▁HE Y ▁T AR GE T",
-        OK to "▁O K ▁T AR GE T",
-        HI to "▁HI ▁T AR GE T",
+        HELLO to "▁HE LL O ▁T AR GE T",
+        WAKE_UP to "▁WA KE ▁UP ▁T AR GE T",
         BYE to "▁BY E ▁T AR GE T",
+        SO_JAO to "▁SO ▁JA O",
+        GO_TO_SLEEP to "▁GO ▁TO ▁S LE E P",
         ANSWER to "▁AN S W ER ▁CALL",
         REJECT to "▁RE J E C T ▁CALL",
     )
@@ -40,8 +44,8 @@ object WakeKeywords {
 
     /** What a spotted keyword means ("HEY_TARGET" → WAKE). */
     fun meaning(keyword: String?): Hit = when (keyword?.trim()?.uppercase()?.replace(' ', '_')) {
-        HEY, OK, HI -> Hit.WAKE
-        BYE -> Hit.SLEEP
+        HEY, HELLO, WAKE_UP -> Hit.WAKE
+        BYE, SO_JAO, GO_TO_SLEEP -> Hit.SLEEP
         ANSWER -> Hit.ANSWER
         REJECT -> Hit.REJECT
         else -> Hit.NONE

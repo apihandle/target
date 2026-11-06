@@ -44,6 +44,7 @@ sealed class Command {
 
     // phone calls
     object AnswerCall : Command()
+    data class Speaker(val on: Boolean) : Command()
     object RejectCall : Command()
 
     // conversation
@@ -83,7 +84,7 @@ enum class Panel { WIFI, BLUETOOTH, MOBILE_DATA, NFC, HOTSPOT, AIRPLANE, BATTERY
 
 object IntentParser {
 
-    private val WAKE = Regex("^(hey|hi|ok|okay|ae|oye|hello)?\\s*target[,!.]?\\s*", RegexOption.IGNORE_CASE)
+    private val WAKE = Regex("^(hey|hi|ok|okay|ae|oye|hello|wake up)?\\s*target[,!.]?\\s*", RegexOption.IGNORE_CASE)
     private val POLITE = Regex("\\b(please|plz|pls|zara|jara|jaldi|kripya|jaldi se)\\b", RegexOption.IGNORE_CASE)
 
     private val HINDI_NUM = mapOf(
@@ -211,6 +212,8 @@ object IntentParser {
     private fun parseCallControl(u: U): Command? = when {
         ANSWER.matches(u.t) -> Command.AnswerCall
         REJECT.matches(u.t) -> Command.RejectCall
+        Regex("^(?:(?:loud\\s*)?speaker|speakerphone)(?:\\s+(?:phone))?\\s+(on|off|chalu|band|lagao|hatao)(?:\\s+(?:karo|kar do))?$|^(?:turn\\s+)?(on|off)\\s+(?:the\\s+)?speaker(?:phone)?$").find(u.t) != null ->
+            Command.Speaker(!has(u.t, "\\b(off|band|hatao)\\b"))
         else -> null
     }
 

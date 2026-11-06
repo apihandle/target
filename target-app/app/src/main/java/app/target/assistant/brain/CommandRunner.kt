@@ -114,7 +114,10 @@ class CommandRunner(private val context: Context) {
             is Command.WhatsApp -> whatsapp(cmd)
 
             is Command.PlayMedia -> {
-                if (cmd.query.isBlank()) { Media.key(context, MediaAction.PLAY); Outcome(s(R.string.reply_media_play)) }
+                if (cmd.query.isBlank() && cmd.app != null) {
+                    val name = when (cmd.app) { MediaApp.YOUTUBE -> "youtube"; MediaApp.YOUTUBE_MUSIC -> "youtube music"; MediaApp.SPOTIFY -> "spotify" }
+                    run(Command.OpenApp(name), original)
+                } else if (cmd.query.isBlank()) { Media.key(context, MediaAction.PLAY); Outcome(s(R.string.reply_media_play)) }
                 else Media.play(context, cmd.query, cmd.app)?.let { app -> Outcome(s(R.string.reply_playing, cmd.query, app), close = true) }
                     ?: Outcome(s(R.string.reply_no_player))
             }
@@ -156,6 +159,7 @@ class CommandRunner(private val context: Context) {
             Command.AnswerCall -> callControl(RiskKind.ANSWER_CALL, s(R.string.confirm_answer)) {
                 if (CallControl.answer(context)) Outcome(s(R.string.reply_answered), close = true) else Outcome(s(R.string.reply_call_control_failed))
             }
+            is Command.Speaker -> Outcome(s(if (CallControl.speakerphone(context, cmd.on)) (if (cmd.on) R.string.reply_speaker_on else R.string.reply_speaker_off) else R.string.reply_failed))
             Command.RejectCall -> callControl(RiskKind.REJECT_CALL, s(R.string.confirm_reject)) {
                 if (CallControl.reject(context)) Outcome(s(R.string.reply_rejected), close = true) else Outcome(s(R.string.reply_call_control_failed))
             }

@@ -61,8 +61,10 @@ class AssistActivity : ComponentActivity(), AssistantController.Ui {
 
     private var listening by mutableStateOf(false)
     private var transcript by mutableStateOf("")
-    private var reply by mutableStateOf("")
-    private var confirmQuestion by mutableStateOf<String?>(null)
+    internal var reply by mutableStateOf("")
+        private set
+    internal var confirmQuestion by mutableStateOf<String?>(null)
+        private set
     private var choices by mutableStateOf<List<String>>(emptyList())
     private lateinit var controller: AssistantController
     private val main = Handler(Looper.getMainLooper())
@@ -97,8 +99,14 @@ class AssistActivity : ComponentActivity(), AssistantController.Ui {
                 )
             }
         }
+        controller.fromWake = intent?.getBooleanExtra(app.target.assistant.voice.Assistant.ARG_FROM_WAKE, false) == true
         val prefill = intent?.getStringExtra(Intent.EXTRA_TEXT)
-        if (!prefill.isNullOrBlank()) { transcript = prefill; controller.userSaid(prefill) } else ensureMicThenListen()
+        val followUp = if (intent?.getBooleanExtra(app.target.assistant.voice.Assistant.ARG_FOLLOW_UP, false) == true) app.target.assistant.wake.FollowUp.take() else null
+        when {
+            !prefill.isNullOrBlank() -> { transcript = prefill; controller.userSaid(prefill) }
+            followUp != null && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> controller.startListening(followUp)
+            else -> ensureMicThenListen()
+        }
     }
 
     private fun ensureMicThenListen() {

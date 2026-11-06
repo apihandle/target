@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.telephony.TelephonyManager
 import app.target.assistant.R
@@ -128,6 +129,29 @@ object WakeModel {
     }
 
     fun delete(context: Context) { File(context.filesDir, "kws").deleteRecursively() }
+
+    /** Keyword spotter over the downloaded model (call only when [isReady]). */
+    fun createSpotter(context: Context, boost: Float, threshold: Float): KeywordSpotter {
+        val dir = dir(context)
+        val keywords = writeKeywords(context, boost, threshold)
+        val config = KeywordSpotterConfig(
+            featConfig = FeatureConfig(sampleRate = 16000, featureDim = 80),
+            modelConfig = OnlineModelConfig(
+                transducer = OnlineTransducerModelConfig(
+                    encoder = File(dir, ENCODER).absolutePath,
+                    decoder = File(dir, DECODER).absolutePath,
+                    joiner = File(dir, JOINER).absolutePath,
+                ),
+                tokens = File(dir, TOKENS).absolutePath,
+                numThreads = 1,
+                provider = "cpu",
+            ),
+            keywordsFile = keywords.absolutePath,
+            keywordsScore = WakeKeywords.clampBoost(boost),
+            keywordsThreshold = WakeKeywords.clampThreshold(threshold),
+        )
+        return KeywordSpotter(config = config)
+    }
 }
 
 /**
@@ -142,8 +166,12 @@ class WakeWordService : Service() {
         const val ACTION_RELOAD = "app.target.assistant.wake.RELOAD"
         @Volatile var running = false
             private set
+        /** What the service went through (for the settings screen and instrumented tests). */
+        val statusLog = java.util.concurrent.CopyOnWriteArrayList<String>()
 
         private const val RATE = 16000
+        private const val FRAME = 480 // 30 ms at 16 kHz
+        private const val FOLLOW_UP_MS = 4000
 
         fun start(context: Context) {
             if (!context.granted(Manifest.permission.RECORD_AUDIO) || !WakeModel.isReady(context)) return
@@ -209,7 +237,9 @@ class WakeWordService : Service() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(Notify.ID_WAKE, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
             else startForeground(Notify.ID_WAKE, n)
+            statusLog += "foreground"
         } catch (_: Exception) {
+            statusLog += "foreground_refused"
             // Android refused a microphone service from the background (e.g. right after boot on 15+).
             stopSelf(); return
         }
@@ -220,31 +250,15 @@ class WakeWordService : Service() {
     }
 
     private fun loadSpotter() {
+        // No model yet (not downloaded or deleted): nothing to listen with. Stop cleanly.
+        if (!WakeModel.isReady(this)) { statusLog += "no_model"; stopSelf(); return }
         Thread {
             try {
                 val prefs = Prefs(this)
-                val dir = WakeModel.dir(this)
-                val keywords = WakeModel.writeKeywords(this, prefs.wakeBoost, prefs.wakeThreshold)
-                val config = KeywordSpotterConfig(
-                    featConfig = FeatureConfig(sampleRate = RATE, featureDim = 80),
-                    modelConfig = OnlineModelConfig(
-                        transducer = OnlineTransducerModelConfig(
-                            encoder = File(dir, WakeModel.ENCODER).absolutePath,
-                            decoder = File(dir, WakeModel.DECODER).absolutePath,
-                            joiner = File(dir, WakeModel.JOINER).absolutePath,
-                        ),
-                        tokens = File(dir, WakeModel.TOKENS).absolutePath,
-                        numThreads = 1,
-                        provider = "cpu",
-                    ),
-                    keywordsFile = keywords.absolutePath,
-                    keywordsScore = WakeKeywords.clampBoost(prefs.wakeBoost),
-                    keywordsThreshold = WakeKeywords.clampThreshold(prefs.wakeThreshold),
-                )
-                val kws = KeywordSpotter(config = config)
-                main.post { spotter?.release(); spotter = kws; update() }
+                val kws = WakeModel.createSpotter(this, prefs.wakeBoost, prefs.wakeThreshold)
+                main.post { spotter?.release(); spotter = kws; statusLog += "spotter_ready"; update() }
             } catch (_: Throwable) {
-                main.post { stopSelf() }
+                main.post { statusLog += "spotter_failed"; stopSelf() }
             }
         }.start()
     }
@@ -278,26 +292,40 @@ class WakeWordService : Service() {
         val minBuf = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val record = try {
             AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, RATE / 5 * 2))
-        } catch (_: Exception) { return }
-        if (record.state != AudioRecord.STATE_INITIALIZED) { record.release(); return }
+        } catch (_: Exception) { statusLog += "mic_unavailable"; return }
+        if (record.state != AudioRecord.STATE_INITIALIZED) { record.release(); statusLog += "mic_unavailable"; return }
         listening = true
+        statusLog += "listening"
         val t = Thread {
             val stream = kws.createStream("")
-            val buf = ShortArray(RATE / 10) // 100 ms
-            val samples = FloatArray(buf.size)
+            val gate = EnergyGate()
+            val frame = ShortArray(FRAME) // 30 ms
             try {
                 record.startRecording()
                 while (listening) {
-                    val n = record.read(buf, 0, buf.size)
+                    val n = record.read(frame, 0, FRAME)
                     if (n <= 0) continue
-                    for (i in 0 until n) samples[i] = buf[i] / 32768f
-                    stream.acceptWaveform(if (n == buf.size) samples else samples.copyOf(n), RATE)
+                    val samples = FloatArray(n) { frame[it] / 32768f }
+                    val wasOpen = gate.isOpen
+                    val pass = gate.push(samples)
+                    if (wasOpen && !gate.isOpen) kws.reset(stream) // quiet again: drop half-heard words
+                    if (pass.isEmpty()) continue
+                    for (f in pass) stream.acceptWaveform(f, RATE)
                     while (kws.isReady(stream)) kws.decode(stream)
                     val keyword = kws.getResult(stream).keyword
-                    if (keyword.isNotBlank()) {
-                        kws.reset(stream)
-                        val hit = WakeKeywords.meaning(keyword)
-                        main.post { heard(hit) }
+                    if (keyword.isBlank()) continue
+                    kws.reset(stream)
+                    val hit = WakeKeywords.meaning(keyword)
+                    if (hit == WakeKeywords.Hit.WAKE && Build.VERSION.SDK_INT >= 33) {
+                        // "Hey Target, YouTube pe gaana chalao" in one breath: hand the next ≤4 s of audio to the recognizer.
+                        val pipe = ParcelFileDescriptor.createPipe()
+                        FollowUp.put(pipe[0])
+                        main.post { heard(hit, followUp = true) }
+                        captureFollowUp(record, pipe[1], gate.threshold)
+                        listening = false
+                    } else {
+                        main.post { heard(hit, followUp = false) }
+                        if (hit == WakeKeywords.Hit.WAKE) listening = false // free the mic for the assistant
                     }
                 }
             } catch (_: Exception) {
@@ -311,6 +339,35 @@ class WakeWordService : Service() {
         t.start()
     }
 
+    /**
+     * Writes up to [FOLLOW_UP_MS] of 16-bit PCM after the wake word into [out]: stops after ~0.8 s of
+     * quiet once the user spoke, or after 1.5 s if nothing was said at all.
+     */
+    private fun captureFollowUp(record: AudioRecord, out: ParcelFileDescriptor, threshold: Float) {
+        val stream = ParcelFileDescriptor.AutoCloseOutputStream(out)
+        try {
+            val frame = ShortArray(FRAME)
+            val bytes = ByteArray(FRAME * 2)
+            var elapsed = 0
+            var spoke = false
+            var quietMs = 0
+            while (elapsed < FOLLOW_UP_MS) {
+                val n = record.read(frame, 0, FRAME)
+                if (n <= 0) break
+                for (i in 0 until n) { bytes[2 * i] = (frame[i].toInt() and 0xff).toByte(); bytes[2 * i + 1] = (frame[i].toInt() shr 8).toByte() }
+                stream.write(bytes, 0, n * 2)
+                val loud = EnergyGate.rms(FloatArray(n) { frame[it] / 32768f }) > threshold
+                elapsed += n * 1000 / RATE
+                if (loud) { spoke = true; quietMs = 0 } else quietMs += n * 1000 / RATE
+                if (spoke && quietMs >= 800) break
+                if (!spoke && elapsed >= 1500) break
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { stream.close() } catch (_: Exception) {}
+        }
+    }
+
     private fun pause() {
         // Stop fully so the microphone is free for the other recorder / the assistant.
         listening = false
@@ -318,19 +375,19 @@ class WakeWordService : Service() {
         worker = null
     }
 
-    private fun heard(hit: WakeKeywords.Hit) {
+    private fun heard(hit: WakeKeywords.Hit, followUp: Boolean) {
         when (hit) {
             WakeKeywords.Hit.SLEEP -> Assistant.post(Assistant.Event.SLEEP)
             WakeKeywords.Hit.WAKE -> {
                 assistantOpen = true
-                pause()
-                Assistant.launch(this, null)
+                statusLog += "wake"
+                Assistant.launch(this, null, fromWake = true, followUp = followUp)
                 // If the overlay never reports back, listen again after a while.
                 main.postDelayed({ if (assistantOpen) { assistantOpen = false; update() } }, 45_000)
             }
             WakeKeywords.Hit.ANSWER, WakeKeywords.Hit.REJECT -> if (ringing()) {
                 assistantOpen = true
-                pause()
+                listening = false
                 Assistant.launch(this, if (hit == WakeKeywords.Hit.ANSWER) "call uthao" else "call kaato")
                 main.postDelayed({ if (assistantOpen) { assistantOpen = false; update() } }, 30_000)
             }
@@ -368,5 +425,23 @@ class BootReceiver : BroadcastReceiver() {
         } else {
             WakeWordService.start(context)
         }
+    }
+}
+
+/** The audio captured right after "Hey Target", waiting for the overlay's recognizer (Android 13+). */
+object FollowUp {
+    @Volatile private var pending: ParcelFileDescriptor? = null
+    @Volatile private var at = 0L
+
+    fun put(pfd: ParcelFileDescriptor) {
+        pending?.let { try { it.close() } catch (_: Exception) {} }
+        pending = pfd; at = System.currentTimeMillis()
+    }
+
+    /** The read end, once, if it is fresh (< 10 s old). */
+    fun take(): ParcelFileDescriptor? {
+        val p = pending ?: return null
+        pending = null
+        return if (System.currentTimeMillis() - at < 10_000) p else { try { p.close() } catch (_: Exception) {}; null }
     }
 }
