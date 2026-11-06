@@ -4,12 +4,12 @@ Native Android app (Kotlin + Jetpack Compose). TARGET web app ko phone par chala
 
 ## APK kaise install karein
 
-1. GitHub par repo kholiye → **Actions** → workflow **Android** → sabse naya green run.
-2. Neeche **Artifacts** mein `target-assistant-debug` download kariye (zip ke andar `app-debug.apk`).
+1. GitHub par repo kholiye → **Releases** → sabse naya `android-v<number>` (signed release) → `target-<number>.apk` download kariye.
+   (Supabase set ho to `version.json` ka `url` bhi public download link hai.)
+2. Purana **debug** app (v0.1, `target-assistant-debug` artifact) phone par hai to pehle uninstall kariye — debug aur release ki signing key alag hai.
 3. Phone par APK kholiye. Pehli baar "Install unknown apps" ki permission maangega (Chrome/Files ko allow kariye).
-4. Debug build hai — Play Protect warning aaye to "Install anyway".
 
-Har push par naya debug APK banta hai (debug signing key har runner par alag ho sakti hai; agar update install na ho to purana app uninstall karke naya daliye).
+Iske baad TARGET khud update hota hai (Settings → App update → Auto-update). Details: [docs/ANDROID-UPDATES.md](../docs/ANDROID-UPDATES.md).
 
 ## Default assistant kaise banayein
 
