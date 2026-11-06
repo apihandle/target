@@ -35,6 +35,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import app.target.assistant.brain.CommandRunner
 import app.target.assistant.ui.TargetTheme
+import app.target.assistant.web.PendingImage
 import app.target.assistant.web.TargetBridge
 
 /**
@@ -101,6 +102,10 @@ class MainActivity : ComponentActivity() {
             override fun onPageFinished(view: WebView, url: String?) {
                 bridge.currentUrl = url
                 CookieManager.getInstance().flush()
+                // A camera photo / screenshot waiting to be attached ("camera se dekho", "screen dekho screenshot ke saath").
+                if (PendingImage.has() && TargetBridge.isOwnOrigin(url) && url?.contains(BuildConfig.APP_PATH) == true) {
+                    view.evaluateJavascript(PendingImage.INJECT_JS, null)
+                }
             }
         }
         webView.webChromeClient = object : WebChromeClient() {

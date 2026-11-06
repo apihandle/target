@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,85 +48,95 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import app.target.assistant.brain.CommandRunner
 import app.target.assistant.ui.TargetTheme
-import app.target.assistant.voice.Listener
+import app.target.assistant.settings.Prefs
+import app.target.assistant.voice.AssistantController
 import app.target.assistant.voice.Tts
 
 /**
  * Opened by the system for android.intent.action.ASSIST / VOICE_COMMAND (and by the Quick Settings tile
- * and the in-app mic button). A translucent bottom card: mic, live transcript, spoken reply.
+ * and the in-app mic button). A translucent bottom card: mic, live transcript, spoken reply,
+ * Haan/Nahi for risky actions and a pick list — the same conversation logic as the overlay.
  */
-class AssistActivity : ComponentActivity() {
+class AssistActivity : ComponentActivity(), AssistantController.Ui {
 
     private var listening by mutableStateOf(false)
     private var transcript by mutableStateOf("")
     private var reply by mutableStateOf("")
-    private lateinit var listener: Listener
-    private lateinit var runner: CommandRunner
+    private var confirmQuestion by mutableStateOf<String?>(null)
+    private var choices by mutableStateOf<List<String>>(emptyList())
+    private lateinit var controller: AssistantController
+    private val main = Handler(Looper.getMainLooper())
 
     private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) startListening() else reply = getString(R.string.need_mic)
+        if (granted) controller.startListening() else reply = getString(R.string.need_mic)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Tts.init(this)
-        runner = CommandRunner(this)
-        listener = Listener(this,
-            onPartial = { transcript = it },
-            onResult = { transcript = it; handle(it) },
-            onError = { reply = it; listening = false },
-            onState = { listening = it },
-        )
+        controller = AssistantController(this, this)
+        val name = Prefs(this).assistantName
         setContent {
             TargetTheme {
                 AssistSheet(
+                    title = name,
                     listening = listening, transcript = transcript, reply = reply,
-                    onMic = { if (listening) listener.stop() else ensureMicThenListen() },
-                    onSend = { transcript = it; handle(it) },
-                    onOpenApp = { CommandRunner.openWebApp(this, null); finish() },
+                    confirmQuestion = confirmQuestion, choices = choices,
+                    onMic = { if (listening) controller.stopListening() else ensureMicThenListen() },
+                    onSend = { transcript = it; controller.userSaid(it) },
+                    onYes = { controller.tapYes() },
+                    onNo = { controller.tapNo() },
+                    onChoice = { controller.tapChoice(it) },
+                    onOpenApp = {
+                        val c = Prefs(this).lastConversation
+                        if (c != null) CommandRunner.openUrlInApp(this, CommandRunner.webUrlForChat(c)) else CommandRunner.openWebApp(this, null)
+                        finish()
+                    },
                     onSettings = { startActivity(Intent(this, SettingsActivity::class.java)); finish() },
                     onDismiss = { finish() },
                 )
             }
         }
         val prefill = intent?.getStringExtra(Intent.EXTRA_TEXT)
-        if (!prefill.isNullOrBlank()) handle(prefill) else ensureMicThenListen()
+        if (!prefill.isNullOrBlank()) { transcript = prefill; controller.userSaid(prefill) } else ensureMicThenListen()
     }
 
     private fun ensureMicThenListen() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startListening()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) controller.startListening()
         else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
 
-    private fun startListening() {
-        Tts.stop()
-        reply = ""
-        transcript = ""
-        listening = true
-        listener.start()
-    }
-
-    private fun handle(text: String) {
-        listening = false
-        val outcome = runner.handle(text)
-        reply = outcome.reply
-        Tts.speak(this, outcome.reply)
-        if (!outcome.handledLocally) finish()
+    // ---- AssistantController.Ui ----
+    override fun showTranscript(text: String) { transcript = text }
+    override fun showReply(text: String) { reply = text }
+    override fun showListening(on: Boolean) { listening = on; if (on) transcript = "" }
+    override fun showChoices(choices: List<String>) { this.choices = choices }
+    override fun showConfirm(question: String?) { confirmQuestion = question }
+    override fun close(delayMs: Long) { main.postDelayed({ finish() }, delayMs) }
+    override fun requestUnlock(onResult: (Boolean) -> Unit) {
+        GuardActivity.callback = onResult
+        startActivity(Intent(this, GuardActivity::class.java))
     }
 
     override fun onDestroy() {
-        listener.destroy()
+        controller.destroy()
         super.onDestroy()
     }
 }
 
 @Composable
 fun AssistSheet(
+    title: String,
     listening: Boolean,
     transcript: String,
     reply: String,
+    confirmQuestion: String?,
+    choices: List<String>,
     onMic: () -> Unit,
     onSend: (String) -> Unit,
+    onYes: () -> Unit,
+    onNo: () -> Unit,
+    onChoice: (Int) -> Unit,
     onOpenApp: () -> Unit,
     onSettings: () -> Unit,
     onDismiss: () -> Unit,
@@ -141,7 +154,7 @@ fun AssistSheet(
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
         ) {
             Column(Modifier.navigationBarsPadding().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleMedium)
+                Text(title, style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = transcript.ifBlank { stringResource(if (listening) R.string.listening else R.string.tap_to_speak) },
@@ -150,6 +163,16 @@ fun AssistSheet(
                 if (reply.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Text(reply, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center)
+                }
+                if (confirmQuestion != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = onYes) { Text(stringResource(R.string.yes)) }
+                        OutlinedButton(onClick = onNo) { Text(stringResource(R.string.no)) }
+                    }
+                }
+                choices.forEachIndexed { i, c ->
+                    TextButton(onClick = { onChoice(i) }, modifier = Modifier.fillMaxWidth()) { Text("${i + 1}. $c") }
                 }
                 Spacer(Modifier.height(16.dp))
                 Box(

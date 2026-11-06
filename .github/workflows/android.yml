@@ -1,7 +1,7 @@
 name: Android
 
-# Builds the TARGET Android assistant (target-app/) and runs its unit tests.
-# The debug APK is uploaded as the "target-assistant-debug" artifact. No secrets are used.
+# Compiles the TARGET Android assistant (target-app/) and runs its unit tests.
+# No APK is built or uploaded by this job (user rule). No secrets are used.
 on:
   push:
     paths:
@@ -39,15 +39,14 @@ jobs:
           SDKM=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
           yes | "$SDKM" --licenses > /dev/null || true
           "$SDKM" "platforms;android-36" "build-tools;36.0.0" > /dev/null
-      - uses: gradle/actions/setup-gradle@v4
-      - name: Build debug APK + unit tests
-        run: ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Cache sherpa-onnx AAR
+        uses: actions/cache@v4
         with:
-          name: target-assistant-debug
-          path: target-app/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          path: target-app/app/libs
+          key: sherpa-onnx-aar-2.0.1
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile (no APK) + unit tests
+        run: ./gradlew --no-daemon --stacktrace compileDebugSources compileDebugUnitTestKotlin testDebugUnitTest
       - name: Upload test report
         if: failure()
         uses: actions/upload-artifact@v4

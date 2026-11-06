@@ -11,14 +11,23 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import java.util.Locale
 
-/** One shared TextToSpeech, Hindi (India) first, English (India) fallback. */
+/**
+ * One shared TextToSpeech, Hindi (India) first, English (India) fallback.
+ * Voice, speed and pitch come from settings; [speak] can call back when the sentence has been spoken.
+ */
 object Tts {
     private var tts: TextToSpeech? = null
     private var ready = false
-    private val pending = mutableListOf<String>()
+    private var appContext: Context? = null
+    private val pending = mutableListOf<Pair<String, (() -> Unit)?>>()
+    private val callbacks = java.util.concurrent.ConcurrentHashMap<String, () -> Unit>()
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    @Volatile var speaking = false
+        private set
 
     fun init(context: Context) {
         if (tts != null) return
+        appContext = context.applicationContext
         tts = TextToSpeech(context.applicationContext) { status -> onInit(status) }
     }
 
@@ -27,22 +36,63 @@ object Tts {
         val t = tts ?: return
         val hi = t.setLanguage(Locale.forLanguageTag("hi-IN"))
         if (hi == TextToSpeech.LANG_MISSING_DATA || hi == TextToSpeech.LANG_NOT_SUPPORTED) t.setLanguage(Locale.forLanguageTag("en-IN"))
+        t.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) { speaking = true }
+            override fun onDone(utteranceId: String?) = finished(utteranceId)
+            @Deprecated("Deprecated in Java")
+            override fun onError(utteranceId: String?) = finished(utteranceId)
+            override fun onError(utteranceId: String?, errorCode: Int) = finished(utteranceId)
+            override fun onStop(utteranceId: String?, interrupted: Boolean) = finished(utteranceId)
+        })
+        applySettings()
         ready = true
-        pending.forEach { speakNow(it) }
+        pending.forEach { speakNow(it.first, it.second) }
         pending.clear()
     }
 
-    fun speak(context: Context, text: String) {
-        if (text.isBlank()) return
+    private fun finished(id: String?) {
+        speaking = false
+        val cb = id?.let { callbacks.remove(it) } ?: return
+        main.post(cb)
+    }
+
+    /** Voice, speed, pitch from settings (call again after the user changes them). */
+    fun applySettings() {
+        val t = tts ?: return
+        val ctx = appContext ?: return
+        val p = app.target.assistant.settings.Prefs(ctx)
+        t.setSpeechRate(p.ttsRate)
+        t.setPitch(p.ttsPitch)
+        p.ttsVoice?.let { name -> try { t.voices?.firstOrNull { it.name == name }?.let { v -> t.voice = v } } catch (_: Exception) {} }
+    }
+
+    /** Installed Hindi/English voices: (name, label). */
+    fun voices(): List<Pair<String, String>> = try {
+        tts?.voices.orEmpty()
+            .filter { (it.locale.language == "hi" || it.locale.language == "en") && !it.isNetworkConnectionRequired }
+            .sortedWith(compareBy({ it.locale.language != "hi" }, { it.locale.country != "IN" }, { it.name }))
+            .map { it.name to (it.locale.displayName + " · " + it.name.substringAfterLast('-').take(16)) }
+    } catch (_: Exception) { emptyList() }
+
+    fun speak(context: Context, text: String, onDone: (() -> Unit)? = null) {
+        if (text.isBlank()) { onDone?.let { main.post(it) }; return }
         init(context)
-        if (ready) speakNow(text) else pending += text
+        if (ready) speakNow(text, onDone) else pending += text to onDone
     }
 
-    private fun speakNow(text: String) {
-        tts?.speak(text.take(TextToSpeech.getMaxSpeechInputLength() - 1), TextToSpeech.QUEUE_FLUSH, null, "target-" + System.nanoTime())
+    private fun speakNow(text: String, onDone: (() -> Unit)?) {
+        val id = "target-" + System.nanoTime()
+        if (onDone != null) callbacks[id] = onDone
+        val r = tts?.speak(text.take(TextToSpeech.getMaxSpeechInputLength() - 1), TextToSpeech.QUEUE_FLUSH, null, id)
+        if (r != TextToSpeech.SUCCESS) finished(id)
     }
 
-    fun stop() { tts?.stop() }
+    /** Stop talking. Pending "after speaking" callbacks are dropped (the caller decides what is next). */
+    fun stop() {
+        callbacks.clear()
+        speaking = false
+        tts?.stop()
+    }
 }
 
 /**
@@ -56,6 +106,8 @@ class Listener(
     private val onResult: (String) -> Unit,
     private val onError: (String) -> Unit,
     private val onState: (listening: Boolean) -> Unit = {},
+    /** Called when the user starts talking (used to stop TTS: barge-in). */
+    private val onSpeechStart: () -> Unit = {},
 ) {
     private var recognizer: SpeechRecognizer? = null
     private var triedFallback = false
@@ -71,8 +123,8 @@ class Listener(
         recognizer = r
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) = onState(true)
-            override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBeginningOfSpeech() = onSpeechStart()
+            override fun onRmsChanged(rmsdB: Float) { if (rmsdB > LOUD_DB) onSpeechStart() }
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() = onState(false)
             override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -120,6 +172,9 @@ class Listener(
     }
 
     companion object {
+        /** Voice level that counts as the user talking over TARGET. */
+        private const val LOUD_DB = 9f
+
         private val PREFERRED = listOf(
             "com.google.android.googlequicksearchbox",
             "com.google.android.tts",

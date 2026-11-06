@@ -61,6 +61,9 @@ class TargetBridge(private val activity: Activity, private val webView: WebView)
     @JavascriptInterface fun share(text: String): String = guarded { onUi { tools.share(text) } }
     @JavascriptInterface fun battery(): String = guarded { tools.battery() }
 
+    /** Camera photo / screenshot the native side wants attached in the composer (once). */
+    @JavascriptInterface fun takePendingImage(): String = guarded { PendingImage.take() }
+
     @JavascriptInterface fun speak(text: String): String = guarded {
         Tts.speak(activity, text)
         JSONObject().put("ok", true).toString()
