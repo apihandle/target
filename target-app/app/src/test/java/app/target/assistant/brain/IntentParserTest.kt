@@ -47,7 +47,7 @@ class IntentParserTest {
     // ---- calls / sms ----
     @Test fun callNumber() = assertEquals(Command.Dial("9876543210"), p("call 98765 43210"))
     @Test fun callKaro() = assertEquals(Command.Dial("+919876543210"), p("+91 98765-43210 pe call karo"))
-    @Test fun callContactNameGoesToWeb() = assertTrue(p("call mummy") is Command.Ask)
+    @Test fun callContactName() = assertEquals(Command.CallContact("mummy"), p("call mummy"))
     @Test fun smsWithKi() = assertEquals(Command.Sms("9876543210", "main 10 minute mein aa raha hoon"), p("sms 9876543210 ki main 10 minute mein aa raha hoon"))
     @Test fun smsEnglish() = assertEquals(Command.Sms("9876543210", "running late"), p("text 9876543210 saying running late"))
     @Test fun smsKoKi() = assertEquals(Command.Sms("9876543210", "Khana kha liya"), p("9876543210 ko message bhejo ki Khana kha liya"))
