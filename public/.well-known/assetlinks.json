@@ -1,1 +1,1 @@
-[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"app.target.assistant","sha256_cert_fingerprints":["REPLACE_WITH_RELEASE_CERT_SHA256_FINGERPRINT"]}}]
+[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"app.target.assistant","sha256_cert_fingerprints":["1C:1E:3E:E1:4B:D1:A1:1B:03:60:40:7D:41:F6:D1:58:1D:A0:0D:CE:F4:92:4B:FA:F5:C9:22:3F:93:E3:1B:30"]}}]
