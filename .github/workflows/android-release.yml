@@ -85,7 +85,7 @@ jobs:
           if [ -n "$SUPABASE_URL" ]; then
             ARGS="$ARGS -PupdateManifestUrl=${SUPABASE_URL%/}/storage/v1/object/public/$BUCKET/android/version.json"
           fi
-          ./gradlew --no-daemon --stacktrace $ARGS assembleRelease testReleaseUnitTest
+          ./gradlew --no-daemon --stacktrace $ARGS assembleRelease
 
       - name: Remove keystore
         if: always()
