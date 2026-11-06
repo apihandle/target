@@ -87,6 +87,12 @@ android {
             if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Real phones are ARM. Shipping only these two ABIs drops the x86/x86_64 native libs
+            // (mostly sherpa-onnx) from the release APK. Debug builds keep every ABI so the
+            // x86_64 emulator tests in CI still run.
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            }
         }
     }
 
