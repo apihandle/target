@@ -1,7 +1,8 @@
 name: Android
 
-# Builds the TARGET Android assistant (target-app/) and runs its unit tests.
-# The debug APK is uploaded as the "target-assistant-debug" artifact. No secrets are used.
+# Builds the TARGET Android assistant (target-app/) and runs its unit tests (CI check only).
+# No APK is uploaded: installable builds come only from the signed release workflow (android-release.yml).
+# No secrets are used.
 on:
   push:
     paths:
@@ -42,12 +43,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build debug APK + unit tests
         run: ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: target-assistant-debug
-          path: target-app/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
       - name: Upload test report
         if: failure()
         uses: actions/upload-artifact@v4
