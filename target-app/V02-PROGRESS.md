@@ -11,7 +11,7 @@ Status words: **done** (built + tested in CI where an emulator can test it), **p
 | 1 | Bridge security (top frame + BASE_URL origin only) | done | WebViewCompat.addWebMessageListener with an exact-origin rule + per-message check (isMainFrame, source origin, top page origin); promise API via document-start shim; JVM tests (BridgeSecurityTest) + emulator tests (iframe refused, other origins refused) |
 | 2 | Contacts lookup, call by name, SMS, fuzzy Hinglish match, "kaun sa?" list | done | ContactMatcher + JVM tests; real call/SMS need a phone |
 | 3 | WhatsApp open chat / send (intent), read via notification listener | done / untested | real WhatsApp needs a phone |
-| 4 | Music play/pause/next (media keys), "YouTube pe X chalao" | partial | media keys only; MediaSessionManager todo |
+| 4 | Music play/pause/next (MediaSessionManager / media keys), "YouTube pe X chalao" | done (emulator: session control + intents) | MediaSessionManager.getActiveSessions via the notification listener (playing session first), media key events otherwise; YouTube/YT Music/Spotify search intents |
 | 5 | Accessibility service (opt-in) read/tap/scroll/back/home + Hinglish explanation | done | emulator test |
 | 6 | NotificationListenerService read + RemoteInput reply | done | emulator test waits for both test notifications (API 30 race fixed); real-app reply needs a phone |
 | 7 | Call announce + answer/reject + speakerphone | untested | needs a real phone |

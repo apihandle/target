@@ -56,18 +56,43 @@ object Media {
         }
     }
 
-    fun key(context: Context, action: MediaAction) {
+    /**
+     * Play / pause / next / previous. With notification access on, the active app's MediaSession is driven
+     * directly (MediaSessionManager, the player that is actually playing first); otherwise a media key event
+     * goes to whichever app owns the media buttons. Returns the controlled app's package, or null for the key path.
+     */
+    fun key(context: Context, action: MediaAction): String? {
+        sessionControl(context, action)?.let { return it }
         val code = when (action) {
             MediaAction.PLAY -> KeyEvent.KEYCODE_MEDIA_PLAY
             MediaAction.PAUSE -> KeyEvent.KEYCODE_MEDIA_PAUSE
             MediaAction.NEXT -> KeyEvent.KEYCODE_MEDIA_NEXT
             MediaAction.PREVIOUS -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
         }
-        val am = context.getSystemService(AudioManager::class.java) ?: return
+        val am = context.getSystemService(AudioManager::class.java) ?: return null
         val now = SystemClock.uptimeMillis()
         am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
         am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0))
+        return null
     }
+
+    private fun sessionControl(context: Context, action: MediaAction): String? = try {
+        if (app.target.assistant.notify.TargetNotificationListener.instance == null) null else {
+            val msm = context.getSystemService(android.media.session.MediaSessionManager::class.java)
+            val sessions = msm?.getActiveSessions(android.content.ComponentName(context, app.target.assistant.notify.TargetNotificationListener::class.java)).orEmpty()
+            val c = sessions.firstOrNull { it.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING } ?: sessions.firstOrNull()
+            c?.let {
+                val t = it.transportControls
+                when (action) {
+                    MediaAction.PLAY -> t.play()
+                    MediaAction.PAUSE -> t.pause()
+                    MediaAction.NEXT -> t.skipToNext()
+                    MediaAction.PREVIOUS -> t.skipToPrevious()
+                }
+                it.packageName
+            }
+        }
+    } catch (_: SecurityException) { null } catch (_: Exception) { null }
 }
 
 /** Volume, ringer, DND, brightness, settings panels. */

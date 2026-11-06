@@ -88,6 +88,34 @@ class SystemServicesTest {
         }
     }
 
+    // ---- media session control (needs notification access) -----------------------------------------
+
+    @Test fun mediaPauseDrivesActiveSession() {
+        val svc = "${Dev.pkg}/${TargetNotificationListener::class.java.name}"
+        Dev.shell("cmd notification allow_listener $svc")
+        val paused = java.util.concurrent.CountDownLatch(1)
+        val session = Dev.onMain {
+            android.media.session.MediaSession(Dev.ctx, "target-test").apply {
+                setCallback(object : android.media.session.MediaSession.Callback() {
+                    override fun onPause() { paused.countDown() }
+                })
+                setPlaybackState(android.media.session.PlaybackState.Builder()
+                    .setActions(android.media.session.PlaybackState.ACTION_PAUSE or android.media.session.PlaybackState.ACTION_PLAY)
+                    .setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1f).build())
+                isActive = true
+            }
+        }
+        try {
+            assertTrue("listener connected", Dev.waitUntil(20_000) { TargetNotificationListener.instance != null })
+            val pkg = Dev.onMain { app.target.assistant.tools.Media.key(Dev.ctx, app.target.assistant.brain.MediaAction.PAUSE) }
+            assertEquals("controlled through MediaSessionManager", Dev.pkg, pkg)
+            assertTrue("session got pause", paused.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        } finally {
+            Dev.onMain { session.release() }
+            Dev.shell("cmd notification disallow_listener $svc")
+        }
+    }
+
     // ---- quick settings tile ----------------------------------------------------------------------
 
     @Test fun quickSettingsTileOpensAssistant() {
