@@ -40,13 +40,18 @@ import app.target.assistant.web.TargetBridge
 
 /**
  * The app shell: the signed-in TARGET web app in a WebView, plus the native `TargetAndroid` bridge.
- * Google sign-in pages are opened in a Custom Tab (Google blocks sign-in inside embedded WebViews).
+ * Google sign-in runs entirely in a Custom Tab (Google blocks sign-in inside embedded WebViews):
+ * /auth/google is intercepted before the WebView can load it, and after the callback the server
+ * redirects Chrome to the /auth/app-return App Link, which reopens this activity; the one-time
+ * code in that link is then claimed inside the WebView via /auth/app-handoff, so the session
+ * cookies land in the WebView (a session created in Chrome would never reach it).
  */
 class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_URL = "app.target.assistant.URL"
         private val GOOGLE_AUTH_HOSTS = setOf("accounts.google.com", "accounts.youtube.com", "oauth2.googleapis.com")
+        private const val GOOGLE_PATH = "/auth/google"
     }
 
     internal lateinit var webView: WebView
@@ -176,6 +181,8 @@ class MainActivity : ComponentActivity() {
     /** Which URL to open: an explicit extra, an https deep link to our host, or the app home. */
     private fun startUrl(intent: Intent?): String {
         intent?.getStringExtra(EXTRA_URL)?.takeIf { TargetBridge.isOwnOrigin(it) }?.let { return it }
+        // The Google sign-in App Link carries a one-time code: claim the session in the WebView.
+        intent?.data?.toString()?.let { app.target.assistant.web.AppLinks.handoffUrl(it, BuildConfig.BASE_URL) }?.let { return it }
         intent?.data?.toString()?.takeIf { TargetBridge.isOwnOrigin(it) }?.let { return it }
         intent?.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }?.let { return CommandRunner.webUrlFor(it) }
         return CommandRunner.webUrlFor(null)
@@ -192,6 +199,11 @@ class MainActivity : ComponentActivity() {
         val scheme = uri.scheme?.lowercase()
         val host = uri.host?.lowercase().orEmpty()
         if (scheme == "http" || scheme == "https") {
+            // Google sign-in must start in the Custom Tab, not the WebView: if the WebView loaded
+            // /auth/google, its login cookie would live here while the callback runs in Chrome.
+            if (TargetBridge.isOwnOrigin(uri.toString()) && uri.path == GOOGLE_PATH) {
+                openCustomTab(Uri.parse(app.target.assistant.web.AppLinks.googleTabUrl(uri.toString()))); return true
+            }
             if (TargetBridge.isOwnOrigin(uri.toString())) return false
             // Supabase auth endpoints stay inside so the session cookie lands in the WebView.
             if (host.endsWith(".supabase.co")) return false
@@ -241,3 +253,4 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
+

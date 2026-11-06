@@ -113,6 +113,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- App Link: after a Custom Tab Google sign-in (app=1) the server redirects Chrome
+                 here with a one-time handoff code; MainActivity turns it into /auth/app-handoff
+                 inside the WebView. The host must match BASE_URL's host (build.gradle.kts), and
+                 autoVerify only succeeds once /.well-known/assetlinks.json on the site carries
+                 the release key's SHA-256 fingerprint. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="gettarget.vercel.app" android:pathPrefix="/auth/app-return" />
+            </intent-filter>
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity>
 
@@ -278,3 +289,4 @@
         </service>
     </application>
 </manifest>
+
