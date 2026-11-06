@@ -11,6 +11,7 @@ import org.json.JSONObject
 
 /** All local settings (SharedPreferences, on this phone only). Every special feature is off until the user turns it on. */
 class Prefs(context: Context) {
+    private val app: Context = context.applicationContext
     private val sp: SharedPreferences = context.applicationContext.getSharedPreferences("target_prefs", Context.MODE_PRIVATE)
 
     // ---- assistant / voice ----
@@ -108,10 +109,10 @@ class Prefs(context: Context) {
 
     fun clearAutoReplyLog() = sp.edit().remove("auto_reply_log").apply()
 
-    // ---- routines ----
+    // ---- routines (Preferences DataStore, see RoutineStore) ----
     var routines: List<Routine>
-        get() = Routines.fromJson(sp.getString("routines", null))
-        set(v) = sp.edit().putString("routines", Routines.toJson(v)).apply()
+        get() = app.target.assistant.store.RoutineStore.get(app)
+        set(v) = app.target.assistant.store.RoutineStore.set(app, v)
 
     // ---- reminders (kept so they can be set again after a reboot) ----
     data class ReminderItem(val id: Int, val at: Long, val text: String)

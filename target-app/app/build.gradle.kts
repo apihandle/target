@@ -85,6 +85,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.browser:browser:1.10.0")
     implementation("androidx.webkit:webkit:1.15.0")
+    implementation("androidx.datastore:datastore-preferences:1.1.7")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")

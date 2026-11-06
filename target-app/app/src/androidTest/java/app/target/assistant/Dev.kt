@@ -50,6 +50,7 @@ object Dev {
 
     fun clearPrefs() {
         ctx.getSharedPreferences("target_prefs", Context.MODE_PRIVATE).edit().clear().commit()
+        app.target.assistant.store.RoutineStore.set(ctx, emptyList())
     }
 
     /** Espresso-Intents on; every intent to another app is stubbed (nothing really opens), our own screens still open. */

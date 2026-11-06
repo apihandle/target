@@ -17,7 +17,7 @@ on:
 
 concurrency:
   group: android-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false # each pushed checkpoint finishes; GitHub keeps only the newest pending run
 
 permissions:
   contents: read

@@ -21,7 +21,7 @@ Status words: **done** (built + tested in CI where an emulator can test it), **p
 | 11 | Camera vision → chat API with the question | partial | photo goes to the WebView composer, no native upload yet |
 | 12 | System controls (torch, volume, brightness opt-in, Wi-Fi/BT panels, DND opt-in) | done | |
 | 13 | Reminders + alarms (AlarmClock + AlarmManager + notification) | done | |
-| 14 | Routines in DataStore | partial | stored in SharedPreferences, DataStore todo |
+| 14 | Routines in DataStore | done | Preferences DataStore (`routines`), one-time SharedPreferencesMigration from the old key; JVM JSON tests (RoutinesJsonTest) + emulator routine tests |
 | 15 | Personas sent with chat requests | done | |
 | 16 | BiometricPrompt app lock (optional) | partial | guard for risky actions exists; app lock on open todo |
 | 17 | Offline queue + local chat history (Room) | partial | queue in SharedPreferences + JobScheduler; Room history todo |
