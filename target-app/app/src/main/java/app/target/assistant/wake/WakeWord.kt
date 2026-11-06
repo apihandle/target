@@ -42,22 +42,24 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * The offline keyword-spotting model for "Hey Target": sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01-mobile
- * (int8 encoder + decoder + int8 joiner + tokens, about 5 MB unpacked). Downloaded only when the user turns the
+ * The offline keyword-spotting model for "Hey Target": sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01
+ * (int8 encoder + int8 decoder + int8 joiner + tokens, about 5 MB unpacked). The "-mobile" build of the same model has
+ * fixed shapes that sherpa-onnx (AAR 2.0.1, Python 1.12.40) cannot feed: decode() aborts the process in
+ * /downsample/Reshape_1 (seen on the API 30/34 emulators and reproduced on desktop), so the regular build is used. Downloaded only when the user turns the
  * wake word on, from the official k2-fsa/sherpa-onnx "kws-models" release; the archive's SHA-256 must match
  * both the release's checksum.txt and the value pinned here. Never bundled in the app or the repo.
  */
 object WakeModel {
-    const val NAME = "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01-mobile"
+    const val NAME = "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
     private const val RELEASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/"
     const val URL_ARCHIVE = RELEASE + NAME + ".tar.bz2"
     const val URL_CHECKSUMS = RELEASE + "checksum.txt"
     /** From checksum.txt of the kws-models release (2026-11-06). */
-    const val SHA256 = "2e6ac2577310bfa2f4b6b5fab0478b868c9d0b2cb2c51b3e13b50581b588864d"
-    const val DOWNLOAD_MB = 15
+    const val SHA256 = "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a"
+    const val DOWNLOAD_MB = 17
 
     const val ENCODER = "encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
-    const val DECODER = "decoder-epoch-12-avg-2-chunk-16-left-64.onnx"
+    const val DECODER = "decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
     const val JOINER = "joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
     const val TOKENS = "tokens.txt"
     const val KEYWORDS = "keywords.txt"
@@ -145,7 +147,7 @@ object WakeModel {
                 tokens = File(dir, TOKENS).absolutePath,
                 numThreads = 1,
                 provider = "cpu",
-                // Without this sherpa-onnx treats the model as zipformer v1 and the int8 encoder aborts in /downsample/Reshape.
+                // The model metadata says zipformer2 too; set explicitly so a wrong guess can never pick the v1 code path.
                 modelType = "zipformer2",
             ),
             keywordsFile = keywords.absolutePath,

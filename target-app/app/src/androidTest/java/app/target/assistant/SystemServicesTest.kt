@@ -73,12 +73,12 @@ class SystemServicesTest {
             Dev.shell("cmd notification post -t RahulTest target_t1 kal_milte_hain")
             Dev.shell("cmd notification post -t BankTest target_t2 Your_OTP_is_482913")
             val l = TargetNotificationListener.instance!!
-            assertTrue("posted notification seen", Dev.waitUntil(10_000) { l.items().any { it.title == "RahulTest" } })
+            assertTrue("posted notification seen", Dev.waitUntil(15_000) { l.items().map { it.title }.containsAll(listOf("RahulTest", "BankTest")) })
             val read = Dev.onMain { CommandRunner(Dev.ctx).run(Command.ReadNotifications(false), "notifications padho") }
             assertTrue(read.reply, read.reply.contains("kal_milte_hain"))
             assertFalse("OTP hidden: ${read.reply}", read.reply.contains("482913"))
             val withOtp = Dev.onMain { CommandRunner(Dev.ctx).run(Command.ReadNotifications(true), "otp padho") }
-            assertTrue(withOtp.reply.contains("482913"))
+            assertTrue("OTP asked: ${withOtp.reply}", withOtp.reply.contains("482913"))
             val clear = Dev.onMain { CommandRunner(Dev.ctx).run(Command.ClearNotifications, "notifications clear karo") }
             assertNotNull("clearing asks first", clear.confirm)
         } finally {

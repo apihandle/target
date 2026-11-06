@@ -46,7 +46,7 @@ Aur settings: assistant ka naam, personality (Normal / Dost / Professional), TTS
 
 ## "Hey Target" (wake word)
 
-- Engine: [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) keyword spotting, model `sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01-mobile` (int8 encoder + decoder + int8 joiner + tokens ≈ 5 MB on the phone, 15 MB download).
+- Engine: [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) keyword spotting, model `sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01` (int8 encoder + int8 decoder + int8 joiner + tokens ≈ 5 MB on the phone, 17 MB download). `-mobile` wala build sherpa-onnx mein crash karta hai (fixed shapes, `/downsample/Reshape_1`), isliye normal build.
 - Model app mein nahi hai: wake word on karne par official `kws-models` release se download hota hai; archive ka SHA-256 release ke `checksum.txt` aur app mein pinned value dono se match hona chahiye.
 - Wake: "Hey Target", "Hello Target", "Wake up Target". Sleep: "Bye Target", "So jao", "Go to sleep". Call aate waqt: "Answer call" / "Reject call".
 - Energy pre-gate (adaptive RMS, 4 frame) ke baad hi audio spotter tak jaata hai. Android 13+ par "Hey Target, YouTube pe gaana chalao" ek saans mein: wake ke baad ka ≤4 s audio seedha recognizer ko jaata hai.

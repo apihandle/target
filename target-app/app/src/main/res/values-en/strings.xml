@@ -226,5 +226,5 @@
     <string name="exp_alarms_title">Exact reminders</string>
     <string name="exp_alarms">Exact alarm permission makes reminders fire on the minute. Without it they may be a little late.</string>
     <string name="exp_wake_title">\"Hey Target\" wake word</string>
-    <string name="exp_wake">A small model (~15 MB download, ~5 MB on the phone) comes from the official k2-fsa/sherpa-onnx release. TARGET then listens for \"Hey Target\" on the phone, offline, with a notification always shown. No audio is sent anywhere.</string>
+    <string name="exp_wake">A small model (~17 MB download, ~5 MB on the phone) comes from the official k2-fsa/sherpa-onnx release. TARGET then listens for \"Hey Target\" on the phone, offline, with a notification always shown. No audio is sent anywhere.</string>
 </resources>

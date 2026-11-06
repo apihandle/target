@@ -13,9 +13,9 @@ Status words: **done** (built + tested in CI where an emulator can test it), **p
 | 3 | WhatsApp open chat / send (intent), read via notification listener | done / untested | real WhatsApp needs a phone |
 | 4 | Music play/pause/next (media keys), "YouTube pe X chalao" | partial | media keys only; MediaSessionManager todo |
 | 5 | Accessibility service (opt-in) read/tap/scroll/back/home + Hinglish explanation | done | emulator test |
-| 6 | NotificationListenerService read + RemoteInput reply | done | emulator test (API 30 flaky, fixing) |
+| 6 | NotificationListenerService read + RemoteInput reply | done | emulator test waits for both test notifications (API 30 race fixed); real-app reply needs a phone |
 | 7 | Call announce + answer/reject + speakerphone | untested | needs a real phone |
-| 8 | Wake word (sherpa-onnx KWS, download + SHA-256, energy gate, one-breath, slider, false-wake counter) | partial | native abort with the `-mobile` model on emulator, fixing |
+| 8 | Wake word (sherpa-onnx KWS, download + SHA-256, energy gate, one-breath, slider, false-wake counter) | done (emulator: model download + spotter load + silence) / untested on real mic | switched from the `-mobile` archive (aborts in sherpa-onnx /downsample/Reshape_1, reproduced on desktop) to the regular gigaspeech-3.3M archive, all-int8 files, SHA f170013b… from checksum.txt |
 | 9 | Conversation mode | done | |
 | 10 | Native chat replies via /api/chat + WebView cookies, TTS, WebView fallback | done | live server call needs a signed-in phone |
 | 11 | Camera vision → chat API with the question | partial | photo goes to the WebView composer, no native upload yet |

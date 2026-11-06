@@ -227,5 +227,5 @@
     <string name="exp_alarms_title">Exact reminders</string>
     <string name="exp_alarms">Reminder bilkul sahi minute par aaye, iske liye exact alarm permission chahiye. Bina iske reminder thoda late ho sakta hai.</string>
     <string name="exp_wake_title">\"Hey Target\" wake word</string>
-    <string name="exp_wake">Ek chhota model (~15 MB download, ~5 MB phone par) official k2-fsa/sherpa-onnx release se aayega. Phir TARGET phone par hi (internet ke bina) \"Hey Target\" sunega, notification hamesha dikhegi. Awaaz kahin nahi bheji jaati.</string>
+    <string name="exp_wake">Ek chhota model (~17 MB download, ~5 MB phone par) official k2-fsa/sherpa-onnx release se aayega. Phir TARGET phone par hi (internet ke bina) \"Hey Target\" sunega, notification hamesha dikhegi. Awaaz kahin nahi bheji jaati.</string>
 </resources>
