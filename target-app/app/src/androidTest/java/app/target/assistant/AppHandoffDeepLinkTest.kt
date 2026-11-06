@@ -13,9 +13,11 @@ import org.junit.runner.RunWith
 /**
  * The /auth/app-return App Link must be turned into /auth/app-handoff inside the WebView:
  * launching MainActivity with an app-return VIEW intent (what Android delivers for the link)
- * should end with the WebView having followed the handoff endpoint — with an unknown code the
- * server bounces it to /login?error=google, which is still proof the handoff URL was loaded
- * (had the raw app-return URL been loaded instead, the WebView would sit on /auth/app-return).
+ * should end with the WebView on the handoff URL — or, once the handoff endpoint is deployed,
+ * on /login, where the server bounces an unknown code. Either proves the handoff URL was
+ * loaded; had the raw app-return URL been loaded instead, the WebView would sit on
+ * /auth/app-return. The handoff URL alone is accepted so this test also passes before the
+ * server side is deployed (the endpoint may still answer 404 then).
  */
 @RunWith(AndroidJUnit4::class)
 class AppHandoffDeepLinkTest {
@@ -30,7 +32,7 @@ class AppHandoffDeepLinkTest {
             sc.onActivity { act = it }
             val ok = Dev.waitUntil(45_000) {
                 val u = act?.lastFinishedUrl ?: return@waitUntil false
-                u.contains("/login") && !u.contains("app-return")
+                (u.contains("/auth/app-handoff") || u.contains("/login")) && !u.contains("app-return")
             }
             assertTrue("last finished: ${act?.lastFinishedUrl}", ok)
         }
