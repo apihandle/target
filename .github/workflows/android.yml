@@ -1,0 +1,52 @@
+name: Android
+
+# Builds the TARGET Android assistant (target-app/) and runs its unit tests.
+# The debug APK is uploaded as the "target-assistant-debug" artifact. No secrets are used.
+on:
+  push:
+    paths:
+      - "target-app/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "target-app/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: target-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build debug APK + unit tests
+        run: ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: target-assistant-debug
+          path: target-app/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: target-app/app/build/reports/tests/
+          if-no-files-found: ignore
