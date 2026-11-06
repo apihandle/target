@@ -143,6 +143,9 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState != null) webView.restoreState(savedInstanceState)
         else webView.loadUrl(startUrl(intent))
 
+        // Self-update: check now + every ~6 h (WorkManager, network required), unless turned off in Settings.
+        if (savedInstanceState == null) app.target.assistant.update.UpdateScheduler.onAppLaunch(this)
+
         setContent {
             TargetTheme {
                 Box(Modifier.fillMaxSize()) {

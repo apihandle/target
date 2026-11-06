@@ -12,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,22 +25,31 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import app.target.assistant.brain.CommandRunner
 import app.target.assistant.ui.TargetTheme
+import app.target.assistant.update.UpdateManager
+import app.target.assistant.update.UpdatePrefs
+import app.target.assistant.update.UpdateScheduler
 
 /** Setup: make TARGET the default assistant, grant mic, open the web app. */
 class SettingsActivity : ComponentActivity() {
 
     private var isAssistant by mutableStateOf(false)
     private var hasMic by mutableStateOf(false)
+    private var autoUpdate by mutableStateOf(true)
+    private var checking by mutableStateOf(false)
+    private var updateStatus by mutableStateOf<String?>(null)
+    private var lastCheck by mutableStateOf<String?>(null)
 
     private var askedRole = false
     private val roleRequest = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -79,11 +89,65 @@ class SettingsActivity : ComponentActivity() {
                             Text(stringResource(R.string.open_target))
                         }
                         Spacer(Modifier.height(24.dp))
+                        UpdateSection()
+                        Spacer(Modifier.height(24.dp))
                         Text(stringResource(R.string.settings_help), style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
         }
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun UpdateSection() {
+        Text(stringResource(R.string.update_section), style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.auto_update), modifier = Modifier.weight(1f))
+            Switch(checked = autoUpdate, onCheckedChange = { on ->
+                autoUpdate = on
+                UpdatePrefs.setAutoUpdate(this@SettingsActivity, on)
+                if (on) UpdateScheduler.onAppLaunch(this@SettingsActivity) else UpdateScheduler.cancel(this@SettingsActivity)
+            })
+        }
+        Text(stringResource(R.string.auto_update_desc), style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = { checkNow() }, enabled = !checking, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(if (checking) R.string.update_checking else R.string.check_now))
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.current_version, UpdateManager.installedVersionName(this), installedCode()),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        updateStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        lastCheck?.let { Text(stringResource(R.string.update_last_check, it), style = MaterialTheme.typography.bodySmall) }
+    }
+
+    private fun installedCode(): Int = try {
+        UpdateManager.installedVersionCode(this).toInt()
+    } catch (_: Exception) {
+        BuildConfig.VERSION_CODE
+    }
+
+    private fun checkNow() {
+        if (checking) return
+        checking = true
+        updateStatus = getString(R.string.update_checking)
+        val app = applicationContext
+        Thread {
+            UpdateManager.check(app)
+            runOnUiThread {
+                checking = false
+                refreshUpdate()
+            }
+        }.start()
+    }
+
+    private fun refreshUpdate() {
+        autoUpdate = UpdatePrefs.isAutoUpdate(this)
+        if (!checking) updateStatus = UpdatePrefs.status(this)
+        lastCheck = UpdatePrefs.lastCheckText(this)
     }
 
     override fun onResume() {
@@ -92,6 +156,7 @@ class SettingsActivity : ComponentActivity() {
     }
 
     private fun refresh() {
+        refreshUpdate()
         hasMic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         isAssistant = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             getSystemService(RoleManager::class.java)?.isRoleHeld(RoleManager.ROLE_ASSISTANT) == true
