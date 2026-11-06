@@ -219,8 +219,14 @@ class MainActivity : ComponentActivity() {
         webView.saveState(outState)
     }
 
+    override fun onResume() {
+        super.onResume()
+        app.target.assistant.util.AppLockGate.onResume(this)
+    }
+
     override fun onPause() {
         super.onPause()
+        app.target.assistant.util.AppLockGate.onPause()
         CookieManager.getInstance().flush()
     }
 

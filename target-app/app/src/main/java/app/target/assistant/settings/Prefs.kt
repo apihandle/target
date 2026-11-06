@@ -60,6 +60,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("guard_always", false)
         set(v) = sp.edit().putBoolean("guard_always", v).apply()
 
+    /** Optional app lock: fingerprint / face / screen lock when opening TARGET's screens. Off by default. */
+    var appLock: Boolean
+        get() = sp.getBoolean("app_lock", false)
+        set(v) = sp.edit().putBoolean("app_lock", v).apply()
+
     // ---- wake word / calls ----
     var wakeWord: Boolean
         get() = sp.getBoolean("wake_word", false)

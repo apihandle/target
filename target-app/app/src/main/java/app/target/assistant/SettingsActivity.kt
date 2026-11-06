@@ -122,7 +122,13 @@ class SettingsActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        app.target.assistant.util.AppLockGate.onResume(this)
         refresh()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        app.target.assistant.util.AppLockGate.onPause()
     }
 
     private fun refresh() { tick++ }
@@ -309,6 +315,10 @@ class SettingsActivity : ComponentActivity() {
                 Toggle(riskLabel(k), R.string.no_ask_help, prefs.noAsk(k)) { prefs.setNoAsk(k, it) }
             }
             Toggle(R.string.guard_always, R.string.guard_help, prefs.guardAlways) { prefs.guardAlways = it }
+            Toggle(R.string.app_lock, R.string.app_lock_help, prefs.appLock) { on ->
+                prefs.appLock = on
+                if (on) app.target.assistant.brain.AppLock.unlocked(System.currentTimeMillis()) // already inside the app
+            }
 
             // Auto-reply
             Section(stringResource(R.string.sec_auto_reply))

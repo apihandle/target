@@ -55,3 +55,20 @@ class QueueLogicTest {
         assertEquals(0, calls); assertEquals(1, p.dropped.size)
     }
 }
+
+class AppLockTest {
+    @Test fun offNeverLocks() = assertFalse(AppLock.needsUnlock(false, 1000, 0, 0))
+    @Test fun firstOpenLocks() = assertTrue(AppLock.needsUnlock(true, 1000, 0, 0))
+    @Test fun withinGraceOpen() = assertFalse(AppLock.needsUnlock(true, 100_000, unlockedAt = 10_000, pausedAt = 50_000))
+    @Test fun afterGraceLocks() = assertTrue(AppLock.needsUnlock(true, 200_000, unlockedAt = 10_000, pausedAt = 50_000))
+    @Test fun stateFunctions() {
+        AppLock.reset()
+        assertTrue(AppLock.needsUnlock(true, 5_000))
+        AppLock.unlocked(5_000)
+        assertFalse(AppLock.needsUnlock(true, 6_000))
+        AppLock.paused(10_000)
+        assertFalse(AppLock.needsUnlock(true, 10_000 + AppLock.GRACE_MS))
+        assertTrue(AppLock.needsUnlock(true, 10_001 + AppLock.GRACE_MS))
+        AppLock.reset()
+    }
+}

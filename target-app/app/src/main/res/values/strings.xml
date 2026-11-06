@@ -228,4 +228,6 @@
     <string name="exp_alarms">Reminder bilkul sahi minute par aaye, iske liye exact alarm permission chahiye. Bina iske reminder thoda late ho sakta hai.</string>
     <string name="exp_wake_title">\"Hey Target\" wake word</string>
     <string name="exp_wake">Ek chhota model (~17 MB download, ~5 MB phone par) official k2-fsa/sherpa-onnx release se aayega. Phir TARGET phone par hi (internet ke bina) \"Hey Target\" sunega, notification hamesha dikhegi. Awaaz kahin nahi bheji jaati.</string>
+    <string name="app_lock">App lock (fingerprint / screen lock)</string>
+    <string name="app_lock_help">On karne par TARGET ki chats aur settings kholne se pehle fingerprint, face ya screen lock maangega. 1 minute ke andar wapas aaye to dobara nahi poochhega. Phone mein screen lock set hona chahiye.</string>
 </resources>
