@@ -14,7 +14,9 @@ import androidx.test.runner.lifecycle.Stage
 import app.target.assistant.access.TargetAccessibilityService
 import app.target.assistant.brain.Command
 import app.target.assistant.brain.CommandRunner
+import app.target.assistant.net.OfflineQueue
 import app.target.assistant.net.TargetApi
+import app.target.assistant.store.ChatHistory
 import app.target.assistant.notify.TargetNotificationListener
 import app.target.assistant.settings.Prefs
 import app.target.assistant.wake.WakeModel
@@ -106,7 +108,19 @@ class SystemServicesTest {
 
     // ---- offline queue ----------------------------------------------------------------------------
 
+    @Test fun localHistoryKeepsEntries() {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        ChatHistory.clear(Dev.ctx) { latch.countDown() }
+        latch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        ChatHistory.add(Dev.ctx, "user", "test sawal", "c1")
+        ChatHistory.add(Dev.ctx, "assistant", "test jawab", "c1")
+        assertTrue(Dev.waitUntil(5_000) { ChatHistory.recent(Dev.ctx).size == 2 })
+        val r = ChatHistory.recent(Dev.ctx)
+        assertEquals(listOf("test jawab", "test sawal"), r.map { it.text }) // newest first
+    }
+
     @Test fun offlineQueueEnqueuesWithoutNetwork() {
+        OfflineQueue.clear(Dev.ctx)
         Dev.shell("cmd connectivity airplane-mode enable")
         try {
             Dev.waitUntil(20_000) { !TargetApi.isOnline(Dev.ctx) }
@@ -114,11 +128,16 @@ class SystemServicesTest {
             assertFalse("still online", TargetApi.isOnline(Dev.ctx))
             val out = Dev.onMain { CommandRunner(Dev.ctx).handle("aaj delhi ka mausam kaisa hai") }
             assertEquals(Dev.ctx.getString(R.string.reply_queued), out.reply)
-            assertTrue(Prefs(Dev.ctx).offlineQueue.contains("aaj delhi ka mausam kaisa hai"))
+            assertTrue("queued in Room", Dev.waitUntil(5_000) { OfflineQueue.pending(Dev.ctx).any { it.text == "aaj delhi ka mausam kaisa hai" } })
+            // Said twice: queued once.
+            Dev.onMain { CommandRunner(Dev.ctx).handle("aaj delhi ka mausam kaisa hai") }
+            Thread.sleep(1000)
+            assertEquals(1, OfflineQueue.pending(Dev.ctx).count { it.text == "aaj delhi ka mausam kaisa hai" })
+            assertTrue("in local history as queued", ChatHistory.recent(Dev.ctx).any { it.queued && it.text == "aaj delhi ka mausam kaisa hai" })
             val js = Dev.ctx.getSystemService(JobScheduler::class.java)
-            assertTrue("job scheduled", js.allPendingJobs.any { it.id == 4242 })
-            js.cancel(4242)
-            Prefs(Dev.ctx).offlineQueue = emptyList()
+            assertTrue("job scheduled", Dev.waitUntil(5_000) { js.allPendingJobs.any { it.id == OfflineQueue.JOB_ID } })
+            js.cancel(OfflineQueue.JOB_ID)
+            OfflineQueue.clear(Dev.ctx)
         } finally {
             Dev.shell("cmd connectivity airplane-mode disable")
             Dev.shell("svc wifi enable")

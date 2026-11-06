@@ -133,12 +133,4 @@ class Prefs(context: Context) {
         sp.edit().putInt("next_id", n).apply()
         return n
     }
-
-    // ---- offline queue ----
-    var offlineQueue: List<String>
-        get() = try {
-            val a = JSONArray(sp.getString("offline_queue", "[]"))
-            (0 until a.length()).map { a.getString(it) }
-        } catch (_: Exception) { emptyList() }
-        set(v) = sp.edit().putString("offline_queue", JSONArray(v.takeLast(20)).toString()).apply()
 }

@@ -4,6 +4,7 @@ import java.security.MessageDigest
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.devtools.ksp")
 }
 
 // sherpa-onnx (offline "Hey Target" keyword spotting) is published as an AAR on its GitHub releases, not on
@@ -86,6 +87,8 @@ dependencies {
     implementation("androidx.browser:browser:1.10.0")
     implementation("androidx.webkit:webkit:1.15.0")
     implementation("androidx.datastore:datastore-preferences:1.1.7")
+    implementation("androidx.room:room-runtime:2.8.5")
+    ksp("androidx.room:room-compiler:2.8.5")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")

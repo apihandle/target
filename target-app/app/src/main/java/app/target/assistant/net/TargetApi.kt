@@ -13,7 +13,13 @@ import android.os.Looper
 import android.webkit.CookieManager
 import app.target.assistant.BuildConfig
 import app.target.assistant.R
+import app.target.assistant.brain.QueueLogic
+import app.target.assistant.brain.QueuedItem
 import app.target.assistant.brain.SpeechText
+import app.target.assistant.store.ChatEntry
+import app.target.assistant.store.ChatHistory
+import app.target.assistant.store.LocalDb
+import app.target.assistant.store.QueuedEntity
 import app.target.assistant.settings.Prefs
 import app.target.assistant.util.Notify
 import org.json.JSONObject
@@ -110,7 +116,11 @@ object TargetApi {
         val conv = prefs.recentConversation()
         Thread {
             val r = ask(cookie, message, conv) { lines -> main.post { storeCookies(lines) } }
-            if (r is Result.Ok) prefs.setConversation(r.conversationId ?: conv)
+            if (r is Result.Ok) {
+                prefs.setConversation(r.conversationId ?: conv)
+                ChatHistory.add(app, "user", question, r.conversationId ?: conv)
+                ChatHistory.add(app, "assistant", spoken(r), r.conversationId ?: conv)
+            }
             main.post { done(r) }
         }.start()
     }
@@ -118,15 +128,33 @@ object TargetApi {
     fun spoken(r: Result.Ok): String = SpeechText.clean(r.text)
 }
 
-/** Commands that need TARGET, said while offline. Sent when the network is back (JobScheduler, network constraint). */
+/** Questions for TARGET said while offline: kept in Room, sent when the network is back (JobScheduler, any network). */
 object OfflineQueue {
-    private const val JOB_ID = 4242
+    const val JOB_ID = 4242
 
+    /** Queues [text] (rules in QueueLogic) on a background thread, then schedules the job. */
     fun add(context: Context, text: String) {
-        val p = Prefs(context)
-        p.offlineQueue = p.offlineQueue + text
-        schedule(context)
+        val app = context.applicationContext
+        ChatHistory.onIo {
+            runCatching {
+                val dao = LocalDb.get(app).queue()
+                val now = System.currentTimeMillis()
+                val existing = dao.all().map { it.toItem() }
+                if (QueueLogic.shouldAdd(existing, text, now)) {
+                    val drop = QueueLogic.overflow(existing, now, adding = 1)
+                    if (drop.isNotEmpty()) dao.delete(drop.map { it.id })
+                    dao.insert(QueuedEntity(text = QueueLogic.normalize(text), createdAt = now))
+                    LocalDb.get(app).chat().insert(ChatEntry(role = "user", text = text, conversationId = null, createdAt = now, queued = true))
+                }
+            }
+            schedule(app)
+        }
     }
+
+    /** Blocking: what is waiting (oldest first). */
+    fun pending(context: Context): List<QueuedItem> = runCatching { LocalDb.get(context).queue().all().map { it.toItem() } }.getOrDefault(emptyList())
+
+    fun clear(context: Context) = runCatching { LocalDb.get(context).queue().clear() }
 
     fun schedule(context: Context) {
         val js = context.getSystemService(JobScheduler::class.java) ?: return
@@ -141,25 +169,35 @@ object OfflineQueue {
 class QueueJobService : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         val prefs = Prefs(this)
-        val items = prefs.offlineQueue
-        if (items.isEmpty()) return false
         val cookie = TargetApi.cookie()
         val main = Handler(Looper.getMainLooper())
         val persona = prefs.persona.prefix(prefs.assistantName)
+        val app = applicationContext
         Thread {
-            var retry = false
-            val left = ArrayList<String>()
-            items.forEachIndexed { i, q ->
-                if (retry) { left += q; return@forEachIndexed }
-                when (val r = TargetApi.ask(cookie, persona + q, null) { lines -> main.post { TargetApi.storeCookies(lines) } }) {
-                    is TargetApi.Result.Ok -> Notify.answer(this, Notify.ID_QUEUE + i + 1, q, TargetApi.spoken(r), r.conversationId)
-                    TargetApi.Result.Offline -> { retry = true; left += q }
-                    TargetApi.Result.NotSignedIn -> Notify.simple(this, Notify.ID_QUEUE + i + 1, q.take(60), getString(R.string.queue_sign_in))
-                    is TargetApi.Result.Failed -> Notify.simple(this, Notify.ID_QUEUE + i + 1, q.take(60), getString(R.string.queue_failed, r.message))
+            val db = LocalDb.get(app)
+            val items = db.queue().all().map { it.toItem() }
+            if (items.isEmpty()) { jobFinished(params, false); return@Thread }
+            var n = 0
+            val plan = QueueLogic.drain(items, System.currentTimeMillis()) { item ->
+                n++
+                val id = Notify.ID_QUEUE + n
+                when (val r = TargetApi.ask(cookie, persona + item.text, null) { lines -> main.post { TargetApi.storeCookies(lines) } }) {
+                    is TargetApi.Result.Ok -> {
+                        val answer = TargetApi.spoken(r)
+                        db.chat().markSent(item.text)
+                        db.chat().insert(ChatEntry(role = "assistant", text = answer, conversationId = r.conversationId, createdAt = System.currentTimeMillis()))
+                        Notify.answer(app, id, item.text, answer, r.conversationId)
+                        QueueLogic.Send.OK
+                    }
+                    TargetApi.Result.Offline -> QueueLogic.Send.OFFLINE
+                    TargetApi.Result.NotSignedIn -> { Notify.simple(app, id, item.text.take(60), getString(R.string.queue_sign_in)); QueueLogic.Send.NOT_SIGNED_IN }
+                    is TargetApi.Result.Failed -> { Notify.simple(app, id, item.text.take(60), getString(R.string.queue_failed, r.message)); QueueLogic.Send.FAILED }
                 }
             }
-            prefs.offlineQueue = left
-            jobFinished(params, retry)
+            val gone = plan.sent + plan.dropped
+            if (gone.isNotEmpty()) db.queue().delete(gone.map { it.id })
+            if (plan.keep.isNotEmpty()) db.queue().update(plan.keep.map { QueuedEntity.of(it) })
+            jobFinished(params, plan.reschedule)
         }.start()
         return true
     }
