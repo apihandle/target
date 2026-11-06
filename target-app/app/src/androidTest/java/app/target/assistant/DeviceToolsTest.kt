@@ -12,7 +12,7 @@ import androidx.test.espresso.intent.matcher.IntentMatchers.hasAction
 import androidx.test.espresso.intent.matcher.IntentMatchers.hasData
 import androidx.test.espresso.intent.matcher.IntentMatchers.hasDataString
 import androidx.test.espresso.intent.matcher.IntentMatchers.hasExtra
-import androidx.test.espresso.intent.matcher.IntentMatchers.toPackage
+import androidx.test.espresso.intent.matcher.IntentMatchers.hasPackage
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.target.assistant.brain.CommandRunner
 import app.target.assistant.brain.MediaAction
@@ -69,12 +69,12 @@ class DeviceToolsTest {
 
     @Test fun youtubeSearchIntent() {
         Media.play(Dev.ctx, "Arijit Singh", MediaApp.YOUTUBE)
-        intended(allOf(hasAction(Intent.ACTION_SEARCH), toPackage("com.google.android.youtube"), hasExtra("query", "Arijit Singh")))
+        intended(allOf(hasAction(Intent.ACTION_SEARCH), hasPackage("com.google.android.youtube"), hasExtra("query", "Arijit Singh")))
     }
 
     @Test fun spotifyPlayFromSearchIntent() {
         Media.play(Dev.ctx, "Kesariya", MediaApp.SPOTIFY)
-        intended(allOf(hasAction(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH), toPackage("com.spotify.music"), hasExtra("query", "Kesariya")))
+        intended(allOf(hasAction(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH), hasPackage("com.spotify.music"), hasExtra("query", "Kesariya")))
     }
 
     @Test fun wifiPanelIntent() {
@@ -94,7 +94,7 @@ class DeviceToolsTest {
 
     @Test fun whatsappChatIntent() {
         WhatsApp.openChat(Dev.ctx, "98765 43210", "namaste", business = false)
-        intended(allOf(hasAction(Intent.ACTION_VIEW), toPackage("com.whatsapp"), hasDataString(startsWith("whatsapp://send?phone=919876543210"))))
+        intended(allOf(hasAction(Intent.ACTION_VIEW), hasPackage("com.whatsapp"), hasDataString(startsWith("whatsapp://send?phone=919876543210"))))
     }
 
     @Test fun calendarInsertIntent() {
@@ -109,7 +109,7 @@ class DeviceToolsTest {
 
     @Test fun parserDrivesYoutube() {
         Dev.onMain { CommandRunner(Dev.ctx).handle("youtube pe Kesariya chalao") }
-        intended(allOf(hasAction(Intent.ACTION_SEARCH), toPackage("com.google.android.youtube")))
+        intended(allOf(hasAction(Intent.ACTION_SEARCH), hasPackage("com.google.android.youtube")))
     }
 
     // ---- hardware calls must not crash (emulators have no flash; results are still valid JSON) ----

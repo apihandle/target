@@ -118,6 +118,7 @@ class PureLogicTest {
     @Test fun otpSensitive() = assertTrue(SpeechText.isSensitive("HDFC", "Your OTP is 482913"))
     @Test fun codeSensitive() = assertTrue(SpeechText.isSensitive("Google", "G-123456 is your verification code"))
     @Test fun hindiOtpSensitive() = assertTrue(SpeechText.isSensitive("Bank", "आपका ओटीपी 1234 है"))
+    @Test fun underscoreOtpSensitive() = assertTrue(SpeechText.isSensitive("Bank", "Your_OTP_is_482913"))
     @Test fun normalMessageNotSensitive() = assertFalse(SpeechText.isSensitive("Rahul", "kal 5 baje milte hain"))
 
     // ---- wake word keywords ----

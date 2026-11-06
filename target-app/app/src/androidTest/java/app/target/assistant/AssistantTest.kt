@@ -57,10 +57,9 @@ class AssistantTest {
 
     @Test fun assistActivityOpensAndRunsLocalCommand() {
         val i = Intent(Dev.ctx, AssistActivity::class.java).putExtra(Intent.EXTRA_TEXT, "battery kitni hai")
-        ActivityScenario.launch<AssistActivity>(i).use { sc ->
-            var reply = ""
-            sc.onActivity { reply = it.reply }
-            assertTrue("reply was: $reply", reply.contains("%"))
+        AssistActivity.lastReply = ""
+        ActivityScenario.launch<AssistActivity>(i).use {
+            assertTrue("reply was: ${AssistActivity.lastReply}", Dev.waitUntil(10_000) { AssistActivity.lastReply.contains("%") })
         }
     }
 
@@ -84,11 +83,15 @@ class AssistantTest {
         Dev.onMain { c.userSaid("nahi") }
         assertNull(ui.confirm)
         assertTrue("still nothing called", Intents.getIntents().isEmpty())
+        Dev.onMain { c.destroy() } // a "nahi" ends that overlay session
 
-        Dev.onMain { c.userSaid("call 9876543210") }
-        Dev.onMain { c.userSaid("haan ji") }
+        val ui2 = FakeUi()
+        val c2 = Dev.onMain { AssistantController(Dev.ctx, ui2) }
+        Dev.onMain { c2.userSaid("call 9876543210") }
+        Dev.onMain { c2.userSaid("kya bola aapne") } // neither yes nor no → asks again, does nothing
+        Dev.onMain { c2.userSaid("haan ji") }
         intended(callIntent)
-        Dev.onMain { c.destroy() }
+        Dev.onMain { c2.destroy() }
     }
 
     @Test fun tapYesRunsAction() {

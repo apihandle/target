@@ -59,6 +59,11 @@ import app.target.assistant.voice.Tts
  */
 class AssistActivity : ComponentActivity(), AssistantController.Ui {
 
+    companion object {
+        /** Last reply shown by any AssistActivity (instrumented tests). */
+        @Volatile internal var lastReply: String = ""
+    }
+
     private var listening by mutableStateOf(false)
     private var transcript by mutableStateOf("")
     internal var reply by mutableStateOf("")
@@ -116,7 +121,7 @@ class AssistActivity : ComponentActivity(), AssistantController.Ui {
 
     // ---- AssistantController.Ui ----
     override fun showTranscript(text: String) { transcript = text }
-    override fun showReply(text: String) { reply = text }
+    override fun showReply(text: String) { reply = text; lastReply = text }
     override fun showListening(on: Boolean) { listening = on; if (on) transcript = "" }
     override fun showChoices(choices: List<String>) { this.choices = choices }
     override fun showConfirm(question: String?) { confirmQuestion = question }

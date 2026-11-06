@@ -29,7 +29,7 @@ object SpeechText {
     }
 
     private val OTP = Regex(
-        "\\b(otp|one[- ]?time (?:password|code)|verification code|security code|passcode|login code|auth(?:entication)? code|pin)\\b|ओटीपी|सत्यापन कोड",
+        "(?<![a-z])(otp|one[-_ ]?time[-_ ](?:password|code)|verification[-_ ]code|security[-_ ]code|passcode|login[-_ ]code|auth(?:entication)?[-_ ]code|pin)(?![a-z])|ओटीपी|सत्यापन कोड",
         RegexOption.IGNORE_CASE,
     )
     private val CODE_WITH_DIGITS = Regex("\\bcode\\b[^0-9]{0,20}\\d{4,8}|\\d{4,8}[^0-9]{0,20}\\bcode\\b", RegexOption.IGNORE_CASE)

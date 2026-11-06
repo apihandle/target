@@ -145,6 +145,8 @@ object WakeModel {
                 tokens = File(dir, TOKENS).absolutePath,
                 numThreads = 1,
                 provider = "cpu",
+                // Without this sherpa-onnx treats the model as zipformer v1 and the int8 encoder aborts in /downsample/Reshape.
+                modelType = "zipformer2",
             ),
             keywordsFile = keywords.absolutePath,
             keywordsScore = WakeKeywords.clampBoost(boost),
