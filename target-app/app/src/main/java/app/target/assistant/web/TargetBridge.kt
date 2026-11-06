@@ -122,9 +122,25 @@ class TargetBridge(private val activity: Activity, private val webView: WebView)
         }
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(webView, BridgeSecurity.shimJs(), rules)
+        } else {
+            // Older WebViews (e.g. the API 30 system image) have the message listener but no document-start
+            // scripts: the shim is injected from the WebViewClient instead, see [injectShimIfNeeded].
+            manualShim = true
         }
         installed = true
         return true
+    }
+
+    @Volatile private var manualShim = false
+
+    /**
+     * Fallback for WebViews without DOCUMENT_START_SCRIPT: runs the promise shim in the TOP frame of a page on
+     * BASE_URL's origin (evaluateJavascript only reaches the main frame). The shim is idempotent and the
+     * message channel itself still enforces the origin rule, so calling this more than once is harmless.
+     */
+    fun injectShimIfNeeded(view: WebView, url: String?) {
+        if (!manualShim || !isOwnOrigin(url)) return
+        view.evaluateJavascript(BridgeSecurity.shimJs(), null)
     }
 
     @Volatile var installed = false

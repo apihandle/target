@@ -99,6 +99,7 @@ class MainActivity : ComponentActivity() {
 
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
                 bridge.currentUrl = url
+                bridge.injectShimIfNeeded(view, url)
             }
 
             override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
@@ -107,6 +108,7 @@ class MainActivity : ComponentActivity() {
 
             override fun onPageFinished(view: WebView, url: String?) {
                 bridge.currentUrl = url
+                bridge.injectShimIfNeeded(view, url)
                 lastFinishedUrl = url
                 CookieManager.getInstance().flush()
                 // A camera photo / screenshot waiting to be attached ("camera se dekho", "screen dekho screenshot ke saath").
