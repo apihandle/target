@@ -103,6 +103,18 @@ jobs:
             adb shell input keyevent 82 || true
             adb shell settings put global stay_on_while_plugged_in 7 || true
             ./gradlew --no-daemon connectedDebugAndroidTest
+      - name: Print failing instrumented tests
+        if: failure()
+        run: |
+          for f in $(find target-app/app/build/outputs/androidTest-results -name '*.xml' 2>/dev/null); do
+            python3 - "$f" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          for tc in ET.parse(sys.argv[1]).getroot().iter('testcase'):
+              for fl in list(tc.findall('failure')) + list(tc.findall('error')):
+                  print('::error::FAILED ' + tc.get('classname','') + '.' + tc.get('name',''))
+                  print((fl.text or '')[:3000])
+          PY
+          done
       - name: Upload instrumented test reports
         if: always()
         uses: actions/upload-artifact@v4
