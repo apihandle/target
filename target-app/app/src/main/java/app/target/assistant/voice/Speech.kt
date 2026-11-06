@@ -126,7 +126,7 @@ class Listener(
 
     private fun startWith(lang: String) {
         destroy()
-        val r = create(context) ?: run { onError("Is phone par speech recognition nahi mila"); return }
+        val r = create(context) ?: run { onError(context.getString(app.target.assistant.R.string.stt_unavailable)); return }
         recognizer = r
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) = onState(true)
@@ -142,7 +142,7 @@ class Listener(
                 onState(false)
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                 if (text.isBlank() && !triedFallback) { triedFallback = true; startWith("en-IN"); return }
-                if (text.isBlank()) onError("Kuch sunai nahi diya") else onResult(text)
+                if (text.isBlank()) onError(context.getString(app.target.assistant.R.string.stt_nothing_heard)) else onResult(text)
             }
             override fun onError(error: Int) {
                 onState(false)
@@ -152,10 +152,10 @@ class Listener(
                 }
                 onError(
                     when (error) {
-                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Mic permission chahiye"
-                        SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Kuch sunai nahi diya"
-                        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network problem"
-                        else -> "Sunne mein dikkat ($error)"
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> context.getString(app.target.assistant.R.string.need_mic)
+                        SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> context.getString(app.target.assistant.R.string.stt_nothing_heard)
+                        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> context.getString(app.target.assistant.R.string.stt_network)
+                        else -> context.getString(app.target.assistant.R.string.stt_error, error)
                     }
                 )
             }

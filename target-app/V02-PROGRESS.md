@@ -25,8 +25,8 @@ Status words: **done** (built + tested in CI where an emulator can test it), **p
 | 15 | Personas sent with chat requests | done | |
 | 16 | BiometricPrompt app lock (optional) | done (logic tested) / untested on a phone | Settings toggle "App lock" (off by default): MainActivity + SettingsActivity ask via GuardActivity (BiometricPrompt BIOMETRIC_WEAK or device credential; screen hidden meanwhile), 1-minute grace; AppLock JVM tests. Risky-action guard unchanged |
 | 17 | Offline queue + local chat history (Room) | done (CI) | Room db `target-local.db`: `offline_queue` + `chat_history` (last 500 lines, on this phone only); rules in pure QueueLogic (dedupe 2 min, max 20, 24 h expiry, 3 failures, stop on offline) with JVM tests; JobScheduler sends when online, answer as notification + history |
-| 18 | Settings + per-action "bina pooche" toggles + Google sign-in note | partial | settings exist; new items to add |
-| 19 | Full Hinglish strings | partial | new strings to add |
+| 18 | Settings + per-action "bina pooche" toggles + Google sign-in note | done | One settings screen: assistant/mic, persona+TTS, conversation, wake word (download, boost + threshold sliders, false-wake counter), special access with Hinglish explanations, risky actions (7 "bina pooche" switches, all off by default) + guard + app lock, auto-reply, routines, local history + offline queue, login help. Google sign-in in WebView: documented (needs a web hand-off endpoint; web app not touched) |
+| 19 | Full Hinglish strings | done | Default `values/` Hinglish, `values-en/` English; last hardcoded STT messages moved to resources; StringsTest (same keys, same format args, nothing empty) |
 
 ## CI
 - `Android` workflow: `build` (compile + JVM tests, no APK) and `device-tests` (API 30, 34). No APK artifact; only test reports.

@@ -231,4 +231,16 @@
     <string name="app_lock">App lock (fingerprint / screen lock)</string>
     <string name="app_lock_help">On karne par TARGET ki chats aur settings kholne se pehle fingerprint, face ya screen lock maangega. 1 minute ke andar wapas aaye to dobara nahi poochhega. Phone mein screen lock set hona chahiye.</string>
     <string name="vision_thinking">Photo TARGET ko bhej raha hoon, dekh ke batata hoon…</string>
+    <string name="sec_history">Chat history (sirf is phone par)</string>
+    <string name="history_help">Overlay se poochhe sawal aur TARGET ke jawab yahan rehte hain (aakhri 500). Ye phone se bahar nahi jaate; TARGET web app ki chats alag hain.</string>
+    <string name="history_queued">%1$d sawal internet aane ka intezaar kar rahe hain</string>
+    <string name="history_empty">Abhi koi history nahi.</string>
+    <string name="history_clear">History mitao</string>
+    <string name="history_you">Aap</string>
+    <string name="sec_login">Login</string>
+    <string name="login_help">App ke andar Google se login abhi kaam nahi karta (Google WebView mein login rokta hai, aur Chrome ka login app tak wapas nahi aata). TARGET mein email/password ya magic link se login kariye. Google login theek karne ke liye web app mein ek naya hand-off step chahiye, woh alag se banega.</string>
+    <string name="stt_unavailable">Is phone par speech recognition nahi mila</string>
+    <string name="stt_nothing_heard">Kuch sunai nahi diya</string>
+    <string name="stt_network">Internet mein dikkat, sun nahi paaya</string>
+    <string name="stt_error">Sunne mein dikkat (%1$d)</string>
 </resources>

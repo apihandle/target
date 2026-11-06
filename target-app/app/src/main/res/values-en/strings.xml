@@ -230,4 +230,16 @@
     <string name="app_lock">App lock (fingerprint / screen lock)</string>
     <string name="app_lock_help">When on, TARGET asks for fingerprint, face or screen lock before showing your chats and settings. Coming back within 1 minute does not ask again. Your phone needs a screen lock.</string>
     <string name="vision_thinking">Sending the photo to TARGET, one moment…</string>
+    <string name="sec_history">Chat history (on this phone only)</string>
+    <string name="history_help">Questions asked from the overlay and TARGET\'s answers stay here (last 500). They never leave the phone; TARGET web chats are separate.</string>
+    <string name="history_queued">%1$d questions are waiting for the internet</string>
+    <string name="history_empty">No history yet.</string>
+    <string name="history_clear">Clear history</string>
+    <string name="history_you">You</string>
+    <string name="sec_login">Sign-in</string>
+    <string name="login_help">Google sign-in inside the app does not work yet (Google blocks sign-in in WebViews, and a Chrome sign-in does not come back to the app). Sign in to TARGET with email/password or a magic link. Fixing Google sign-in needs a new hand-off step in the web app, planned separately.</string>
+    <string name="stt_unavailable">Speech recognition is not available on this phone</string>
+    <string name="stt_nothing_heard">I did not hear anything</string>
+    <string name="stt_network">Network problem while listening</string>
+    <string name="stt_error">Problem while listening (%1$d)</string>
 </resources>

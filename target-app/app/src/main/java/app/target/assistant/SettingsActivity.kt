@@ -36,6 +36,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,7 +51,12 @@ import app.target.assistant.brain.Persona
 import app.target.assistant.brain.RiskKind
 import app.target.assistant.brain.Routine
 import app.target.assistant.brain.Routines
+import app.target.assistant.net.OfflineQueue
 import app.target.assistant.notify.TargetNotificationListener
+import app.target.assistant.store.ChatEntry
+import app.target.assistant.store.ChatHistory
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.target.assistant.settings.Prefs
 import app.target.assistant.tools.Reminders
 import app.target.assistant.tools.SystemControl
@@ -360,6 +366,32 @@ class SettingsActivity : ComponentActivity() {
                     prefs.routines = Routines.upsert(prefs.routines, Routine(key, steps)); rName = ""; rSteps = ""; refresh()
                 }
             }) { Text(stringResource(R.string.routine_save)) }
+
+            // Local chat history (Room) + offline queue
+            Section(stringResource(R.string.sec_history))
+            Text(stringResource(R.string.history_help), style = MaterialTheme.typography.bodySmall)
+            var history by remember { mutableStateOf<List<ChatEntry>>(emptyList()) }
+            var queued by remember { mutableStateOf(0) }
+            LaunchedEffect(tick) {
+                val ctx = applicationContext
+                val (h, q) = withContext(Dispatchers.IO) { ChatHistory.recent(ctx, 20) to OfflineQueue.pending(ctx).size }
+                history = h; queued = q
+            }
+            if (queued > 0) Text(stringResource(R.string.history_queued, queued), color = MaterialTheme.colorScheme.primary)
+            if (history.isEmpty()) Text(stringResource(R.string.history_empty), style = MaterialTheme.typography.bodySmall)
+            else {
+                val fmt = SimpleDateFormat("d MMM, h:mm a", Locale.getDefault())
+                history.forEach { e ->
+                    val who = if (e.role == "user") stringResource(R.string.history_you) else prefs.assistantName
+                    Text("${fmt.format(Date(e.createdAt))} · $who: ${e.text.take(200)}" + if (e.queued) " ⏳" else "", style = MaterialTheme.typography.bodySmall)
+                }
+                TextButton(onClick = { ChatHistory.clear(applicationContext) { runOnUiThread { refresh() } } }) { Text(stringResource(R.string.history_clear)) }
+            }
+
+            // Login help (Google sign-in inside the WebView)
+            Section(stringResource(R.string.sec_login))
+            Text(stringResource(R.string.login_help), style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = { CommandRunner.openWebApp(this@SettingsActivity, null) }) { Text(stringResource(R.string.open_target)) }
 
             Spacer(Modifier.height(24.dp))
             Text(stringResource(R.string.settings_help), style = MaterialTheme.typography.bodySmall)
