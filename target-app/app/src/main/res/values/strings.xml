@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Default language: Hinglish (Roman Hindi). English is in values-en. -->
+<resources>
+    <string name="app_name" translatable="false">TARGET</string>
+    <string name="tile_label">TARGET bolo</string>
+    <string name="shortcut_assistant">Bolkar poochho</string>
+    <string name="shortcut_setup">Assistant setup</string>
+
+    <string name="listening">Sun raha hoon…</string>
+    <string name="tap_to_speak">Mic dabao aur bolo</string>
+    <string name="type_hint">Ya yahan likho…</string>
+    <string name="type_instead">Likh kar poochho</string>
+    <string name="send">Bhejo</string>
+    <string name="settings">Settings</string>
+    <string name="open_target">TARGET app kholo</string>
+    <string name="need_mic">Sunne ke liye mic permission chahiye</string>
+
+    <string name="reply_alarm">%1$s baje ka alarm laga diya</string>
+    <string name="reply_timer">%1$s ka timer shuru</string>
+    <string name="reply_torch_on">Torch on kar di</string>
+    <string name="reply_torch_off">Torch band kar di</string>
+    <string name="reply_open">%1$s khol raha hoon</string>
+    <string name="reply_dial">%1$s dialer mein hai, call button aap dabaiye</string>
+    <string name="reply_sms">Message tayyar hai, send aap dabaiye</string>
+    <string name="reply_navigate">%1$s ka rasta khol diya</string>
+    <string name="reply_battery">Battery %1$d%% hai</string>
+    <string name="reply_battery_charging">Battery %1$d%% hai, charging chal rahi hai</string>
+    <string name="reply_web">TARGET se poochh raha hoon…</string>
+
+    <string name="settings_title">TARGET assistant setup</string>
+    <string name="assistant_is_default">✅ TARGET aapka default assistant hai. Power ya home button long-press karke bulaiye.</string>
+    <string name="assistant_not_default">TARGET abhi default assistant nahi hai.</string>
+    <string name="make_default_assistant">Default assistant banao</string>
+    <string name="mic_granted">✅ Mic permission mil gayi</string>
+    <string name="mic_needed">Bolkar command dene ke liye mic permission chahiye.</string>
+    <string name="grant_mic">Mic permission do</string>
+    <string name="try_assistant">Abhi try karo</string>
+    <string name="settings_help">Agar dialog nahi aaya: Settings → Apps → Default apps → Digital assistant app → TARGET chuniye. Quick Settings mein "TARGET bolo" tile bhi add kar sakte hain. Call aur SMS hamesha aap khud bhejte hain — TARGET sirf number/text bhar deta hai.</string>
+</resources>

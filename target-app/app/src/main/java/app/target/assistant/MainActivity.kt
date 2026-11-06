@@ -1,0 +1,220 @@
+package app.target.assistant
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.net.Uri
+import android.os.Bundle
+import android.webkit.CookieManager
+import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import app.target.assistant.brain.CommandRunner
+import app.target.assistant.ui.TargetTheme
+import app.target.assistant.web.TargetBridge
+
+/**
+ * The app shell: the signed-in TARGET web app in a WebView, plus the native `TargetAndroid` bridge.
+ * Google sign-in pages are opened in a Custom Tab (Google blocks sign-in inside embedded WebViews).
+ */
+class MainActivity : ComponentActivity() {
+
+    companion object {
+        const val EXTRA_URL = "app.target.assistant.URL"
+        private val GOOGLE_AUTH_HOSTS = setOf("accounts.google.com", "accounts.youtube.com", "oauth2.googleapis.com")
+    }
+
+    private lateinit var webView: WebView
+    private lateinit var bridge: TargetBridge
+    private var fileCallback: ValueCallback<Array<Uri>>? = null
+    private var pendingWebPermission: PermissionRequest? = null
+
+    private val fileChooser = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        fileCallback?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(res.resultCode, res.data))
+        fileCallback = null
+    }
+
+    private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        pendingWebPermission?.let { req ->
+            if (granted) req.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) else req.deny()
+        }
+        pendingWebPermission = null
+    }
+
+    @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+
+        webView = WebView(this)
+        bridge = TargetBridge(this, webView)
+        with(webView.settings) {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            mediaPlaybackRequiresUserGesture = false
+            allowFileAccess = false
+            allowContentAccess = true
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            userAgentString = "$userAgentString TargetAndroid/${BuildConfig.VERSION_NAME}"
+        }
+        CookieManager.getInstance().apply {
+            setAcceptCookie(true)
+            setAcceptThirdPartyCookies(webView, true)
+        }
+        webView.addJavascriptInterface(bridge, "TargetAndroid")
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                if (request.isForMainFrame) handleNavigation(request.url) else false
+
+            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                bridge.currentUrl = url
+            }
+
+            override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+                bridge.currentUrl = url
+            }
+
+            override fun onPageFinished(view: WebView, url: String?) {
+                bridge.currentUrl = url
+                CookieManager.getInstance().flush()
+            }
+        }
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
+                fileCallback?.onReceiveValue(null)
+                fileCallback = callback
+                return try {
+                    fileChooser.launch(params.createIntent())
+                    true
+                } catch (_: ActivityNotFoundException) {
+                    fileCallback = null
+                    false
+                }
+            }
+
+            override fun onPermissionRequest(request: PermissionRequest) {
+                val wantsMic = PermissionRequest.RESOURCE_AUDIO_CAPTURE in request.resources
+                if (!wantsMic || !TargetBridge.isOwnOrigin(request.origin.toString())) {
+                    request.deny(); return
+                }
+                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                } else {
+                    pendingWebPermission = request
+                    micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            }
+        }
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (webView.canGoBack()) webView.goBack() else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
+
+        if (savedInstanceState != null) webView.restoreState(savedInstanceState)
+        else webView.loadUrl(startUrl(intent))
+
+        setContent {
+            TargetTheme {
+                Box(Modifier.fillMaxSize()) {
+                    AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize().safeDrawingPadding())
+                    SmallFloatingActionButton(
+                        onClick = { startActivity(Intent(this@MainActivity, AssistActivity::class.java)) },
+                        modifier = Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = 12.dp, bottom = 88.dp),
+                    ) { Text("🎤") }
+                }
+            }
+        }
+    }
+
+    /** Which URL to open: an explicit extra, an https deep link to our host, or the app home. */
+    private fun startUrl(intent: Intent?): String {
+        intent?.getStringExtra(EXTRA_URL)?.takeIf { TargetBridge.isOwnOrigin(it) }?.let { return it }
+        intent?.data?.toString()?.takeIf { TargetBridge.isOwnOrigin(it) }?.let { return it }
+        intent?.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }?.let { return CommandRunner.webUrlFor(it) }
+        return CommandRunner.webUrlFor(null)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.hasExtra(EXTRA_URL) || intent.data != null || intent.hasExtra(Intent.EXTRA_TEXT)) webView.loadUrl(startUrl(intent))
+    }
+
+    /** true = we handled it outside the WebView. */
+    private fun handleNavigation(uri: Uri): Boolean {
+        val scheme = uri.scheme?.lowercase()
+        val host = uri.host?.lowercase().orEmpty()
+        if (scheme == "http" || scheme == "https") {
+            if (TargetBridge.isOwnOrigin(uri.toString())) return false
+            // Supabase auth endpoints stay inside so the session cookie lands in the WebView.
+            if (host.endsWith(".supabase.co")) return false
+            if (host in GOOGLE_AUTH_HOSTS || host.endsWith(".google.com") && uri.path.orEmpty().contains("oauth")) {
+                openCustomTab(uri); return true
+            }
+            openCustomTab(uri); return true
+        }
+        // tel:, mailto:, intent:, whatsapp: … → hand to the system.
+        return try {
+            val i = if (scheme == "intent") Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME).apply {
+                addCategory(Intent.CATEGORY_BROWSABLE); component = null; selector = null
+            } else Intent(Intent.ACTION_VIEW, uri)
+            startActivity(i); true
+        } catch (_: Exception) {
+            true
+        }
+    }
+
+    private fun openCustomTab(uri: Uri) {
+        try {
+            CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(this, uri)
+        } catch (_: ActivityNotFoundException) {
+            try { startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (_: ActivityNotFoundException) {}
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        webView.saveState(outState)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        CookieManager.getInstance().flush()
+    }
+
+    override fun onDestroy() {
+        bridge.destroy()
+        webView.destroy()
+        super.onDestroy()
+    }
+}
