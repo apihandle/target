@@ -11,7 +11,7 @@ import org.json.JSONObject
 
 /** All local settings (SharedPreferences, on this phone only). Every special feature is off until the user turns it on. */
 class Prefs(context: Context) {
-    private val app: Context = context.applicationContext
+    private val appCtx: Context = context.applicationContext
     private val sp: SharedPreferences = context.applicationContext.getSharedPreferences("target_prefs", Context.MODE_PRIVATE)
 
     // ---- assistant / voice ----
@@ -116,8 +116,8 @@ class Prefs(context: Context) {
 
     // ---- routines (Preferences DataStore, see RoutineStore) ----
     var routines: List<Routine>
-        get() = app.target.assistant.store.RoutineStore.get(app)
-        set(v) = app.target.assistant.store.RoutineStore.set(app, v)
+        get() = app.target.assistant.store.RoutineStore.get(appCtx)
+        set(v) = app.target.assistant.store.RoutineStore.set(appCtx, v)
 
     // ---- reminders (kept so they can be set again after a reboot) ----
     data class ReminderItem(val id: Int, val at: Long, val text: String)

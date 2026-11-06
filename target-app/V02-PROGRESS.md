@@ -18,7 +18,7 @@ Status words: **done** (built + tested in CI where an emulator can test it), **p
 | 8 | Wake word (sherpa-onnx KWS, download + SHA-256, energy gate, one-breath, slider, false-wake counter) | done (emulator: model download + spotter load + silence) / untested on real mic | switched from the `-mobile` archive (aborts in sherpa-onnx /downsample/Reshape_1, reproduced on desktop) to the regular gigaspeech-3.3M archive, all-int8 files, SHA f170013b… from checksum.txt |
 | 9 | Conversation mode | done | |
 | 10 | Native chat replies via /api/chat + WebView cookies, TTS, WebView fallback | done | live server call needs a signed-in phone |
-| 11 | Camera vision → chat API with the question | partial | photo goes to the WebView composer, no native upload yet |
+| 11 | Camera vision → chat API with the question | partial / untested | Native path: camera intent photo → Supabase storage upload with the WebView session → `/api/attachments` → `/api/chat` {attachmentIds} → spoken + notification + local history. Needs the PUBLIC anon key at build time (`-PsupabaseAnonKey`); without it (CI default) falls back to the WebView composer. Cookie parser JVM-tested; live upload needs a signed-in phone |
 | 12 | System controls (torch, volume, brightness opt-in, Wi-Fi/BT panels, DND opt-in) | done | |
 | 13 | Reminders + alarms (AlarmClock + AlarmManager + notification) | done | |
 | 14 | Routines in DataStore | done | Preferences DataStore (`routines`), one-time SharedPreferencesMigration from the old key; JVM JSON tests (RoutinesJsonTest) + emulator routine tests |

@@ -57,7 +57,7 @@ object TargetApi {
     fun looksSignedIn(cookie: String?): Boolean = cookie?.contains(Regex("sb-[^=;]*-auth-token")) == true
 
     /** Blocking: run on a background thread. [onCookies] gets Set-Cookie lines to store back (refreshed session). */
-    fun ask(cookie: String?, message: String, conversationId: String?, onCookies: (List<String>) -> Unit): Result {
+    fun ask(cookie: String?, message: String, conversationId: String?, attachmentIds: List<String> = emptyList(), onCookies: (List<String>) -> Unit): Result {
         if (!looksSignedIn(cookie)) return Result.NotSignedIn
         val url = URL(BuildConfig.BASE_URL.trimEnd('/') + "/api/chat")
         val conn = url.openConnection() as HttpURLConnection
@@ -73,6 +73,7 @@ object TargetApi {
             conn.setRequestProperty("User-Agent", "TargetAndroid/" + BuildConfig.VERSION_NAME)
             val body = JSONObject().put("message", message.take(7900))
             if (conversationId != null) body.put("conversationId", conversationId)
+            if (attachmentIds.isNotEmpty()) body.put("attachmentIds", org.json.JSONArray(attachmentIds))
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
             val status = conn.responseCode
             conn.headerFields["Set-Cookie"]?.let { if (it.isNotEmpty()) onCookies(it) }

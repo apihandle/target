@@ -41,6 +41,18 @@ object PendingImage {
         return true
     }
 
+    /** The photo as a scaled JPEG (max 1600 px, EXIF rotation applied), for the native upload. */
+    fun jpegFromFile(file: File): ByteArray? {
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, opts)
+        var sample = 1
+        while (maxOf(opts.outWidth, opts.outHeight) / sample > MAX_SIDE * 2) sample *= 2
+        val bmp = BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+        val out = ByteArrayOutputStream()
+        scale(rotateFromExif(file, bmp)).compress(Bitmap.CompressFormat.JPEG, 85, out)
+        return out.toByteArray()
+    }
+
     private fun rotateFromExif(file: File, bmp: Bitmap): Bitmap = try {
         val exif = android.media.ExifInterface(file.absolutePath)
         val deg = when (exif.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1)) {

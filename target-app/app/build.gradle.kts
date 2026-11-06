@@ -34,6 +34,11 @@ if (!sherpaAar.exists() || sha256Of(sherpaAar) != sherpaSha256) {
 
 // Web app the shell loads. Change here (or pass -PtargetBaseUrl=https://…) to point at another deploy.
 val targetBaseUrl: String = (project.findProperty("targetBaseUrl") as String?) ?: "https://gettarget.vercel.app"
+// Optional, for "camera se dekho" straight to the chat API: the web app's PUBLIC Supabase URL + anon key
+// (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY, the same values every browser gets). Empty = the
+// photo goes through the WebView composer. Never put a service-role key here.
+val supabaseUrl: String = (project.findProperty("supabaseUrl") as String?) ?: ""
+val supabaseAnonKey: String = (project.findProperty("supabaseAnonKey") as String?) ?: ""
 
 android {
     namespace = "app.target.assistant"
@@ -48,6 +53,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "BASE_URL", "\"$targetBaseUrl\"")
         buildConfigField("String", "APP_PATH", "\"/app\"")
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
     }
 
     buildTypes {

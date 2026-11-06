@@ -229,4 +229,5 @@
     <string name="exp_wake">A small model (~17 MB download, ~5 MB on the phone) comes from the official k2-fsa/sherpa-onnx release. TARGET then listens for \"Hey Target\" on the phone, offline, with a notification always shown. No audio is sent anywhere.</string>
     <string name="app_lock">App lock (fingerprint / screen lock)</string>
     <string name="app_lock_help">When on, TARGET asks for fingerprint, face or screen lock before showing your chats and settings. Coming back within 1 minute does not ask again. Your phone needs a screen lock.</string>
+    <string name="vision_thinking">Sending the photo to TARGET, one moment…</string>
 </resources>
