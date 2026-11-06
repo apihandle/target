@@ -2,7 +2,14 @@
 
 Native Android app (Kotlin + Jetpack Compose). TARGET web app ko phone par chalata hai, aur phone ke kaam khud karta hai: call/SMS/WhatsApp contacts ko, music, screen padhna aur tap, notifications, aate call, "Hey Target" wake word, reminders, routines… Plan: [PLAN.md](PLAN.md).
 
-> **APK:** CI ab koi APK nahi banata/upload karta (sirf compile + tests). Phone par chalane ke liye khud build kariye (neeche "Build").
+> **Install:** `Android` CI koi APK upload nahi karta (sirf compile + tests). Installable APK sirf signed release workflow (`android-release.yml`) se GitHub Releases par aata hai:
+
+1. GitHub par repo kholiye → **Releases** → sabse naya `android-v<number>` (signed release) → `target-<number>.apk` download kariye.
+   (Supabase set ho to `version.json` ka `url` bhi public download link hai.)
+2. Purana **debug** app (v0.1, `target-assistant-debug` artifact) phone par hai to pehle uninstall kariye — debug aur release ki signing key alag hai.
+3. Phone par APK kholiye. Pehli baar "Install unknown apps" ki permission maangega (Chrome/Files ko allow kariye).
+
+Iske baad TARGET khud update hota hai (Settings → App update → Auto-update). Details: [docs/ANDROID-UPDATES.md](../docs/ANDROID-UPDATES.md).
 
 ## Kya bol sakte hain
 

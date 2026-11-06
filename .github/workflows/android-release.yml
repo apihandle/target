@@ -1,0 +1,183 @@
+name: Android release
+
+# Signed release of the TARGET Android app (target-app/) for the in-app auto-updater.
+#   versionCode = github.run_number, signed with the ONE fixed release key (repo secrets below).
+#   On main: publishes the APK + version.json to GitHub Releases (tag android-v<code>, plus the
+#   stable "android-latest" release holding version.json) and, when SUPABASE_URL and
+#   SUPABASE_SERVICE_ROLE_KEY are set, to the public Supabase Storage bucket "app-updates",
+#   which is where the app reads android/version.json (the repo is private, so GitHub assets
+#   are not downloadable by the app).
+#   On wip/android-autoupdate: builds and verifies only, publishes nothing.
+# Secrets: ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+#          (+ optional SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY). See docs/ANDROID-UPDATES.md.
+on:
+  push:
+    branches:
+      - main
+      - wip/android-autoupdate
+    paths:
+      - "target-app/**"
+      - ".github/workflows/android-release.yml"
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: "Release notes shown in version.json (default: last commit subject)"
+        required: false
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      VERSION_CODE: ${{ github.run_number }}
+      VERSION_NAME: 0.1.${{ github.run_number }}
+      PUBLISH: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      BUCKET: app-updates
+    defaults:
+      run:
+        working-directory: target-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK packages
+        run: |
+          SDKM=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-36" "build-tools;36.0.0" > /dev/null
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode release keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for v in KEYSTORE_B64 KS_PASS KEY_ALIAS KEY_PASS; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Release signing secrets missing (ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD). See docs/ANDROID-UPDATES.md."
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ARGS="-PversionCode=$VERSION_CODE -PversionName=$VERSION_NAME"
+          if [ -n "$SUPABASE_URL" ]; then
+            ARGS="$ARGS -PupdateManifestUrl=${SUPABASE_URL%/}/storage/v1/object/public/$BUCKET/android/version.json"
+          fi
+          ./gradlew --no-daemon --stacktrace $ARGS assembleRelease
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
+
+      - name: Verify APK (signature, version) + SHA-256
+        run: |
+          BT="$ANDROID_HOME/build-tools/36.0.0"
+          SRC=app/build/outputs/apk/release/app-release.apk
+          test -f "$SRC" || { echo "::error::signed app-release.apk not found (unsigned build?)"; ls -R app/build/outputs/apk || true; exit 1; }
+          mkdir -p "$RUNNER_TEMP/out"
+          APK="$RUNNER_TEMP/out/target-$VERSION_CODE.apk"
+          cp "$SRC" "$APK"
+          "$BT/apksigner" verify --verbose "$APK" | grep -E "^Verifie|Number of signers"
+          "$BT/apksigner" verify --print-certs "$APK" | grep -E "certificate DN|SHA-256 digest"
+          "$BT/aapt2" dump badging "$APK" > "$RUNNER_TEMP/badging.txt"
+          BADGING=$(sed -n 1p "$RUNNER_TEMP/badging.txt")
+          echo "$BADGING"
+          echo "$BADGING" | grep -q "name='app.target.assistant'" || { echo "::error::wrong package"; exit 1; }
+          echo "$BADGING" | grep -q "versionCode='$VERSION_CODE'" || { echo "::error::versionCode is not $VERSION_CODE"; exit 1; }
+          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          echo "SHA-256 $SHA"
+          echo "APK=$APK" >> "$GITHUB_ENV"
+          echo "APK_SHA256=$SHA" >> "$GITHUB_ENV"
+
+      - name: Write version.json
+        env:
+          INPUT_NOTES: ${{ github.event.inputs.notes }}
+        run: |
+          NOTES="${INPUT_NOTES:-$(git log -1 --pretty=%s)}"
+          if [ -n "$SUPABASE_URL" ]; then
+            URL="${SUPABASE_URL%/}/storage/v1/object/public/$BUCKET/android/target-$VERSION_CODE.apk"
+          else
+            URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/android-v$VERSION_CODE/target-$VERSION_CODE.apk"
+          fi
+          NOTES="$NOTES" URL="$URL" python3 - <<'PY'
+          import json, os
+          m = {
+              "versionCode": int(os.environ["VERSION_CODE"]),
+              "versionName": os.environ["VERSION_NAME"],
+              "sha256": os.environ["APK_SHA256"],
+              "url": os.environ["URL"],
+              "notes": os.environ["NOTES"][:500],
+              "minSdk": 26,
+          }
+          path = os.path.join(os.environ["RUNNER_TEMP"], "out", "version.json")
+          with open(path, "w") as f:
+              json.dump(m, f, indent=2)
+          print(json.dumps(m, indent=2))
+          PY
+
+      - name: Publish to GitHub Releases
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          OUT="$RUNNER_TEMP/out"
+          TAG="android-v$VERSION_CODE"
+          gh release create "$TAG" "$APK" "$OUT/version.json" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "TARGET Android $VERSION_NAME" \
+            --notes "Signed release $VERSION_NAME (versionCode $VERSION_CODE). SHA-256: $APK_SHA256" \
+            --latest=false
+          if ! gh release view android-latest --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create android-latest --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "TARGET Android (latest)" \
+              --notes "Stable pointer: version.json here always describes the newest signed Android release." \
+              --latest=false
+          fi
+          gh release upload android-latest "$OUT/version.json" --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Publish to Supabase Storage (app reads from here)
+        if: env.PUBLISH == 'true' && env.SUPABASE_URL != '' && env.SUPABASE_SERVICE_ROLE_KEY != ''
+        run: |
+          set -euo pipefail
+          BASE="${SUPABASE_URL%/}/storage/v1"
+          AUTH=(-H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" -H "apikey: $SUPABASE_SERVICE_ROLE_KEY")
+          # Public bucket; creating it again just answers "already exists".
+          curl -sS -o /dev/null -w "bucket: %{http_code}\n" -X POST "$BASE/bucket" "${AUTH[@]}" \
+            -H "Content-Type: application/json" \
+            -d "{\"id\":\"$BUCKET\",\"name\":\"$BUCKET\",\"public\":true}" || true
+          up() {
+            code=$(curl -sS -o "$RUNNER_TEMP/up.txt" -w "%{http_code}" -X POST "$BASE/object/$BUCKET/$1" "${AUTH[@]}" \
+              -H "x-upsert: true" -H "Content-Type: $2" -H "Cache-Control: $3" --data-binary "@$4")
+            echo "$1: $code"
+            if [ "${code:0:1}" != "2" ]; then cat "$RUNNER_TEMP/up.txt"; exit 1; fi
+          }
+          # APK first, then version.json, so the manifest never points at a missing file.
+          up "android/target-$VERSION_CODE.apk" "application/vnd.android.package-archive" "max-age=31536000" "$APK"
+          up "android/version.json" "application/json" "max-age=60" "$RUNNER_TEMP/out/version.json"
+          curl -sSf "${SUPABASE_URL%/}/storage/v1/object/public/$BUCKET/android/version.json" > /dev/null && echo "public version.json reachable"
+
+      - name: Supabase not configured
+        if: env.PUBLISH == 'true' && (env.SUPABASE_URL == '' || env.SUPABASE_SERVICE_ROLE_KEY == '')
+        run: echo "::warning::SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY repo secrets are not set, so the app cannot download this release yet (GitHub release assets of a private repo are not public). See docs/ANDROID-UPDATES.md."

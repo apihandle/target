@@ -68,6 +68,9 @@ import app.target.assistant.wake.WakeWordService
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import app.target.assistant.update.UpdateManager
+import app.target.assistant.update.UpdatePrefs
+import app.target.assistant.update.UpdateScheduler
 
 /**
  * Setup and settings. Every special access is opt-in: each one first shows a short Hinglish
@@ -102,6 +105,10 @@ class SettingsActivity : ComponentActivity() {
     private var explain by mutableStateOf<String?>(null)
     private var downloadPct by mutableStateOf(-1)
     private var downloadError by mutableStateOf<String?>(null)
+    private var autoUpdate by mutableStateOf(true)
+    private var checking by mutableStateOf(false)
+    private var updateStatus by mutableStateOf<String?>(null)
+    private var lastCheck by mutableStateOf<String?>(null)
 
     private var askedRole = false
     private val roleRequest = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -126,6 +133,58 @@ class SettingsActivity : ComponentActivity() {
         intent.getStringExtra(EXTRA_SECTION)?.let { explain = it }
     }
 
+    @androidx.compose.runtime.Composable
+    private fun UpdateSection() {
+        Text(stringResource(R.string.update_section), style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.auto_update), modifier = Modifier.weight(1f))
+            Switch(checked = autoUpdate, onCheckedChange = { on ->
+                autoUpdate = on
+                UpdatePrefs.setAutoUpdate(this@SettingsActivity, on)
+                if (on) UpdateScheduler.onAppLaunch(this@SettingsActivity) else UpdateScheduler.cancel(this@SettingsActivity)
+            })
+        }
+        Text(stringResource(R.string.auto_update_desc), style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = { checkNow() }, enabled = !checking, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(if (checking) R.string.update_checking else R.string.check_now))
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.current_version, UpdateManager.installedVersionName(this), installedCode()),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        updateStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        lastCheck?.let { Text(stringResource(R.string.update_last_check, it), style = MaterialTheme.typography.bodySmall) }
+    }
+
+    private fun installedCode(): Int = try {
+        UpdateManager.installedVersionCode(this).toInt()
+    } catch (_: Exception) {
+        BuildConfig.VERSION_CODE
+    }
+
+    private fun checkNow() {
+        if (checking) return
+        checking = true
+        updateStatus = getString(R.string.update_checking)
+        val app = applicationContext
+        Thread {
+            UpdateManager.check(app)
+            runOnUiThread {
+                checking = false
+                refreshUpdate()
+            }
+        }.start()
+    }
+
+    private fun refreshUpdate() {
+        autoUpdate = UpdatePrefs.isAutoUpdate(this)
+        if (!checking) updateStatus = UpdatePrefs.status(this)
+        lastCheck = UpdatePrefs.lastCheckText(this)
+    }
+
     override fun onResume() {
         super.onResume()
         app.target.assistant.util.AppLockGate.onResume(this)
@@ -137,7 +196,7 @@ class SettingsActivity : ComponentActivity() {
         app.target.assistant.util.AppLockGate.onPause()
     }
 
-    private fun refresh() { tick++ }
+    private fun refresh() { refreshUpdate(); tick++ }
 
     // ---- state helpers ----------------------------------------------------------------------------
 
@@ -387,6 +446,12 @@ class SettingsActivity : ComponentActivity() {
                 }
                 TextButton(onClick = { ChatHistory.clear(applicationContext) { runOnUiThread { refresh() } } }) { Text(stringResource(R.string.history_clear)) }
             }
+
+            // App update (signed releases, auto-update)
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(8.dp))
+            UpdateSection()
 
             // Login help (Google sign-in inside the WebView)
             Section(stringResource(R.string.sec_login))

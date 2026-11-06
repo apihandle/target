@@ -242,4 +242,22 @@
     <string name="stt_nothing_heard">I did not hear anything</string>
     <string name="stt_network">Network problem while listening</string>
     <string name="stt_error">Problem while listening (%1$d)</string>
+    <!-- App update (Settings) -->
+    <string name="update_section">App update</string>
+    <string name="auto_update">Auto-update</string>
+    <string name="auto_update_desc">When a new version is out, TARGET updates itself. Silent on Android 12+, older phones need one tap on \"Update\".</string>
+    <string name="check_now">Check now</string>
+    <string name="current_version">Version: %1$s (%2$d)</string>
+    <string name="update_last_check">Last check: %1$s</string>
+    <string name="update_checking">Checking…</string>
+    <string name="update_latest">You are on the latest version ✅</string>
+    <string name="update_found">New version %1$s found, installing…</string>
+    <string name="update_installed">Update installed ✅</string>
+    <string name="update_confirm">Tap \"Update\" once to install</string>
+    <string name="update_failed">Update failed: %1$s</string>
+    <string name="update_error_network">Could not get update info. Check the internet and try again.</string>
+    <string name="update_error_hash">The download was damaged (SHA-256 mismatch). It will retry later.</string>
+    <string name="update_error_signature">The new APK\'s signature did not match, so the update was stopped.</string>
+    <string name="update_error_minsdk">This update does not run on your Android version.</string>
+    <string name="update_error_config">Update URL is not set.</string>
 </resources>

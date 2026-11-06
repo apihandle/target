@@ -40,6 +40,19 @@ val targetBaseUrl: String = (project.findProperty("targetBaseUrl") as String?) ?
 val supabaseUrl: String = (project.findProperty("supabaseUrl") as String?) ?: ""
 val supabaseAnonKey: String = (project.findProperty("supabaseAnonKey") as String?) ?: ""
 
+// Release versioning: CI passes -PversionCode=<github.run_number> -PversionName=<…>. Local/debug builds stay 1 / 0.2.0.
+val appVersionCode: Int = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
+val appVersionName: String = (project.findProperty("versionName") as String?) ?: "0.2.0"
+
+// Where the in-app updater reads version.json. Default: the public Supabase Storage bucket "app-updates".
+// Override with -PupdateManifestUrl=https://… (an empty value turns the updater's network check off).
+val updateManifestUrl: String = (project.findProperty("updateManifestUrl") as String?)
+    ?: "https://eauoflkytzrxbyicvfzu.supabase.co/storage/v1/object/public/app-updates/android/version.json"
+
+// Release signing comes only from the environment (GitHub Actions secrets, decoded to a temp file in CI).
+// The keystore and its passwords are never committed. Every release must use this same key, or updates break.
+val releaseKeystore: String? = System.getenv("ANDROID_KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
+
 android {
     namespace = "app.target.assistant"
     compileSdk = 36
@@ -48,17 +61,30 @@ android {
         applicationId = "app.target.assistant"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "BASE_URL", "\"$targetBaseUrl\"")
+        buildConfigField("String", "UPDATE_MANIFEST_URL", "\"$updateManifestUrl\"")
         buildConfigField("String", "APP_PATH", "\"/app\"")
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
     }
 
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore!!)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -72,6 +98,11 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    lint {
+        // Report lint problems on release builds without failing the build on them.
+        abortOnError = false
     }
 
     testOptions {
@@ -96,6 +127,8 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.7")
     implementation("androidx.room:room-runtime:2.8.5")
     ksp("androidx.room:room-compiler:2.8.5")
+    // 2.11.x: newest line whose deps still compile against SDK 36.
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")

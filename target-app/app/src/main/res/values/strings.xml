@@ -243,4 +243,23 @@
     <string name="stt_nothing_heard">Kuch sunai nahi diya</string>
     <string name="stt_network">Internet mein dikkat, sun nahi paaya</string>
     <string name="stt_error">Sunne mein dikkat (%1$d)</string>
+
+    <!-- App update (Settings) -->
+    <string name="update_section">App update</string>
+    <string name="auto_update">Auto-update</string>
+    <string name="auto_update_desc">Naya version aate hi TARGET khud update ho jayega. Android 12+ par bina poochhe, purane phones par ek baar \"Update\" dabana hoga.</string>
+    <string name="check_now">Abhi check karo</string>
+    <string name="current_version">Version: %1$s (%2$d)</string>
+    <string name="update_last_check">Last check: %1$s</string>
+    <string name="update_checking">Check kar raha hoon…</string>
+    <string name="update_latest">Aap latest version par ho ✅</string>
+    <string name="update_found">Naya version %1$s mila, install ho raha hai…</string>
+    <string name="update_installed">Update install ho gaya ✅</string>
+    <string name="update_confirm">Install ke liye ek baar \"Update\" dabaiye</string>
+    <string name="update_failed">Update nahi hua: %1$s</string>
+    <string name="update_error_network">Update info nahi mili. Internet check karke dobara try karo.</string>
+    <string name="update_error_hash">Download kharab tha (SHA-256 match nahi hua). Thodi der baad phir try hoga.</string>
+    <string name="update_error_signature">Naye APK ka signature match nahi hua, isliye update roka gaya.</string>
+    <string name="update_error_minsdk">Ye update aapke Android version par nahi chalega.</string>
+    <string name="update_error_config">Update URL set nahi hai.</string>
 </resources>
