@@ -11,8 +11,9 @@ export async function GET(req: Request) {
   if (!process.env.GOOGLE_OAUTH_CLIENT_ID || !process.env.GOOGLE_OAUTH_CLIENT_SECRET) {
     return NextResponse.redirect(`${origin}/login?error=google`, { status: 303 });
   }
-  const { cookie, hashedNonce } = newLogin(safeNext(url.searchParams.get("next")));
+  const { cookie, hashedNonce } = newLogin(safeNext(url.searchParams.get("next")), url.searchParams.get("app") === "1");
   const res = NextResponse.redirect(loginAuthorizeUrl(process.env, origin, cookie.state, hashedNonce), { status: 303 });
   res.cookies.set(LOGIN_COOKIE, encodeLoginCookie(cookie), { httpOnly: true, secure: origin.startsWith("https"), sameSite: "lax", path: "/", maxAge: 600 });
   return res;
 }
+

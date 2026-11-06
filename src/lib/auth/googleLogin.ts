@@ -11,12 +11,12 @@ import { LOGIN_SCOPES } from "@/lib/connectors/googleLoginScopes";
 export const LOGIN_COOKIE = "tg_glogin";
 export const LOGIN_PREFIX = "login.";
 
-export type LoginCookie = { state: string; nonce: string; next: string };
+export type LoginCookie = { state: string; nonce: string; next: string; app?: boolean };
 
-export function newLogin(next: string): { cookie: LoginCookie; hashedNonce: string } {
+export function newLogin(next: string, app = false): { cookie: LoginCookie; hashedNonce: string } {
   const state = randomBytes(24).toString("base64url");
   const nonce = randomBytes(24).toString("base64url");
-  return { cookie: { state, nonce, next }, hashedNonce: createHash("sha256").update(nonce).digest("hex") };
+  return { cookie: { state, nonce, next, ...(app ? { app: true } : {}) }, hashedNonce: createHash("sha256").update(nonce).digest("hex") };
 }
 
 export function loginRedirectUri(origin: string) {
@@ -41,7 +41,7 @@ export function parseLoginCookie(v: string | undefined): LoginCookie | null {
   if (!v) return null;
   try {
     const o = JSON.parse(Buffer.from(v, "base64url").toString("utf8"));
-    if (typeof o?.state === "string" && typeof o?.nonce === "string" && typeof o?.next === "string") return o;
+    if (typeof o?.state === "string" && typeof o?.nonce === "string" && typeof o?.next === "string" && (o?.app === undefined || typeof o?.app === "boolean")) return o;
   } catch { /* bad cookie */ }
   return null;
 }
@@ -62,3 +62,4 @@ export async function exchangeLoginCode(env: Record<string, string | undefined>,
   if (!r.ok || !j.id_token || !j.access_token) throw new Error(`google token exchange failed: ${j.error ?? r.status}`);
   return { id_token: j.id_token, access_token: j.access_token, refresh_token: j.refresh_token };
 }
+

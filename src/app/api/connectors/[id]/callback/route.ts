@@ -10,6 +10,7 @@ import { logActivity } from "@/lib/server/activity";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { LOGIN_COOKIE, LOGIN_PREFIX, exchangeLoginCode, parseLoginCookie } from "@/lib/auth/googleLogin";
+import { createAppHandoff } from "@/lib/auth/appHandoff";
 import { connectionFromLogin } from "@/lib/connectors/googleFromLogin";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +75,21 @@ async function googleLogin(url: URL) {
     } catch (e) {
       console.error("[auth] google auto-connect failed:", e instanceof Error ? e.message.slice(0, 120) : "error");
     }
+    if (saved.app) {
+      // Started from the Android app: this callback is running in Chrome, so a session set here
+      // would never reach the app's WebView. Park the session behind a one-time handoff code and
+      // send Chrome to the App Link return URL; the app swaps the code for the session in its WebView.
+      if (!data.session) return fail();
+      try {
+        const handoff = await createAppHandoff({ access_token: data.session.access_token, refresh_token: data.session.refresh_token }, saved.next);
+        const r = NextResponse.redirect(`${origin}/auth/app-return?code=${encodeURIComponent(handoff)}`, { status: 303 });
+        r.cookies.delete(LOGIN_COOKIE);
+        return r;
+      } catch (e) {
+        console.error("[auth] app handoff failed:", e instanceof Error ? e.message.slice(0, 120) : "error");
+        return fail();
+      }
+    }
     const r = NextResponse.redirect(`${origin}${saved.next}`, { status: 303 });
     r.cookies.delete(LOGIN_COOKIE);
     return r;
@@ -82,3 +98,4 @@ async function googleLogin(url: URL) {
     return fail();
   }
 }
+
