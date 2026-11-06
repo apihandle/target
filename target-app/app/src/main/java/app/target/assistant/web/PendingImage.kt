@@ -81,7 +81,10 @@ object PendingImage {
   function go(){
     var inp=document.querySelector('[data-testid=file-input]');
     if(!inp){ if(tries++<60) setTimeout(go,250); return; }
-    var r; try{ r=JSON.parse(TargetAndroid.takePendingImage()); }catch(e){ return; }
+    if(!window.TargetAndroid||typeof TargetAndroid.takePendingImage!=='function'){ if(tries++<60) setTimeout(go,250); return; }
+    TargetAndroid.takePendingImage().then(function(r){ attach(inp,r); });
+  }
+  function attach(inp,r){
     if(!r||!r.ok) return;
     var bin=atob(r.b64), arr=new Uint8Array(bin.length);
     for(var i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);

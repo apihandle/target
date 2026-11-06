@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
         pendingWebPermission = null
     }
 
-    @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -91,7 +91,8 @@ class MainActivity : ComponentActivity() {
             setAcceptCookie(true)
             setAcceptThirdPartyCookies(webView, true)
         }
-        webView.addJavascriptInterface(bridge, "TargetAndroid")
+        // window.TargetAndroid: top frame on BASE_URL only (WebMessageListener with an origin rule), see TargetBridge.
+        bridge.install()
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
                 if (request.isForMainFrame) handleNavigation(request.url) else false

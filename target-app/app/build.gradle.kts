@@ -84,6 +84,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.browser:browser:1.10.0")
+    implementation("androidx.webkit:webkit:1.15.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
@@ -95,6 +96,7 @@ dependencies {
     implementation("org.apache.commons:commons-compress:1.28.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303") // real org.json for JVM tests (android.jar only has stubs)
 
     androidTestImplementation("androidx.test:core:1.7.0")
     androidTestImplementation("androidx.test:runner:1.7.0")

@@ -54,23 +54,26 @@ Aur settings: assistant ka naam, personality (Normal / Dost / Professional), TTS
 
 ## Web app ke liye JS bridge: `window.TargetAndroid`
 
-Sirf apne origin (`BuildConfig.BASE_URL`, default `https://gettarget.vercel.app`) par chalta hai. Har method JSON string lautata hai (`{"ok":true,…}` / `{"ok":false,"error":"…"}`).
+**Security (v0.2):** bridge ab `addJavascriptInterface` nahi hai. `WebViewCompat.addWebMessageListener` ke saath sirf `BuildConfig.BASE_URL` ka origin (scheme + host + port) allowed hai, aur har message native side par bhi check hota hai: **sirf top frame**, sirf `BASE_URL` origin, aur top page bhi `BASE_URL` par ho. Iframe, doosri site, `http://` ya look-alike host ka message chup-chaap drop hota hai (koi jawab nahi). Purane WebView (WEB_MESSAGE_LISTENER nahi) par bridge hota hi nahi.
+
+Har method ek **Promise** lautata hai (JSON object `{ok:true,…}` / `{ok:false,error}`):
 
 ```js
-TargetAndroid.openApp("whatsapp")
-TargetAndroid.dial("9876543210")            // dialer khulta hai, auto-call nahi
-TargetAndroid.composeSms("9876543210", "hi") // composer, user send karta hai
-TargetAndroid.setAlarm(7, 30, "Gym")
-TargetAndroid.setTimer(300, "Chai")
-TargetAndroid.flashlight(true)
-TargetAndroid.openUrl("https://example.com")
-TargetAndroid.navigate("India Gate")
-TargetAndroid.share("text")
-TargetAndroid.battery()                     // {"ok":true,"level":82,"charging":false}
-TargetAndroid.speak("Namaste")              // TTS
-TargetAndroid.listen("onHeard")             // async: window.onHeard({ok,text}) + 'target-listen' event
-TargetAndroid.takePendingImage()            // camera photo / screenshot waiting to be attached (used by the app itself)
-TargetAndroid.version()
+await TargetAndroid.openApp("whatsapp")
+await TargetAndroid.dial("9876543210")            // dialer khulta hai, auto-call nahi
+await TargetAndroid.composeSms("9876543210", "hi") // composer, user send karta hai
+await TargetAndroid.setAlarm(7, 30, "Gym")
+await TargetAndroid.setTimer(300, "Chai")
+await TargetAndroid.flashlight(true)
+await TargetAndroid.openUrl("https://example.com")
+await TargetAndroid.navigate("India Gate")
+await TargetAndroid.share("text")
+await TargetAndroid.battery()                     // {ok:true, level:82, charging:false}
+await TargetAndroid.speak("Namaste")              // TTS
+await TargetAndroid.listen("onHeard")             // {started:true}; baad mein window.onHeard({ok,text}) + 'target-listen' event
+await TargetAndroid.takePendingImage()            // camera photo / screenshot (app khud use karta hai)
+await TargetAndroid.version()
+// window.TargetDevice = same API; 'target-android-ready' event jab shim taiyaar ho
 ```
 
 ## Overlay ke jawab kaise aate hain
