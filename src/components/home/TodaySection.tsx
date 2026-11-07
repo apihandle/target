@@ -78,8 +78,8 @@ export default function TodaySection({ reminder, event }: { reminder: TodayItem 
           </Tile>
         ) : s.notificationsBlocked ? (
           <div data-testid="today-notifications-blocked" className="rounded-xl2 border border-dashed border-line-strong p-4">
-            <p className="text-sm font-medium text-ink">Notifications aren't connected</p>
-            <p className="mt-1 text-sm text-muted">Allow notification access so TARGET can sum up what's new on your phone.</p>
+            <p className="text-sm font-medium text-ink">Notifications are not connected</p>
+            <p className="mt-1 text-sm text-muted">Allow notification access so TARGET can sum up what is new on your phone.</p>
             <div className="mt-3">
               <Button size="sm" onClick={s.grantNotifications}>Allow access</Button>
             </div>

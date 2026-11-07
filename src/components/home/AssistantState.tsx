@@ -109,12 +109,10 @@ function useAssistantStateImpl(): AssistantState {
     setOnline(typeof navigator === "undefined" ? true : navigator.onLine);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- persisted UI preference, read after mount
     try { if (window.localStorage.getItem(MODE_KEY) === "agent") setMode("agent"); } catch { /* private mode */ }
 
     const bridge = getTargetAndroid();
     if (!bridge) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- no bridge in a browser; settle immediately
       setReady(true);
       return () => { window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); };
     }
