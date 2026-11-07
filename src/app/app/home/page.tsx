@@ -2,22 +2,36 @@ import Link from "next/link";
 import AppShell, { getSessionOrRedirect } from "@/components/AppShell";
 import PanelTile, { AddPanelTile } from "@/components/home/PanelTile";
 import ForYou, { type ForYouItem } from "@/components/ForYou";
+import { AssistantStateProvider } from "@/components/home/AssistantState";
+import AssistantCard from "@/components/home/AssistantCard";
+import PhoneActionChips from "@/components/home/PhoneActionChips";
+import TodaySection, { type TodayItem } from "@/components/home/TodaySection";
+import SafetyCard from "@/components/home/SafetyCard";
 import { PANEL_COLS, type Panel } from "@/lib/panels";
 import { type Approval } from "@/lib/approvals";
 import { loadSettings, quickActionHref } from "@/lib/settings";
 import { greeting } from "@/lib/greeting";
+import { oneLine } from "@/lib/targetAndroid";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Home · TARGET" };
 
+function chatDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
+}
+
 export default async function HomePage() {
   const { supabase, user } = await getSessionOrRedirect("/app/home");
-  const [{ data: panels, error: pErr }, { data: approvals, error: aErr }, settings, { data: forYou }] = await Promise.all([
+  const [{ data: panels, error: pErr }, { data: approvals, error: aErr }, settings, { data: forYou }, { data: convRows }, { data: jobRows }, { data: dueRows }] = await Promise.all([
     supabase.from("panels").select(PANEL_COLS).eq("user_id", user.id).order("position").order("created_at").limit(12),
     supabase.from("approval_requests").select("id, action_type, summary, destination, created_at").eq("user_id", user.id).eq("status", "pending").order("created_at", { ascending: false }).limit(10),
     loadSettings(supabase, user.id),
     // Before migration 0014 the table doesn't exist; the strip simply stays hidden.
     supabase.from("suggestions").select("id, kind, title, detail, prompt, due_at").eq("user_id", user.id).eq("status", "open").order("created_at", { ascending: false }).limit(3),
+    supabase.from("conversations").select("id, title, updated_at").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(3),
+    supabase.from("scheduled_jobs").select("id, title, prompt, next_run_at").eq("user_id", user.id).eq("status", "active").limit(8),
+    supabase.from("suggestions").select("id, kind, title, due_at").eq("user_id", user.id).eq("status", "open").not("due_at", "is", null).limit(10),
   ]);
   if (pErr || aErr) console.error("home: workspace data failed to load (migrations applied?)", pErr?.message ?? "", aErr?.message ?? "");
 
@@ -27,10 +41,35 @@ export default async function HomePage() {
   const tiles = (panels ?? []) as Panel[];
   const quick = settings.quick_actions.filter((a) => !settings.hidden_quick_actions.includes(a.id)).slice(0, 6);
 
+  // Today: the next due suggestion is the next reminder; kind "event" is the next calendar event.
+  const nowIso = new Date().toISOString();
+  const due = ((dueRows ?? []) as { kind: string; title: string; due_at: string }[])
+    .filter((r) => typeof r.due_at === "string" && r.due_at >= nowIso)
+    .sort((a, b) => a.due_at.localeCompare(b.due_at));
+  const eventRow = due.find((r) => r.kind === "event");
+  const reminderRow = due.find((r) => r.kind !== "event");
+  const todayEvent: TodayItem | null = eventRow ? { title: eventRow.title, at: eventRow.due_at } : null;
+  const todayReminder: TodayItem | null = reminderRow ? { title: reminderRow.title, at: reminderRow.due_at } : null;
+
+  const chats = ((convRows ?? []) as { id: string; title: string; updated_at: string }[])
+    .sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? "")).slice(0, 3);
+  let lastReply: string | null = null;
+  if (chats.length) {
+    const { data: msgs } = await supabase.from("messages").select("content").eq("user_id", user.id).eq("conversation_id", chats[0].id).eq("role", "assistant").order("created_at", { ascending: false }).limit(1);
+    const content = (msgs?.[0] as { content?: string } | undefined)?.content;
+    if (content) lastReply = oneLine(content) || null;
+  }
+
+  const routines = ((jobRows ?? []) as { id: string; title: string; prompt: string; next_run_at: string | null }[])
+    .sort((a, b) => (a.next_run_at ?? "9999").localeCompare(b.next_run_at ?? "9999")).slice(0, 4);
+
   return (
     <AppShell user={user} section="home">
+      <AssistantStateProvider>
       <div className="mx-auto w-full max-w-5xl px-4 pb-16 pt-16 sm:px-6 md:pt-12">
         <h1 data-testid="home-greeting" className="text-[26px] font-semibold tracking-tight text-ink sm:text-3xl">{greeting()}{name ? `, ${name}` : ""}</h1>
+
+        <AssistantCard lastReply={lastReply} />
 
         <form action="/app" method="get" role="search" aria-label="Ask TARGET" data-testid="home-ask" className="mt-5">
           <input type="hidden" name="send" value="1" />
@@ -52,6 +91,7 @@ export default async function HomePage() {
                   <Link href={quickActionHref(a)} data-testid="quick-action" className="block whitespace-nowrap rounded-full border border-line bg-surface/70 px-3 py-1.5 text-xs text-ink-soft hover:border-line-strong hover:text-ink">{a.label}</Link>
                 </li>
               ))}
+              <PhoneActionChips />
             </ul>
           </nav>
         )}
@@ -85,6 +125,24 @@ export default async function HomePage() {
           </section>
         )}
 
+        <TodaySection reminder={todayReminder} event={todayEvent} />
+
+        {routines.length > 0 && (
+          <section aria-labelledby="routines-title" className="mt-6">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 id="routines-title" className="text-xs font-medium uppercase tracking-wider text-muted-soft">Routines</h2>
+              <Link href="/app/scheduled" className="text-xs text-muted hover:text-ink">Manage</Link>
+            </div>
+            <ul data-testid="home-routines" className="flex flex-wrap gap-2">
+              {routines.map((r) => (
+                <li key={r.id}>
+                  <Link href={`/app?q=${encodeURIComponent(r.prompt)}&send=1`} data-testid="home-routine" className="block whitespace-nowrap rounded-full border border-line bg-surface/70 px-3 py-1.5 text-xs text-ink-soft hover:border-line-strong hover:text-ink">{r.title}</Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         <section aria-labelledby="panels-title" className="mt-8">
           <div className="mb-2 flex items-center justify-between">
             <h2 id="panels-title" className="text-xs font-medium uppercase tracking-wider text-muted-soft">Panels</h2>
@@ -95,7 +153,29 @@ export default async function HomePage() {
             <AddPanelTile labelled={tiles.length === 0} />
           </div>
         </section>
+
+        {chats.length > 0 && (
+          <section aria-labelledby="chats-title" className="mt-8">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 id="chats-title" className="text-xs font-medium uppercase tracking-wider text-muted-soft">Recent chats</h2>
+              <Link href="/app" className="text-xs text-muted hover:text-ink">All chats</Link>
+            </div>
+            <ul data-testid="home-recent-chats" className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface/80">
+              {chats.map((c) => (
+                <li key={c.id}>
+                  <Link href={`/app?c=${c.id}`} data-testid="home-recent-chat" className="flex items-baseline gap-2 px-4 py-2.5 text-sm hover:bg-surface-2">
+                    <span className="min-w-0 flex-1 truncate text-ink-soft">{c.title}</span>
+                    <span className="shrink-0 text-xs text-muted">{chatDate(c.updated_at)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <SafetyCard />
       </div>
+      </AssistantStateProvider>
     </AppShell>
   );
 }
