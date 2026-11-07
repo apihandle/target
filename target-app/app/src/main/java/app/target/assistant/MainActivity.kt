@@ -22,12 +22,20 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -35,8 +43,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import app.target.assistant.brain.CommandRunner
 import app.target.assistant.ui.TargetTheme
+import app.target.assistant.ui.WelcomeSplash
+import app.target.assistant.ui.WelcomeTiming
 import app.target.assistant.web.PendingImage
 import app.target.assistant.web.TargetBridge
+import kotlinx.coroutines.delay
 
 /**
  * The app shell: the signed-in TARGET web app in a WebView, plus the native `TargetAndroid` bridge.
@@ -61,6 +72,8 @@ class MainActivity : ComponentActivity() {
     /** Last page that finished loading (tests). */
     @Volatile internal var lastFinishedUrl: String? = null
         private set
+    /** True once the first page of this activity instance has finished loading (welcome timing). */
+    private val firstPageReady = mutableStateOf(false)
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private var pendingWebPermission: PermissionRequest? = null
 
@@ -115,6 +128,7 @@ class MainActivity : ComponentActivity() {
                 bridge.currentUrl = url
                 bridge.injectShimIfNeeded(view, url)
                 lastFinishedUrl = url
+                if (!firstPageReady.value) firstPageReady.value = true
                 CookieManager.getInstance().flush()
                 // A camera photo / screenshot waiting to be attached ("camera se dekho", "screen dekho screenshot ke saath").
                 if (PendingImage.has() && TargetBridge.isOwnOrigin(url) && url?.contains(BuildConfig.APP_PATH) == true) {
@@ -165,6 +179,10 @@ class MainActivity : ComponentActivity() {
         // Self-update: check now + every ~6 h (WorkManager, network required), unless turned off in Settings.
         if (savedInstanceState == null) app.target.assistant.update.UpdateScheduler.onAppLaunch(this)
 
+        // The welcome artwork shows on a cold start only — never on a recreate (rotation,
+        // process restore), where the user was already inside the app.
+        val coldStart = savedInstanceState == null
+
         setContent {
             TargetTheme {
                 Box(Modifier.fillMaxSize()) {
@@ -173,6 +191,19 @@ class MainActivity : ComponentActivity() {
                         onClick = { startActivity(Intent(this@MainActivity, AssistActivity::class.java)) },
                         modifier = Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = 12.dp, bottom = 88.dp),
                     ) { Text("🎤") }
+                    if (coldStart) {
+                        var welcomeVisible by remember { mutableStateOf(true) }
+                        LaunchedEffect(Unit) {
+                            val shownAt = System.currentTimeMillis()
+                            while (!WelcomeTiming.shouldDismiss(System.currentTimeMillis() - shownAt, firstPageReady.value)) {
+                                delay(100)
+                            }
+                            welcomeVisible = false
+                        }
+                        AnimatedVisibility(visible = welcomeVisible, exit = fadeOut(tween(450))) {
+                            WelcomeSplash()
+                        }
+                    }
                 }
             }
         }
