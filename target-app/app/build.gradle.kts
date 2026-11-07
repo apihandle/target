@@ -156,3 +156,22 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-intents:3.7.0")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
 }
+
+// The welcome (splash) artwork is the website's own water poster — one source of truth in
+// public/, copied into the APK's assets at build time so a cold start can show it instantly,
+// before the WebView has loaded anything (and offline). See ui/WelcomeSplash.kt.
+val welcomeAssetsDir = layout.buildDirectory.dir("generated/welcomeAssets")
+val copyWelcomePoster by tasks.registering(Copy::class) {
+    from(layout.projectDirectory.file("../../public/water-poster.webp"))
+    into(welcomeAssetsDir)
+}
+
+android {
+    sourceSets {
+        getByName("main") {
+            assets.srcDir(welcomeAssetsDir.get().asFile)
+        }
+    }
+}
+
+tasks.named("preBuild") { dependsOn(copyWelcomePoster) }
