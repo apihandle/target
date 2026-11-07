@@ -112,15 +112,9 @@ class Listener(
     private var recognizer: SpeechRecognizer? = null
     private var triedFallback = false
 
-    private var audio: android.os.ParcelFileDescriptor? = null
-
-    /**
-     * Starts recognition. With [audioSource] (Android 13+), the recognizer reads that PCM stream
-     * (16 kHz mono 16-bit: the words said right after "Hey Target") instead of the microphone.
-     */
-    fun start(audioSource: android.os.ParcelFileDescriptor? = null) {
-        triedFallback = audioSource != null // no language retry on a one-shot stream
-        audio = audioSource
+    /** Starts recognition from the microphone, Hindi first with an English retry. */
+    fun start() {
+        triedFallback = false
         startWith("hi-IN")
     }
 
@@ -168,14 +162,6 @@ class Listener(
             .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
             .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
         if (lang == "hi-IN") intent.putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("en-IN"))
-        val src = audio
-        if (src != null && android.os.Build.VERSION.SDK_INT >= 33) {
-            intent.putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE, src)
-                .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT, 1)
-                .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, android.media.AudioFormat.ENCODING_PCM_16BIT)
-                .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, 16000)
-        }
-        audio = null
         r.startListening(intent)
     }
 

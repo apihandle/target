@@ -63,8 +63,6 @@ import app.target.assistant.tools.SystemControl
 import app.target.assistant.tools.granted
 import app.target.assistant.ui.TargetTheme
 import app.target.assistant.voice.Tts
-import app.target.assistant.wake.WakeModel
-import app.target.assistant.wake.WakeWordService
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -87,7 +85,6 @@ class SettingsActivity : ComponentActivity() {
         const val SECTION_DND = "dnd"
         const val SECTION_BRIGHTNESS = "brightness"
         const val SECTION_ALARMS = "alarms"
-        const val SECTION_WAKE = "wake"
         const val SECTION_MIC = "mic"
 
         private val AUTO_REPLY_APPS = listOf(
@@ -103,8 +100,6 @@ class SettingsActivity : ComponentActivity() {
     private lateinit var prefs: Prefs
     private var tick by mutableStateOf(0)
     private var explain by mutableStateOf<String?>(null)
-    private var downloadPct by mutableStateOf(-1)
-    private var downloadError by mutableStateOf<String?>(null)
     private var autoUpdate by mutableStateOf(true)
     private var checking by mutableStateOf(false)
     private var updateStatus by mutableStateOf<String?>(null)
@@ -261,27 +256,7 @@ class SettingsActivity : ComponentActivity() {
             SECTION_ALARMS -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 open(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName")))
             }
-            SECTION_WAKE -> startWakeWord()
         }
-    }
-
-    private fun startWakeWord() {
-        if (!has(Manifest.permission.RECORD_AUDIO)) { permissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO)); return }
-        if (Build.VERSION.SDK_INT >= 33 && !has(Manifest.permission.POST_NOTIFICATIONS)) permissions.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
-        if (WakeModel.isReady(this)) {
-            prefs.wakeWord = true; WakeWordService.start(this); refresh(); return
-        }
-        downloadError = null
-        downloadPct = 0
-        val app = applicationContext
-        Thread {
-            val err = WakeModel.download(app) { p -> runOnUiThread { downloadPct = p } }
-            runOnUiThread {
-                downloadPct = -1
-                if (err == null) { prefs.wakeWord = true; WakeWordService.start(this) } else downloadError = err
-                refresh()
-            }
-        }.start()
     }
 
     // ---- UI ---------------------------------------------------------------------------------------
@@ -338,29 +313,6 @@ class SettingsActivity : ComponentActivity() {
             Toggle(R.string.conversation_mode, R.string.conversation_mode_help, prefs.conversationMode) { prefs.conversationMode = it }
             Toggle(R.string.barge_in, R.string.barge_in_help, prefs.bargeIn) { prefs.bargeIn = it }
             Toggle(R.string.native_chat, R.string.native_chat_help, prefs.nativeChat) { prefs.nativeChat = it }
-
-            // Wake word
-            Section(stringResource(R.string.sec_wake))
-            Text(stringResource(R.string.wake_help), style = MaterialTheme.typography.bodySmall)
-            when {
-                downloadPct >= 0 -> Text(stringResource(R.string.wake_downloading, downloadPct))
-                prefs.wakeWord && WakeWordService.running -> Text(stringResource(R.string.wake_on))
-                else -> {}
-            }
-            downloadError?.let { Text(stringResource(R.string.wake_download_failed, it), color = MaterialTheme.colorScheme.error) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!prefs.wakeWord) Button(onClick = { explain = SECTION_WAKE }, enabled = downloadPct < 0) { Text(stringResource(R.string.wake_enable)) }
-                else OutlinedButton(onClick = { prefs.wakeWord = false; WakeWordService.stop(this@SettingsActivity); refresh() }) { Text(stringResource(R.string.wake_disable)) }
-                if (WakeModel.isReady(this@SettingsActivity) && !prefs.wakeWord) TextButton(onClick = { WakeModel.delete(this@SettingsActivity); refresh() }) { Text(stringResource(R.string.wake_delete_model)) }
-            }
-            Text(stringResource(R.string.wake_boost, prefs.wakeBoost))
-            Slider(value = prefs.wakeBoost, onValueChange = { prefs.wakeBoost = it; refresh() }, valueRange = 0.5f..3f, onValueChangeFinished = { WakeWordService.reload(this@SettingsActivity) })
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.wake_false_count, prefs.falseWakes), modifier = Modifier.weight(1f))
-                TextButton(onClick = { prefs.falseWakes = 0; refresh() }) { Text(stringResource(R.string.wake_false_reset)) }
-            }
-            Text(stringResource(R.string.wake_threshold, prefs.wakeThreshold))
-            Slider(value = prefs.wakeThreshold, onValueChange = { prefs.wakeThreshold = it; refresh() }, valueRange = 0.05f..0.6f, onValueChangeFinished = { WakeWordService.reload(this@SettingsActivity) })
 
             // Special access
             Section(stringResource(R.string.sec_access))
@@ -484,7 +436,6 @@ class SettingsActivity : ComponentActivity() {
         SECTION_DND -> R.string.exp_dnd_title to R.string.exp_dnd
         SECTION_BRIGHTNESS -> R.string.exp_brightness_title to R.string.exp_brightness
         SECTION_ALARMS -> R.string.exp_alarms_title to R.string.exp_alarms
-        SECTION_WAKE -> R.string.exp_wake_title to R.string.exp_wake
         else -> R.string.settings_title to R.string.settings_help
     }
 

@@ -104,12 +104,9 @@ class AssistActivity : ComponentActivity(), AssistantController.Ui {
                 )
             }
         }
-        controller.fromWake = intent?.getBooleanExtra(app.target.assistant.voice.Assistant.ARG_FROM_WAKE, false) == true
         val prefill = intent?.getStringExtra(Intent.EXTRA_TEXT)
-        val followUp = if (intent?.getBooleanExtra(app.target.assistant.voice.Assistant.ARG_FOLLOW_UP, false) == true) app.target.assistant.wake.FollowUp.take() else null
         when {
             !prefill.isNullOrBlank() -> { transcript = prefill; controller.userSaid(prefill) }
-            followUp != null && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> controller.startListening(followUp)
             else -> ensureMicThenListen()
         }
     }

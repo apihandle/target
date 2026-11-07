@@ -29,7 +29,7 @@ import app.target.assistant.brain.CommandRunner
 import app.target.assistant.settings.Prefs
 
 /**
- * The overlay shown on long-press power/home (or "Hey Target") when TARGET is the default assistant:
+ * The overlay shown on long-press power/home when TARGET is the default assistant:
  * mic, live transcript, spoken reply, Haan/Nahi for risky actions, a pick list for contacts, and a
  * text box. Plain Views — a session window has no Compose lifecycle owner.
  */
@@ -123,11 +123,9 @@ class TargetVoiceSession(context: Context) : VoiceInteractionSession(context), A
         c.runner.assistScreenText = assistText
         controller = c
         val text = args?.getString(Assistant.ARG_TEXT)
-        c.fromWake = args?.getBoolean(Assistant.ARG_FROM_WAKE) == true
-        val followUp = if (args?.getBoolean(Assistant.ARG_FOLLOW_UP) == true) app.target.assistant.wake.FollowUp.take() else null
         when {
             !text.isNullOrBlank() -> { transcript.text = text; c.userSaid(text) }
-            context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> c.startListening(followUp)
+            context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> c.startListening()
             else -> {
                 // The session cannot show a permission dialog; the activity can.
                 reply.text = context.getString(R.string.need_mic)

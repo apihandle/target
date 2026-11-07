@@ -6,7 +6,7 @@ import android.service.voice.VoiceInteractionService
 class TargetVoiceInteractionService : VoiceInteractionService() {
 
     companion object {
-        /** Set while the system has us bound as the active assistant (used by "Hey Target"). */
+        /** Set while the system has us bound as the active assistant (used by [Assistant.launch]). */
         @Volatile var instance: TargetVoiceInteractionService? = null
             private set
     }

@@ -13,17 +13,11 @@ import app.target.assistant.brain.CommandRunner
 /** Notification channels and the few notifications the app posts. */
 object Notify {
     const val CH_GENERAL = "target_general"
-    const val CH_WAKE = "target_wake"
-    const val ID_WAKE = 7001
-    const val ID_BOOT = 7002
     const val ID_QUEUE = 7003
 
     fun channels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(NotificationChannel(CH_GENERAL, context.getString(R.string.channel_general), NotificationManager.IMPORTANCE_DEFAULT))
-        nm.createNotificationChannel(
-            NotificationChannel(CH_WAKE, context.getString(R.string.channel_wake), NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) },
-        )
     }
 
     private fun openApp(context: Context, url: String?, code: Int): PendingIntent {
