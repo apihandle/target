@@ -65,7 +65,6 @@ class InstallResultReceiver : BroadcastReceiver() {
                     intent.getParcelableExtra(Intent.EXTRA_INTENT)
                 }
                 UpdatePrefs.setStatus(context, context.getString(R.string.update_confirm))
-                UpdatePrefs.setNeedsConfirm(context, true)
                 if (confirm != null) {
                     confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     // May be blocked while TARGET is in the background (Android 10+): then the next
@@ -74,12 +73,10 @@ class InstallResultReceiver : BroadcastReceiver() {
                 }
             }
             PackageInstaller.STATUS_SUCCESS -> {
-                UpdatePrefs.setNeedsConfirm(context, false)
                 UpdatePrefs.setStatus(context, context.getString(R.string.update_installed))
             }
             else -> {
                 val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "status $status"
-                UpdatePrefs.setNeedsConfirm(context, false)
                 UpdatePrefs.setStatus(context, context.getString(R.string.update_failed, msg))
             }
         }

@@ -18,7 +18,6 @@ object UpdatePrefs {
     private const val KEY_AUTO = "auto_update"
     private const val KEY_STATUS = "status"
     private const val KEY_LAST_CHECK = "last_check"
-    private const val KEY_NEEDS_CONFIRM = "needs_confirm"
 
     private fun prefs(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -28,9 +27,6 @@ object UpdatePrefs {
     fun setStatus(c: Context, s: String) = prefs(c).edit().putString(KEY_STATUS, s).apply()
     fun lastCheck(c: Context): Long = prefs(c).getLong(KEY_LAST_CHECK, 0L)
     fun markChecked(c: Context) = prefs(c).edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply()
-    fun needsConfirm(c: Context): Boolean = prefs(c).getBoolean(KEY_NEEDS_CONFIRM, false)
-    fun setNeedsConfirm(c: Context, v: Boolean) = prefs(c).edit().putBoolean(KEY_NEEDS_CONFIRM, v).apply()
-
     fun lastCheckText(c: Context): String? {
         val t = lastCheck(c)
         if (t == 0L) return null
@@ -96,7 +92,6 @@ object UpdateManager {
 
         if (!UpdateLogic.isNewer(manifest.versionCode, installed.versionCode)) {
             cleanCache(app, keep = null)
-            UpdatePrefs.setNeedsConfirm(app, false)
             return UpdateResult.UpToDate
         }
         if (!UpdateLogic.supportsDevice(manifest, Build.VERSION.SDK_INT)) {

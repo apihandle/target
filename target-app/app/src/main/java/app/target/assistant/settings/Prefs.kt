@@ -5,7 +5,6 @@ import android.content.SharedPreferences
 import app.target.assistant.brain.Persona
 import app.target.assistant.brain.RiskKind
 import app.target.assistant.brain.Routine
-import app.target.assistant.brain.Routines
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -65,21 +64,7 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("app_lock", false)
         set(v) = sp.edit().putBoolean("app_lock", v).apply()
 
-    // ---- wake word / calls ----
-    var wakeWord: Boolean
-        get() = sp.getBoolean("wake_word", false)
-        set(v) = sp.edit().putBoolean("wake_word", v).apply()
-    /** Keyword spotter tuning: higher boost / lower threshold = wakes more easily (more false alarms). */
-    var wakeBoost: Float
-        get() = sp.getFloat("wake_boost", app.target.assistant.wake.WakeKeywords.DEFAULT_BOOST)
-        set(v) = sp.edit().putFloat("wake_boost", app.target.assistant.wake.WakeKeywords.clampBoost(v)).apply()
-    var wakeThreshold: Float
-        get() = sp.getFloat("wake_threshold", app.target.assistant.wake.WakeKeywords.DEFAULT_THRESHOLD)
-        set(v) = sp.edit().putFloat("wake_threshold", app.target.assistant.wake.WakeKeywords.clampThreshold(v)).apply()
-    /** Times "Hey Target" opened the assistant and nothing was said (shown in settings to tune sensitivity). */
-    var falseWakes: Int
-        get() = sp.getInt("false_wakes", 0)
-        set(v) = sp.edit().putInt("false_wakes", v).apply()
+    // ---- calls ----
     var callAnnounce: Boolean
         get() = sp.getBoolean("call_announce", false)
         set(v) = sp.edit().putBoolean("call_announce", v).apply()

@@ -13,7 +13,7 @@ import app.target.assistant.voice.Tts
 
 /**
  * Incoming call → speaks who is calling (opt-in, READ_PHONE_STATE + READ_CALL_LOG for the number,
- * READ_CONTACTS for the name). The user can then say "uthao" / "kaato" (overlay or "Hey Target").
+ * READ_CONTACTS for the name). The user can then open the assistant and say "uthao" / "kaato".
  */
 class CallReceiver : BroadcastReceiver() {
 

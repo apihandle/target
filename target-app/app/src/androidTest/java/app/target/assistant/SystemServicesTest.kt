@@ -2,7 +2,6 @@ package app.target.assistant
 
 import android.Manifest
 import android.app.job.JobScheduler
-import android.content.Intent
 import android.os.Build
 import android.widget.Button
 import android.widget.EditText
@@ -19,8 +18,6 @@ import app.target.assistant.net.TargetApi
 import app.target.assistant.store.ChatHistory
 import app.target.assistant.notify.TargetNotificationListener
 import app.target.assistant.settings.Prefs
-import app.target.assistant.wake.WakeModel
-import app.target.assistant.wake.WakeWordService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -30,7 +27,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Accessibility, notification listener, QS tile, offline queue and the wake-word service on a real Android system. */
+/** Accessibility, notification listener, QS tile and the offline queue on a real Android system. */
 @RunWith(AndroidJUnit4::class)
 class SystemServicesTest {
 
@@ -170,51 +167,6 @@ class SystemServicesTest {
             Dev.shell("cmd connectivity airplane-mode disable")
             Dev.shell("svc wifi enable")
             Dev.shell("svc data enable")
-        }
-    }
-
-    // ---- wake word --------------------------------------------------------------------------------
-
-    @Test fun wakeWordWithoutModelStopsCleanly() {
-        WakeModel.delete(Dev.ctx)
-        Dev.grant(Manifest.permission.RECORD_AUDIO)
-        assertFalse(WakeModel.isReady(Dev.ctx))
-        WakeWordService.start(Dev.ctx) // refuses quietly without a model
-        assertFalse(WakeWordService.running)
-        WakeWordService.statusLog.clear()
-        // Start it anyway (from a foreground activity): it must go foreground, see no model and stop.
-        ActivityScenario.launch(ScreenTestActivity::class.java).use {
-            Dev.ctx.startForegroundService(Intent(Dev.ctx, WakeWordService::class.java))
-            assertTrue("log: ${WakeWordService.statusLog}", Dev.waitUntil(10_000) { WakeWordService.statusLog.contains("no_model") })
-            assertTrue(WakeWordService.statusLog.contains("foreground"))
-            assertTrue("stopped", Dev.waitUntil(5_000) { !WakeWordService.running })
-        }
-    }
-
-    @Test fun wakeWordModelDownloadsAndSpotterRuns() {
-        assumeTrue("needs github.com from the emulator", Dev.internetReachable())
-        WakeModel.delete(Dev.ctx)
-        val err = WakeModel.download(Dev.ctx) {}
-        assertEquals(null, err)
-        assertTrue(WakeModel.isReady(Dev.ctx))
-        // The native engine loads the real model and processes 2 s of silence without a false wake.
-        val kws = WakeModel.createSpotter(Dev.ctx, 1.5f, 0.25f)
-        val stream = kws.createStream("")
-        repeat(20) {
-            stream.acceptWaveform(FloatArray(1600), 16000)
-            while (kws.isReady(stream)) kws.decode(stream)
-        }
-        assertEquals("", kws.getResult(stream).keyword)
-        stream.release()
-        kws.release()
-        // The service loads it too.
-        Dev.grant(Manifest.permission.RECORD_AUDIO)
-        WakeWordService.statusLog.clear()
-        ActivityScenario.launch(ScreenTestActivity::class.java).use {
-            Dev.ctx.startForegroundService(Intent(Dev.ctx, WakeWordService::class.java))
-            assertTrue("log: ${WakeWordService.statusLog}", Dev.waitUntil(20_000) { WakeWordService.statusLog.contains("spotter_ready") })
-            WakeWordService.stop(Dev.ctx)
-            assertTrue(Dev.waitUntil(5_000) { !WakeWordService.running })
         }
     }
 }

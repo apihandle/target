@@ -87,8 +87,6 @@
     <string name="reply_answered">Call answered, turning on the speaker</string>
     <string name="reply_speaker_on">Speakerphone on</string>
     <string name="reply_speaker_off">Speakerphone off</string>
-    <string name="wake_false_count">False wakes (nothing said): %1$d</string>
-    <string name="wake_false_reset">Reset</string>
     <string name="reply_rejected">Call rejected</string>
     <string name="reply_call_control_failed">Could not control the call</string>
     <string name="reply_bye">Okay, bye!</string>
@@ -123,12 +121,6 @@
     <string name="call_announce">Call from %1$s</string>
     <string name="call_announce_unknown">Incoming call</string>
     <string name="channel_general">TARGET updates</string>
-    <string name="channel_wake">Hey Target listening</string>
-    <string name="wake_notif_title">Listening for \"Hey Target\"</string>
-    <string name="wake_notif_text">Runs on the phone (offline). Tap Stop to turn off.</string>
-    <string name="wake_notif_stop">Stop</string>
-    <string name="wake_boot_title">Turn on Hey Target?</string>
-    <string name="wake_boot_text">The phone restarted. Android 15+ needs one tap to start the mic service: tap here.</string>
     <string name="guard_title">Confirm it is you</string>
     <string name="guard_subtitle">Use your fingerprint or screen lock</string>
     <string name="accessibility_label">TARGET screen helper</string>
@@ -147,7 +139,6 @@
     <string name="sec_assistant">Assistant</string>
     <string name="sec_persona">Name, style and voice</string>
     <string name="sec_conversation">Conversation</string>
-    <string name="sec_wake">\"Hey Target\" (wake word)</string>
     <string name="sec_access">Special access (all opt-in)</string>
     <string name="sec_risky">Risky actions: ask first</string>
     <string name="sec_auto_reply">Busy auto-reply</string>
@@ -167,15 +158,6 @@
     <string name="barge_in_help">Stop talking when you start speaking</string>
     <string name="native_chat">Answer inside the overlay</string>
     <string name="native_chat_help">Ask TARGET and speak the answer here (uses your TARGET login)</string>
-    <string name="wake_help">A small on-phone (offline) model (~5 MB) listens for \"Hey Target\" / \"Hello Target\" / \"Wake up Target\" and sleeps on \"Bye Target\" / \"So jao\" / \"Go to sleep\". You can say \"Hey Target, play music on YouTube\" in one breath (Android 13+). It downloads once from the official k2-fsa/sherpa-onnx release and is checked with a checksum. It pauses in battery saver or while another app uses the mic.</string>
-    <string name="wake_downloading">Downloading model… %1$d%%</string>
-    <string name="wake_download_failed">Download failed: %1$s</string>
-    <string name="wake_on">✅ \"Hey Target\" is on</string>
-    <string name="wake_enable">Turn on Hey Target</string>
-    <string name="wake_disable">Turn off</string>
-    <string name="wake_delete_model">Delete model</string>
-    <string name="wake_boost">Sensitivity boost: %1$.2f</string>
-    <string name="wake_threshold">Trigger threshold: %1$.2f (lower = wakes more easily)</string>
     <string name="access_contacts">Contacts, calls and SMS</string>
     <string name="access_accessibility">Read screen and tap (Accessibility)</string>
     <string name="access_notifications">Read and reply to notifications</string>
@@ -225,8 +207,6 @@
     <string name="exp_brightness">To change brightness TARGET needs permission to modify system settings. Allow it on the next screen.</string>
     <string name="exp_alarms_title">Exact reminders</string>
     <string name="exp_alarms">Exact alarm permission makes reminders fire on the minute. Without it they may be a little late.</string>
-    <string name="exp_wake_title">\"Hey Target\" wake word</string>
-    <string name="exp_wake">A small model (~17 MB download, ~5 MB on the phone) comes from the official k2-fsa/sherpa-onnx release. TARGET then listens for \"Hey Target\" on the phone, offline, with a notification always shown. No audio is sent anywhere.</string>
     <string name="app_lock">App lock (fingerprint / screen lock)</string>
     <string name="app_lock_help">When on, TARGET asks for fingerprint, face or screen lock before showing your chats and settings. Coming back within 1 minute does not ask again. Your phone needs a screen lock.</string>
     <string name="vision_thinking">Sending the photo to TARGET, one moment…</string>

@@ -1,6 +1,6 @@
 # TARGET — Android assistant (v0.2)
 
-Native Android app (Kotlin + Jetpack Compose). TARGET web app ko phone par chalata hai, aur phone ke kaam khud karta hai: call/SMS/WhatsApp contacts ko, music, screen padhna aur tap, notifications, aate call, "Hey Target" wake word, reminders, routines… Plan: [PLAN.md](PLAN.md).
+Native Android app (Kotlin + Jetpack Compose). TARGET web app ko phone par chalata hai, aur phone ke kaam khud karta hai: call/SMS/WhatsApp contacts ko, music, screen padhna aur tap, notifications, aate call, reminders, routines… Plan: [PLAN.md](PLAN.md).
 
 > **Install:** `Android` CI koi APK upload nahi karta (sirf compile + tests). Installable APK sirf signed release workflow (`android-release.yml`) se GitHub Releases par aata hai:
 
@@ -47,17 +47,9 @@ App kholiye → long-press icon → **Assistant setup**. Har special access pehl
 | Do Not Disturb access | silent, DND | Settings → DND access |
 | Modify system settings | brightness | Settings → Modify system settings |
 | Exact alarms | reminders bilkul time par | Settings → Alarms & reminders |
-| Notifications (Android 13+) | reminders, offline jawab, wake-word notification | permission dialog |
+| Notifications (Android 13+) | reminders, offline jawab | permission dialog |
 
-Aur settings: assistant ka naam, personality (Normal / Dost / Professional), TTS awaaz-speed-pitch, conversation mode + barge-in, overlay mein jawab (native chat), wake word (download, sensitivity boost/threshold, false-wake counter), busy auto-reply (message, apps, log), routines.
-
-## "Hey Target" (wake word)
-
-- Engine: [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) keyword spotting, model `sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01` (int8 encoder + int8 decoder + int8 joiner + tokens ≈ 5 MB on the phone, 17 MB download). `-mobile` wala build sherpa-onnx mein crash karta hai (fixed shapes, `/downsample/Reshape_1`), isliye normal build.
-- Model app mein nahi hai: wake word on karne par official `kws-models` release se download hota hai; archive ka SHA-256 release ke `checksum.txt` aur app mein pinned value dono se match hona chahiye.
-- Wake: "Hey Target", "Hello Target", "Wake up Target". Sleep: "Bye Target", "So jao", "Go to sleep". Call aate waqt: "Answer call" / "Reject call".
-- Energy pre-gate (adaptive RMS, 4 frame) ke baad hi audio spotter tak jaata hai. Android 13+ par "Hey Target, YouTube pe gaana chalao" ek saans mein: wake ke baad ka ≤4 s audio seedha recognizer ko jaata hai.
-- Foreground service (microphone) + notification; reboot ke baad wapas (Android 15+ par ek tap wali notification, kyunki Android boot par mic service shuru nahi karne deta); battery saver ya koi aur app mic use kare to ruk jaata hai.
+Aur settings: assistant ka naam, personality (Normal / Dost / Professional), TTS awaaz-speed-pitch, conversation mode + barge-in, overlay mein jawab (native chat), busy auto-reply (message, apps, log), routines.
 
 ## Web app ke liye JS bridge: `window.TargetAndroid`
 
@@ -98,7 +90,7 @@ Phone ke kaam local hote hain. Baaki sawal: app WebView ki login cookie (Supabas
 
 ## Build (developers)
 
-JDK 17 + Android SDK (platform 36). Pehli build `app/libs/` mein sherpa-onnx AAR (v2.0.1, GitHub release) download karke SHA-256 check karti hai.
+JDK 17 + Android SDK (platform 36).
 
 ```bash
 cd target-app
@@ -110,6 +102,6 @@ cd target-app
 
 CI (`.github/workflows/android.yml`): `build` job compile + unit tests; `device-tests` job emulator (API 30 aur 34, x86_64 google_apis) par instrumented tests. Koi APK artifact upload nahi hota.
 
-Versions: AGP 9.5.1 (built-in Kotlin), Kotlin 2.4.21 Compose compiler, Gradle 9.8.2, Compose BOM 2026.06.01, minSdk 26, compile/targetSdk 36, sherpa-onnx 2.0.1, commons-compress 1.28.0. Package `app.target.assistant`.
+Versions: AGP 9.5.1 (built-in Kotlin), Kotlin 2.4.21 Compose compiler, Gradle 9.8.2, Compose BOM 2026.06.01, minSdk 26, compile/targetSdk 36. Package `app.target.assistant`.
 
 No ads, no payments, no usage limits, no secrets in the app.
