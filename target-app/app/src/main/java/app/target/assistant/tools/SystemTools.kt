@@ -235,6 +235,14 @@ object Reminders {
     }
 }
 
+/** Android wipes every alarm on reboot: re-arm the saved reminders when the phone boots (or the app is updated). */
+class BootReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED && intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        Reminders.rearmAll(context)
+    }
+}
+
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val id = intent.getIntExtra(Reminders.EXTRA_ID, 0)
