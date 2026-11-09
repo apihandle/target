@@ -110,6 +110,12 @@ describe("settings, ids, projects", () => {
     expect(safeNext("//evil.com")).toBe("/app");
     expect(safeNext("/\\evil.com")).toBe("/app");
     expect(safeNext("https://evil.com")).toBe("/app");
+    // Encoded forms of the same tricks (security audit 2026-11-09, #7): a tab or backslash that
+    // only appears after percent-decoding must not slip through either.
+    expect(safeNext("/%09/evil.com")).toBe("/app");
+    expect(safeNext("/%5cevil.com")).toBe("/app");
+    expect(safeNext("/%0a/evil.com")).toBe("/app");
+    expect(safeNext("/app?q=a%20b")).toBe("/app?q=a%20b");
     expect(isUuid("11111111-1111-4111-8111-111111111111")).toBe(true);
     expect(isUuid("1; drop table")).toBe(false);
   });

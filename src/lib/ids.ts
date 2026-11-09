@@ -7,7 +7,12 @@ export function isUuid(v: unknown): v is string {
 /** Only allow same-site relative redirects ("/app/x"), never "//evil.com" or "/\\evil.com". */
 export function safeNext(v: string | null | undefined, fallback = "/app"): string {
   if (!v || typeof v !== "string") return fallback;
-  if (!v.startsWith("/") || v.startsWith("//") || v.startsWith("/\\") || /[\r\n]/.test(v)) return fallback;
+  // Judge the percent-decoded form: "/%09/evil.com" and "/%5cevil.com" look harmless raw, but a
+  // browser that strips the tab (or treats the backslash as a slash) lands on "//evil.com".
+  // Any control character anywhere in the decoded value disqualifies it. (Security audit 2026-11-09, #7.)
+  let decoded: string;
+  try { decoded = decodeURIComponent(v); } catch { return fallback; }
+  if (!decoded.startsWith("/") || decoded.startsWith("//") || decoded.startsWith("/\\") || /[\u0000-\u001f\u007f]/.test(decoded)) return fallback;
   return v;
 }
 

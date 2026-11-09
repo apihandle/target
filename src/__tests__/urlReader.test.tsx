@@ -15,6 +15,19 @@ describe("link reader", () => {
     expect(isPrivateIp("::ffff:10.0.0.1")).toBe(true);
     expect(isPrivateIp("8.8.8.8")).toBe(false);
   });
+  it("blocks IPv4-mapped IPv6 forms of private and metadata addresses (security audit 2026-11-09, #5)", () => {
+    // Hex-pair mapped forms: ::ffff:7f00:1 is 127.0.0.1, ::ffff:a9fe:a9fe is 169.254.169.254.
+    expect(isPrivateIp("::ffff:7f00:1")).toBe(true);
+    expect(isPrivateIp("::ffff:a9fe:a9fe")).toBe(true);
+    expect(isAllowedUrl("http://[::ffff:7f00:1]/")).toBeNull();
+    expect(isAllowedUrl("http://[::ffff:127.0.0.1]/")).toBeNull();
+    expect(isAllowedUrl("http://[::ffff:a9fe:a9fe]/latest/meta-data/")).toBeNull();
+  });
+  it("refuses a mapped-IP link before any fetch happens", async () => {
+    const f = vi.fn();
+    expect((await readUrl("http://[::ffff:7f00:1]/admin", f as unknown as typeof fetch, ok)).ok).toBe(false);
+    expect(f).not.toHaveBeenCalled();
+  });
   it("turns HTML into readable text without scripts", () => {
     const p = htmlToText("<html><head><title>Hi &amp; bye</title><script>evil()</script></head><body><nav>menu</nav><p>Hello</p><p>World</p></body></html>");
     expect(p.title).toBe("Hi & bye");
