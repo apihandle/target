@@ -36,6 +36,7 @@ describe("vault matching", () => {
     { id: "2", kind: "login", label: "Google account", site: "accounts.google.com" },
     { id: "3", kind: "card", label: "HDFC", site: null },
     { id: "4", kind: "login", label: "timebucks", site: null },
+    { id: "5", kind: "login", label: "PayPal", site: "paypal.com" },
   ];
   it("finds a login by site, sub domain or label", () => {
     expect(matchLogin(items, "github.com")?.id).toBe("1");
@@ -43,6 +44,18 @@ describe("vault matching", () => {
     expect(matchLogin(items, "timebucks.com")?.id).toBe("4");
     expect(matchLogin(items, "amazon.in")).toBeNull();
     expect(googleLogin(items)?.id).toBe("2");
+  });
+  it("never matches a look-alike host by label (security audit 2026-11-09)", () => {
+    expect(matchLogin(items, "paypal.com")?.id).toBe("5");
+    expect(matchLogin(items, "www.paypal.com")?.id).toBe("5");
+    // The saved PayPal login must not be handed to a phishing host wearing its name as a subdomain.
+    expect(matchLogin(items, "paypal.evil-login.io")).toBeNull();
+    expect(matchLogin(items, "evil-login.io")).toBeNull();
+  });
+  it("a label-only login matches its own domain name, not a look-alike wearing it as a subdomain", () => {
+    const labelOnly = [{ id: "6", kind: "login", label: "PayPal", site: null }];
+    expect(matchLogin(labelOnly, "paypal.com")?.id).toBe("6");
+    expect(matchLogin(labelOnly, "paypal.evil-login.io")).toBeNull();
   });
 });
 

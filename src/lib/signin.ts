@@ -27,14 +27,36 @@ export function loginIntent(text: string): { site: string; google: boolean } | n
 const GOOGLE_HOSTS = new Set(["google.com", "accounts.google.com", "gmail.com", "mail.google.com"]);
 export const isGoogleSite = (s: string | null | undefined) => !!s && GOOGLE_HOSTS.has(normalizeSite(s) ?? "");
 
-/** A vault login saved for this site (or a parent/sub domain of it). Matches the site field, else the label. */
+const TWO_PART_SUFFIXES = new Set(["co.in", "co.uk", "com.au", "com.br", "co.jp", "co.za", "com.mx", "com.sg", "com.hk", "co.nz", "com.tw"]);
+
+/** The name part of a host's registrable domain: "paypal" for paypal.com, "evil-login" for paypal.evil-login.io. */
+function registrableName(host: string): string | null {
+  const labels = host.split(".").filter(Boolean);
+  if (labels.length < 2) return null;
+  const lastTwo = labels.slice(-2).join(".");
+  if (TWO_PART_SUFFIXES.has(lastTwo)) return labels.length >= 3 ? labels[labels.length - 3] : null;
+  return labels[labels.length - 2];
+}
+
+/**
+ * A vault login saved for this site (or a parent/sub domain of it). Matches the site field, else a
+ * label that is itself that site. A login whose saved site does not match is NEVER used for a
+ * look-alike host: the old substring fallback matched "PayPal" (saved for paypal.com) against
+ * paypal.evil-login.io, which would have filled the real password into a phishing page.
+ */
 export function matchLogin(items: VaultLoginRow[], site: string): VaultLoginRow | null {
   const want = normalizeSite(site);
   if (!want) return null;
   const logins = items.filter((i) => i.kind === "login");
   const same = (h: string | null) => !!h && (h === want || h.endsWith("." + want) || want.endsWith("." + h));
-  return logins.find((i) => same(normalizeSite(i.site ?? ""))) ?? logins.find((i) => same(normalizeSite(i.label))) ??
-    logins.find((i) => i.label.toLowerCase().includes(want.split(".")[0])) ?? null;
+  const bound = logins.find((i) => same(normalizeSite(i.site ?? ""))) ?? logins.find((i) => same(normalizeSite(i.label)));
+  if (bound) return bound;
+  // Label-only logins (no saved site to bind to): the label must be exactly the name of the
+  // requested site's registrable domain — "timebucks" matches timebucks.com, but a login labelled
+  // "PayPal" does not match paypal.evil-login.io, whose registrable domain is evil-login.io.
+  const name = registrableName(want);
+  if (!name) return null;
+  return logins.find((i) => !normalizeSite(i.site ?? "") && i.label.trim().toLowerCase() === name) ?? null;
 }
 
 export const googleLogin = (items: VaultLoginRow[]) =>
