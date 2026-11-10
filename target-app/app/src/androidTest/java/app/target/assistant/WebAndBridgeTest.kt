@@ -16,7 +16,7 @@ import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/** App launch, WebView on BASE_URL, and the window.TargetAndroid bridge (top frame + own origin only). */
+/** App launch, WebView on BASE_URL, and the window.TargetAndroid bridge (top frame + own origin + bridge paths only, fix #6). */
 @RunWith(AndroidJUnit4::class)
 class WebAndBridgeTest {
 
@@ -40,7 +40,7 @@ class WebAndBridgeTest {
         }
     }
 
-    /** Offline: a page served as BASE_URL (loadDataWithBaseURL) gets answers; its iframe does not. */
+    /** Offline: a page served under a bridge path (/app/*, fix #6) gets answers; its iframe does not. */
     @Test fun topFrameAnsweredIframeRefused() {
         assumeTrue(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER))
         val iframe = "<script>window.onload=function(){var n=0;(function g(){var c=window.TargetAndroid;" +
@@ -56,7 +56,7 @@ class WebAndBridgeTest {
             sc.onActivity { a ->
                 bridge = a.bridge
                 a.webView.stopLoading()
-                a.webView.loadDataWithBaseURL("$base/bridge-test", html, "text/html", "utf-8", "$base/bridge-test")
+                a.webView.loadDataWithBaseURL("$base/app/bridge-test", html, "text/html", "utf-8", "$base/app/bridge-test")
             }
             assertTrue("top frame got a reply", Dev.waitUntil(20_000) { !js(sc, "window.__top").isNullOrEmpty() })
             val top = JSONObject(js(sc, "window.__top")!!)
@@ -76,12 +76,21 @@ class WebAndBridgeTest {
             sc.onActivity { act = it }
             val ok = Dev.waitUntil(45_000) { TargetBridge.isOwnOrigin(act?.lastFinishedUrl) }
             assertTrue("last finished: ${act?.lastFinishedUrl}", ok)
-            // The real page can call the bridge (promise API).
-            js(sc, "window.__v='';TargetAndroid.version().then(function(r){window.__v=JSON.stringify(r)});'x'")
-            assertTrue(Dev.waitUntil(15_000) { !js(sc, "window.__v").isNullOrEmpty() })
-            val json = JSONObject(js(sc, "window.__v")!!)
-            assertTrue(json.getBoolean("ok"))
-            assertEquals("android", json.getString("platform"))
+            // Fix #6: the bridge is path-gated. On a bridge path the real page can call it
+            // (promise API); anywhere else — a signed-out emulator lands on /login — the
+            // bridge must be ABSENT. That absence is the point of the fix: no bridge next
+            // to ads or the credential form. Assert whichever side this launch landed on.
+            val url = act?.lastFinishedUrl ?: ""
+            if (app.target.assistant.web.BridgeSecurity.isBridgeAllowedPath(url)) {
+                js(sc, "window.__v='';TargetAndroid.version().then(function(r){window.__v=JSON.stringify(r)});'x'")
+                assertTrue(Dev.waitUntil(15_000) { !js(sc, "window.__v").isNullOrEmpty() })
+                val json = JSONObject(js(sc, "window.__v")!!)
+                assertTrue(json.getBoolean("ok"))
+                assertEquals("android", json.getString("platform"))
+            } else {
+                val absent = Dev.waitUntil(15_000) { js(sc, "typeof window.TargetAndroid") == "undefined" }
+                assertTrue("bridge must be absent on $url", absent)
+            }
         }
     }
 
