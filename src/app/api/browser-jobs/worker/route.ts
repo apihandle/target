@@ -130,8 +130,12 @@ export async function POST(req: Request) {
     const allowed = job.mode === "auto" ? ((job.allowed_secrets ?? []) as string[]).includes(sid) : steps.some((s) => s.action === "fill_secret" && s.secret_id === sid && s.field === field);
     if (!allowed) return json({ error: "That secret isn't part of this job" }, 403);
     if (!(await checkLimit({ key: `vault-read:${job.user_id}`, limit: 20, windowSec: 600 }))) return json({ error: "Too many requests" }, 429);
-    const { data: row } = await db.from("vault_secrets").select("secret_box").eq("id", sid).eq("user_id", job.user_id).maybeSingle();
+    const { data: row } = await db.from("vault_secrets").select("secret_box, kind").eq("id", sid).eq("user_id", job.user_id).maybeSingle();
     if (!row) return json({ error: "Secret not found" }, 404);
+    // Defense in depth: a payment card's fields are released only to a checkout job (its pay step is
+    // approval-gated by guardCheckout). A plain browser task — including auto-approved task-mode and
+    // scheduled allow_browser jobs — must never receive a card number, expiry or CVC.
+    if ((row as { kind?: string }).kind === "card" && !checkoutOf(job.inputs)) return json({ error: "Cards are only released to checkout jobs" }, 403);
     const fields = openVault(job.user_id as string, row.secret_box as string);
     await db.from("vault_secrets").update({ last_used_at: new Date().toISOString() }).eq("id", sid);
     if (!(field in fields)) return json({ error: "That field isn't saved" }, 404);

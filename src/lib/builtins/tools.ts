@@ -140,15 +140,19 @@ export const BUILTIN_TOOLS: BuiltinTool[] = [
   }),
   tool({
     name: "browser_task", label: "Planning a browser task",
-    description: "Do something on a website in a real browser. Smart mode (auto: true, the usual choice): give only the goal and start URL; the browser looks at the screen itself and decides each click and keystroke, signing in with vault items you list in secret_ids. Fixed mode: give exact steps (goto, click, fill, fill_secret, press, wait, extract). Read-only fixed steps run at once; anything that can click or type waits for the user's approval. For buying use checkout, for reservations / appointments use book. Needs TARGET's browser worker to be running.",
+    description: "Do something on a website in a real browser. Smart mode (auto: true, the usual choice): give only the goal and start URL; the browser looks at the screen itself and decides each click and keystroke, signing in with vault logins you list in secret_ids (saved cards are never used here — payments go through checkout). Fixed mode: give exact steps (goto, click, fill, fill_secret, press, wait, extract). Read-only fixed steps run at once; anything that can click or type waits for the user's approval. For buying use checkout, for reservations / appointments use book. Needs TARGET's browser worker to be running.",
     input: z.object({ goal: z.string().min(3).max(500), start_url: z.string().url().max(2000), auto: z.boolean().default(true), secret_ids: z.array(z.string().uuid()).max(4).default([]), steps: z.array(browserStep).max(30).default([]) }),
     async execute(a, ctx) {
       if (!/^https?:\/\//.test(a.start_url)) throw new Error("Only http(s) sites");
       const smart = a.auto && !a.steps.length;
       const ids = smart ? a.secret_ids : a.steps.flatMap((s) => (s.action === "fill_secret" ? [s.secret_id] : []));
       if (ids.length) {
-        const { data } = await ctx.db.from("vault_secrets").select("id").eq("user_id", ctx.userId).in("id", ids);
+        const { data } = await ctx.db.from("vault_secrets").select("id, kind").eq("user_id", ctx.userId).in("id", ids);
         if ((data ?? []).length !== new Set(ids).size) throw new Error("A vault item in the steps doesn't exist");
+        // A saved payment card never rides along in a general browser task: its number, expiry and CVC
+        // would be released to whatever site the task visits. Cards are released only to checkout
+        // jobs, whose pay step is separately approval-gated (the worker route enforces this too).
+        if ((data ?? []).some((r) => (r as { kind?: string }).kind === "card")) throw new Error("A saved card can't be used in a browser task — use checkout to pay");
       }
       // Smart tasks without a login just look things up, so they run at once. Sign-ins, typing steps and submitting
       // someone else's form wait for the user's Approve on a card in this chat (Task mode approves it in code).
