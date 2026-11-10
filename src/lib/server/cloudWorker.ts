@@ -494,7 +494,7 @@ export function canReadWithoutBrowser(job: Job): boolean {
  * Fallback when every cloud browser is out of credit or down: fetch the page directly and let the AI
  * answer the goal from its text. Works for reading tasks on normal pages, not for sites that need JavaScript or a login.
  */
-export async function readWithoutBrowser(job: Job, api: Api, f: typeof fetch = fetch, ask: typeof llmText = llmText): Promise<string> {
+export async function readWithoutBrowser(job: Job, api: Api, f?: typeof fetch, ask: typeof llmText = llmText): Promise<string> {
   await api({ action: "progress", job_id: job.id, line: "No cloud browser free right now, reading the page directly" }).catch(() => {});
   const page = await readUrl(job.start_url, f);
   if (!page.ok) throw Object.assign(new Error(`Couldn't open the page without a browser: ${page.reason}`), { final: true });

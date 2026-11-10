@@ -80,7 +80,7 @@ export const BUILTIN_TOOLS: BuiltinTool[] = [
     name: "read_webpage", label: "Reading the page",
     description: "Open a public web page and read its text (articles, docs, product pages).",
     input: z.object({ url: z.string().url().max(2000) }),
-    async execute(a, ctx) { return await readUrl(a.url, ctx.fetch ?? fetch); },
+    async execute(a, ctx) { return await readUrl(a.url, ctx.fetch); },
   }),
   tool({
     name: "create_file", label: "Making the file",
