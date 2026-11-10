@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { createHash } from "crypto";
-import { encodeLoginCookie, exchangeLoginCode, loginAuthorizeUrl, newLogin, parseLoginCookie } from "@/lib/auth/googleLogin";
+import { encodeLoginCookie, exchangeLoginCode, isValidCodeChallenge, loginAuthorizeUrl, newLogin, parseLoginCookie } from "@/lib/auth/googleLogin";
+import { pkcePair } from "@/lib/connectors/crypto";
 
 const ENV = { GOOGLE_OAUTH_CLIENT_ID: "cid.apps.googleusercontent.com", GOOGLE_OAUTH_CLIENT_SECRET: "sec" };
 
@@ -21,6 +22,20 @@ describe("Google sign-in on TARGET's own domain", () => {
     expect(parseLoginCookie(encodeLoginCookie(cookie))).toEqual(cookie);
     expect(parseLoginCookie("junk")).toBeNull();
     expect(parseLoginCookie(undefined)).toBeNull();
+  });
+
+  it("carries a valid PKCE challenge in the cookie for app sign-ins only (fix #4)", () => {
+    const { challenge } = pkcePair();
+    expect(isValidCodeChallenge(challenge)).toBe(true);
+    const app = newLogin("/app", true, challenge);
+    expect(app.cookie.challenge).toBe(challenge);
+    expect(parseLoginCookie(encodeLoginCookie(app.cookie))).toEqual(app.cookie);
+    // Not an app sign-in: the challenge is not stored.
+    expect(newLogin("/app", false, challenge).cookie.challenge).toBeUndefined();
+    // Malformed challenges are dropped, and a cookie carrying one is rejected.
+    expect(newLogin("/app", true, "too-short").cookie.challenge).toBeUndefined();
+    expect(isValidCodeChallenge("has spaces and is definitely not base64url!!")).toBe(false);
+    expect(parseLoginCookie(encodeLoginCookie({ state: "s", nonce: "n", next: "/app", app: true, challenge: "bad" }))).toBeNull();
   });
 
   it("code exchange returns the id token, and throws without one", async () => {

@@ -65,6 +65,16 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("app_lock", false)
         set(v) = sp.edit().putBoolean("app_lock", v).apply()
 
+    // ---- google sign-in handoff (fix #4) ----
+    /**
+     * PKCE verifier for an in-flight app Google sign-in: generated when the Custom Tab opens,
+     * presented to /auth/app-handoff when the App Link returns, then cleared. Only this phone
+     * knows it — that's what binds the parked session to this app instance. Null when cleared.
+     */
+    var handoffVerifier: String?
+        get() = sp.getString("handoff_verifier", null)?.takeIf { it.isNotBlank() }
+        set(v) = sp.edit().apply { if (v == null) remove("handoff_verifier") else putString("handoff_verifier", v) }.apply()
+
     // ---- wake word / calls ----
     var wakeWord: Boolean
         get() = sp.getBoolean("wake_word", false)

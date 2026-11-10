@@ -11,12 +11,17 @@ import { LOGIN_SCOPES } from "@/lib/connectors/googleLoginScopes";
 export const LOGIN_COOKIE = "tg_glogin";
 export const LOGIN_PREFIX = "login.";
 
-export type LoginCookie = { state: string; nonce: string; next: string; app?: boolean };
+export type LoginCookie = { state: string; nonce: string; next: string; app?: boolean; challenge?: string };
 
-export function newLogin(next: string, app = false): { cookie: LoginCookie; hashedNonce: string } {
+/** A PKCE code_challenge (RFC 7636, S256): base64url(SHA-256(verifier)) — always exactly 43 chars, no padding. */
+export const isValidCodeChallenge = (v: unknown): v is string => typeof v === "string" && /^[A-Za-z0-9_-]{43}$/.test(v);
+
+export function newLogin(next: string, app = false, challenge?: string): { cookie: LoginCookie; hashedNonce: string } {
   const state = randomBytes(24).toString("base64url");
   const nonce = randomBytes(24).toString("base64url");
-  return { cookie: { state, nonce, next, ...(app ? { app: true } : {}) }, hashedNonce: createHash("sha256").update(nonce).digest("hex") };
+  // The challenge only matters for app sign-ins (it binds the handoff code the callback parks);
+  // callers must validate it with isValidCodeChallenge first — an invalid one is dropped here too.
+  return { cookie: { state, nonce, next, ...(app ? { app: true } : {}), ...(app && isValidCodeChallenge(challenge) ? { challenge } : {}) }, hashedNonce: createHash("sha256").update(nonce).digest("hex") };
 }
 
 export function loginRedirectUri(origin: string) {
@@ -41,7 +46,7 @@ export function parseLoginCookie(v: string | undefined): LoginCookie | null {
   if (!v) return null;
   try {
     const o = JSON.parse(Buffer.from(v, "base64url").toString("utf8"));
-    if (typeof o?.state === "string" && typeof o?.nonce === "string" && typeof o?.next === "string" && (o?.app === undefined || typeof o?.app === "boolean")) return o;
+    if (typeof o?.state === "string" && typeof o?.nonce === "string" && typeof o?.next === "string" && (o?.app === undefined || typeof o?.app === "boolean") && (o?.challenge === undefined || isValidCodeChallenge(o?.challenge))) return o;
   } catch { /* bad cookie */ }
   return null;
 }

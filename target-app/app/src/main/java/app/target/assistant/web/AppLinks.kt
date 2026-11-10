@@ -12,28 +12,35 @@ import java.net.URLEncoder
  * Tab; after the server callback, Chrome is redirected to /auth/app-return?code=… (an App
  * Link); [handoffUrl] turns that deep link into the /auth/app-handoff URL the WebView loads to
  * claim the parked Supabase session.
+ *
+ * Fix #4: the handoff is PKCE-bound. [googleTabUrl] also carries code_challenge (see
+ * [HandoffVerifier]) and [handoffUrl] presents the matching verifier, so the code alone no
+ * longer claims the session.
  */
 object AppLinks {
     const val GOOGLE_PATH = "/auth/google"
     const val APP_RETURN_PATH = "/auth/app-return"
     const val APP_HANDOFF_PATH = "/auth/app-handoff"
 
-    /** The /auth/app-return deep link → the WebView URL that claims the parked session. Null when not an app-return link or it carries no code. */
-    fun handoffUrl(data: String?, baseUrl: String): String? {
+    /** The /auth/app-return deep link → the WebView URL that claims the parked session. Null when not an app-return link or it carries no code. When [verifier] is given it is appended so the server can check it against the stored challenge. */
+    fun handoffUrl(data: String?, baseUrl: String, verifier: String? = null): String? {
         if (data.isNullOrBlank()) return null
         val uri = try { URI(data) } catch (_: Exception) { return null }
         if (uri.path != APP_RETURN_PATH) return null
         val code = queryParams(uri.rawQuery)["code"]?.firstOrNull()?.takeIf { it.isNotBlank() } ?: return null
-        return baseUrl.trimEnd('/') + APP_HANDOFF_PATH + "?code=" + URLEncoder.encode(code, "UTF-8")
+        var out = baseUrl.trimEnd('/') + APP_HANDOFF_PATH + "?code=" + URLEncoder.encode(code, "UTF-8")
+        if (!verifier.isNullOrBlank()) out += "&verifier=" + URLEncoder.encode(verifier, "UTF-8")
+        return out
     }
 
-    /** Force the app variant of the sign-in start URL: app=1 (the callback hands the session back to the app); next defaults to /app when the page didn't set one. */
-    fun googleTabUrl(url: String): String {
+    /** Force the app variant of the sign-in start URL: app=1 (the callback hands the session back to the app); next defaults to /app when the page didn't set one. A non-blank [challenge] is set as code_challenge (replacing any stale one). */
+    fun googleTabUrl(url: String, challenge: String? = null): String {
         val uri = try { URI(url) } catch (_: Exception) { return url }
         val params = queryParams(uri.rawQuery)
         params.remove("app")
         if (params["next"].isNullOrEmpty()) params["next"] = listOf("/app")
         params["app"] = listOf("1")
+        if (!challenge.isNullOrBlank()) params["code_challenge"] = listOf(challenge)
         val q = params.entries.joinToString("&") { (k, vs) ->
             vs.joinToString("&") { v -> "${URLEncoder.encode(k, "UTF-8")}=${URLEncoder.encode(v, "UTF-8")}" }
         }

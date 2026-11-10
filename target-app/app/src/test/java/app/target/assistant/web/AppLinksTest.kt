@@ -38,4 +38,36 @@ class AppLinksTest {
         assertTrue("app forced: $out", out.contains("app=1"))
         assertTrue("old app value gone: $out", !out.contains("app=0"))
     }
+
+    // ---- fix #4: PKCE binding ----
+
+    @Test fun handoffUrlAppendsVerifierWhenGiven() {
+        assertEquals(
+            "$base/auth/app-handoff?code=abc123&verifier=v-1_2",
+            AppLinks.handoffUrl("$base/auth/app-return?code=abc123", base, "v-1_2"),
+        )
+    }
+
+    @Test fun handoffUrlWithoutVerifierIsUnchanged() {
+        assertEquals(
+            "$base/auth/app-handoff?code=abc123",
+            AppLinks.handoffUrl("$base/auth/app-return?code=abc123", base, null),
+        )
+        assertEquals(
+            "$base/auth/app-handoff?code=abc123",
+            AppLinks.handoffUrl("$base/auth/app-return?code=abc123", base, "  "),
+        )
+    }
+
+    @Test fun googleTabUrlSetsChallengeAndReplacesStaleOne() {
+        val out = AppLinks.googleTabUrl("$base/auth/google?code_challenge=stale", challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
+        assertTrue("challenge set: $out", out.contains("code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"))
+        assertTrue("stale gone: $out", !out.contains("stale"))
+        assertTrue("app flag kept: $out", out.contains("app=1"))
+    }
+
+    @Test fun googleTabUrlWithoutChallengeHasNoCodeChallenge() {
+        val out = AppLinks.googleTabUrl("$base/auth/google")
+        assertTrue("no challenge param: $out", !out.contains("code_challenge"))
+    }
 }
