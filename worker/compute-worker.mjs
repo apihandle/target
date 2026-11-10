@@ -196,18 +196,22 @@ export function sandboxEnv(cwd) {
 }
 
 /**
- * Run one program under limits: prlimit (address space, CPU seconds, file size, process count), the unprivileged
+ * Run one program under limits: prlimit (address space, CPU seconds, file size), the unprivileged
  * "nobody" user when we are root, optional no-network (unshare -n, needs CAP_SYS_ADMIN), and a wall-clock kill.
  */
 export function sandboxed(cmd, args, { cwd, timeoutMs = LIMITS.wallMs, limits = LIMITS, memLabelMb, noNetwork = process.env.CODE_NO_NETWORK === "1", hasPrlimit = true, supervisor = null } = {}) {
   return new Promise((resolve) => {
     let argv = [cmd, ...args];
-    // Fix #1: prlimit wraps the JOB, and the job-supervisor.py wraps prlimit. The order matters:
-    // RLIMIT_NPROC (--nproc) is a per-UID limit, not per-tree — it refuses fork() whenever the whole
-    // user account is already at the cap. The supervisor is trusted code that must be able to fork
-    // to start the job even on a busy host, so it runs OUTSIDE the limit; prlimit then execs the
-    // untrusted job under the limits, and the job's own forking is what stays capped.
-    if (hasPrlimit) argv = ["prlimit", `--as=${limits.memBytes}`, `--cpu=${limits.cpuSec}`, `--fsize=${limits.fileBytes}`, `--nproc=${limits.procs}`, "--", ...argv];
+    // Fix #1: prlimit wraps the JOB, and the job-supervisor.py wraps prlimit. Two reasons:
+    // (1) RLIMIT_NPROC is a per-UID limit, not per-tree — it refuses fork() whenever the whole
+    // user account is already at the cap, so the supervisor (trusted code that must fork to
+    // start the job) runs OUTSIDE prlimit; prlimit then execs the untrusted job directly.
+    // (2) --nproc is deliberately NOT passed at all: the same per-UID counting would break a
+    // job's own legitimate forks (subprocesses, pipelines) whenever the shared worker account
+    // is busy — and on the production host every job runs as the same uid. Fork bombs are
+    // contained instead by the address-space + CPU + wall-clock limits and by the supervisor,
+    // which tracks and kills every descendant a job leaves behind.
+    if (hasPrlimit) argv = ["prlimit", `--as=${limits.memBytes}`, `--cpu=${limits.cpuSec}`, `--fsize=${limits.fileBytes}`, "--", ...argv];
     if (supervisor && cwd && within(cwd, JOB_TMP_BASE)) argv = ["python3", supervisor, ...argv];
     if (noNetwork) argv = ["unshare", "-n", "--", ...argv];
     const drop = ROOT ? { uid: DROP_UID, gid: DROP_GID } : {};
