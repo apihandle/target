@@ -202,12 +202,13 @@ export function sandboxEnv(cwd) {
 export function sandboxed(cmd, args, { cwd, timeoutMs = LIMITS.wallMs, limits = LIMITS, memLabelMb, noNetwork = process.env.CODE_NO_NETWORK === "1", hasPrlimit = true, supervisor = null } = {}) {
   return new Promise((resolve) => {
     let argv = [cmd, ...args];
-    // Fix #1: inside a private job dir, run the program under the job-supervisor.py copy placed in that
-    // dir (a child subreaper that tracks and kills every descendant, including setsid escapees, before it
-    // exits). It is the innermost wrapper, so prlimit/unshare limits apply to it and are inherited by the
-    // whole job tree.
-    if (supervisor && cwd && within(cwd, JOB_TMP_BASE)) argv = ["python3", supervisor, ...argv];
+    // Fix #1: prlimit wraps the JOB, and the job-supervisor.py wraps prlimit. The order matters:
+    // RLIMIT_NPROC (--nproc) is a per-UID limit, not per-tree — it refuses fork() whenever the whole
+    // user account is already at the cap. The supervisor is trusted code that must be able to fork
+    // to start the job even on a busy host, so it runs OUTSIDE the limit; prlimit then execs the
+    // untrusted job under the limits, and the job's own forking is what stays capped.
     if (hasPrlimit) argv = ["prlimit", `--as=${limits.memBytes}`, `--cpu=${limits.cpuSec}`, `--fsize=${limits.fileBytes}`, `--nproc=${limits.procs}`, "--", ...argv];
+    if (supervisor && cwd && within(cwd, JOB_TMP_BASE)) argv = ["python3", supervisor, ...argv];
     if (noNetwork) argv = ["unshare", "-n", "--", ...argv];
     const drop = ROOT ? { uid: DROP_UID, gid: DROP_GID } : {};
     const p = spawn(argv[0], argv.slice(1), { ...drop, cwd, env: sandboxEnv(cwd), stdio: ["ignore", "pipe", "pipe"], detached: true });
