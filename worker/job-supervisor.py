@@ -91,7 +91,20 @@ def main():
         pass  # best effort: descendant tracking below still applies
 
     me = os.getpid()
-    child = subprocess.Popen(sys.argv[1:])
+    # Fork can fail transiently with EAGAIN when the host is under process-table pressure
+    # (packed CI runners, many parallel jobs). That is not a job error: retry with backoff
+    # for a few seconds before giving up, so a healthy job is not failed by host load.
+    child = None
+    spawn_delay = 0.1
+    for attempt in range(9):
+        try:
+            child = subprocess.Popen(sys.argv[1:])
+            break
+        except BlockingIOError:
+            if attempt == 8:
+                raise
+            time.sleep(spawn_delay)
+            spawn_delay = min(spawn_delay * 2, 1.0)
     tracked = set()
     stopping = []
 
