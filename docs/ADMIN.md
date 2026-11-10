@@ -32,7 +32,7 @@ there too (shown only to admins).
   every page (`requireAdminPage()`), and every API handler (`requireAdmin()`). Tests cover anonymous and
   non-admin access for every route.
 - The service-role key is used only on the server, only after the check. It's never sent to the browser or logged.
-- `/admin` responses are `Cache-Control: no-store` and `X-Robots-Tag: noindex`. The Monetag tag doesn't load on `/admin`.
+- `/admin` responses are `Cache-Control: no-store` and `X-Robots-Tag: noindex`.
 - `ADMIN_EMAIL` (singular, older) still only controls phone alerts for site errors and the old Settings → Site errors page.
 
 ## Sections

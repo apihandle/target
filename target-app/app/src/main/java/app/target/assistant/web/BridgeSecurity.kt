@@ -4,7 +4,11 @@ import java.net.URI
 
 /**
  * Who may talk to `window.TargetAndroid`: only the TOP frame of a page on the exact BASE_URL origin
- * (scheme + host + port). Iframes, other sites, http downgrades and look-alike hosts are refused.
+ * (scheme + host + port) AND on a bridge path ([isBridgeAllowedPath]: the signed-in /app workspace,
+ * plus /auth/app-handoff which claims the parked login session). Origin alone is not enough: the
+ * public pages on the same origin (/, /p, /share, ...) must never reach the bridge (fix #6 — that is
+ * what made third-party scripts running on those pages dangerous). Iframes, other sites, http
+ * downgrades and look-alike hosts are refused.
  * Pure Kotlin (java.net.URI) so it is unit-tested on the JVM.
  */
 object BridgeSecurity {
@@ -32,9 +36,25 @@ object BridgeSecurity {
         }
     }
 
+    /**
+     * Paths where the bridge may live: exactly the /app workspace (APP_PATH) and the one login
+     * hand-off page that sets the session inside the WebView. Everything else on the origin
+     * (/, /p, /share, /login, other /auth pages, ...) is refused. Accepts a full URL or a bare
+     * path; query and fragment are ignored. Segment-exact: "/application" and "/app-evil" do
+     * NOT match, and an encoded or dot-segment path is taken literally (URI.rawPath), so
+     * "/app%2f.." style tricks do not sneak in (the WebView normalises the real URL anyway,
+     * and sameOrigin has already pinned scheme/host/port before this is consulted).
+     */
+    fun isBridgeAllowedPath(urlOrPath: String?): Boolean {
+        if (urlOrPath.isNullOrBlank()) return false
+        val path = try { URI(urlOrPath.trim()).rawPath } catch (_: Exception) { null } ?: return false
+        return path == "/app" || path.startsWith("/app/") || path == "/auth/app-handoff"
+    }
+
     /** The rule every bridge message must pass. */
     fun allowed(sourceOrigin: String?, isMainFrame: Boolean, currentTopUrl: String?, baseUrl: String): Boolean =
-        isMainFrame && sameOrigin(sourceOrigin, baseUrl) && sameOrigin(currentTopUrl, baseUrl)
+        isMainFrame && sameOrigin(sourceOrigin, baseUrl) && sameOrigin(currentTopUrl, baseUrl) &&
+            isBridgeAllowedPath(currentTopUrl)
 
     /** One call from the page: {"id": 7, "method": "battery", "args": [..]}. */
     data class Call(val id: Long, val method: String, val args: List<Any?>)
@@ -48,6 +68,7 @@ object BridgeSecurity {
     const val SHIM_JS = """
 (function(){
   if (window.top !== window) return;
+  if (!/^\/app(\/|$)/.test(location.pathname) && location.pathname !== '/auth/app-handoff') return;
   var ch = window.TargetAndroid;
   if (!ch || typeof ch.postMessage !== 'function' || ch.__target) return;
   var seq = 0, waiting = {};
