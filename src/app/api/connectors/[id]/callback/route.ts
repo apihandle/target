@@ -81,7 +81,9 @@ async function googleLogin(url: URL) {
       // send Chrome to the App Link return URL; the app swaps the code for the session in its WebView.
       if (!data.session) return fail();
       try {
-        const handoff = await createAppHandoff({ access_token: data.session.access_token, refresh_token: data.session.refresh_token }, saved.next);
+        // Fix #4: carry the login cookie's PKCE challenge onto the handoff row (null for older
+        // app builds that never sent one — those rows keep the legacy code-only claim).
+        const handoff = await createAppHandoff({ access_token: data.session.access_token, refresh_token: data.session.refresh_token }, saved.next, undefined, undefined, saved.challenge ?? null);
         const r = NextResponse.redirect(`${origin}/auth/app-return?code=${encodeURIComponent(handoff)}`, { status: 303 });
         r.cookies.delete(LOGIN_COOKIE);
         return r;
