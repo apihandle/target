@@ -8,6 +8,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 python3
  && rm -rf /var/lib/apt/lists/* \
  && pip3 install --no-cache-dir --break-system-packages pandas numpy matplotlib pillow openpyxl requests yt-dlp
 WORKDIR /app
-COPY compute-worker.mjs .
+COPY compute-worker.mjs job-supervisor.py ./
 ENV TARGET_URL=https://gettarget.vercel.app CODE_TIMEOUT_MS=60000 CODE_MEMORY_MB=1024 CODE_CPU_SEC=60
 CMD ["node", "compute-worker.mjs"]
