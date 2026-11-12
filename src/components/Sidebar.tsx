@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import FeedbackButton from "@/components/FeedbackButton";
 
 export type ConvItem = { id: string; title: string; pinned?: boolean };
-export type Section = "home" | "chat" | "projects" | "panels" | "scheduled" | "activity" | "connectors" | "settings" | "memory";
+export type Section = "home" | "chat" | "projects" | "panels" | "scheduled" | "activity" | "connectors" | "settings" | "memory" | "mobile";
 type Hit = { id: string; title: string; pinned: boolean; snippet: string | null };
 
 const NAV: { id: Section; href: string; label: string; icon: string }[] = [
   { id: "home", href: "/app/home", label: "Home", icon: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" },
   { id: "chat", href: "/app", label: "Chat", icon: "M4 5h16v11H8l-4 4z" },
   { id: "projects", href: "/app/projects", label: "Projects", icon: "M3 6h7l2 2h9v11H3z" },
+  { id: "mobile", href: "/app/mobile", label: "Obsidian Mobile", icon: "M12 18h.01M8 21h8a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z" },
   { id: "panels", href: "/app/panels", label: "Panels", icon: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" },
   { id: "scheduled", href: "/app/scheduled", label: "Scheduled", icon: "M12 7v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z" },
   { id: "connectors", href: "/app/connectors", label: "Connectors", icon: "M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5" },
