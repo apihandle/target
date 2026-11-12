@@ -40,7 +40,7 @@ class WebAndBridgeTest {
         }
     }
 
-    /** Offline: a page served under a bridge path (/app/*, fix #6) gets answers; its iframe does not. */
+    /** Offline: a page served under /app/ (a bridge path, fix #6) gets answers; its iframe does not. */
     @Test fun topFrameAnsweredIframeRefused() {
         assumeTrue(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER))
         val iframe = "<script>window.onload=function(){var n=0;(function g(){var c=window.TargetAndroid;" +
