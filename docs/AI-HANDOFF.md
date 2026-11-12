@@ -30,7 +30,7 @@ for a fast first word; or the user's own custom provider, `docs/CUSTOM-PROVIDER.
 Compute worker: `docs/COMPUTE-WORKER.md`. Setup for the owner: `SETUP-REMAINING.md`. Features: `docs/FEATURES.md`.
 
 ## Rules (non-negotiable)
-- Keep the Monetag tag (zone **12150496**, `src/components/AdTag.tsx`) and `public/sw.js` unchanged. No ads in the signed-in app.
+- The Monetag tag and its remote service worker were REMOVED (fix #6): no third-party ad scripts anywhere, and `public/sw.js` is now an inert no-op. Do not re-add them.
 - Ads stay honest: no paid-to-click / watch-ads-for-coins pages, no ad-shortener links (ouo.io etc.), no fake download/continue buttons, forced redirects or hidden links. The old `/work` page was removed for this reason (its `work_links` / `work_views` tables from migration 0010 are left in place, unused).
 - **No payments, plans, pricing or usage limits for TARGET itself.** Abuse rate limits (`src/lib/connectors/rateLimit.ts`) are fine.
 - **Never commit or print secrets.** Real keys go in Vercel env, GitHub Actions secrets, or the worker host's secrets.

@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Great_Vibes, Instrument_Serif } from "next/font/google";
 import "./globals.css";
-import AdTag from "@/components/AdTag";
 import ErrorReporter from "@/components/ErrorReporter";
 
 const geistSans = localFont({
@@ -43,7 +42,6 @@ export default function RootLayout({
     <html lang="en" className="scroll-smooth">
       <head>
         <link rel="preload" as="image" href="/water-poster.webp" type="image/webp" />
-        <AdTag />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${script.variable} ${display.variable} antialiased`}

@@ -1,5 +1,5 @@
 /* TARGET workspace service worker. Registered only from /app pages with scope "/app".
- * (public/sw.js is a separate Monetag file and is not related to this worker.)
+ * (public/sw.js is a separate legacy file, now an inert no-op, and is not related to this worker.)
  * Minimal on purpose: it never caches API responses or signed-in pages. It only caches the
  * offline page and icons, and shows the offline page when a /app navigation fails. */
 const CACHE = "target-app-v4";

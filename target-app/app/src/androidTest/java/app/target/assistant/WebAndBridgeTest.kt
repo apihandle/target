@@ -16,7 +16,7 @@ import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/** App launch, WebView on BASE_URL, and the window.TargetAndroid bridge (top frame + own origin only). */
+/** App launch, WebView on BASE_URL, and the window.TargetAndroid bridge (top frame + own origin + bridge paths only, fix #6). */
 @RunWith(AndroidJUnit4::class)
 class WebAndBridgeTest {
 
@@ -40,7 +40,7 @@ class WebAndBridgeTest {
         }
     }
 
-    /** Offline: a page served as BASE_URL (loadDataWithBaseURL) gets answers; its iframe does not. */
+    /** Offline: a page served under /app/ (a bridge path, fix #6) gets answers; its iframe does not. */
     @Test fun topFrameAnsweredIframeRefused() {
         assumeTrue(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER))
         val iframe = "<script>window.onload=function(){var n=0;(function g(){var c=window.TargetAndroid;" +
@@ -56,7 +56,7 @@ class WebAndBridgeTest {
             sc.onActivity { a ->
                 bridge = a.bridge
                 a.webView.stopLoading()
-                a.webView.loadDataWithBaseURL("$base/bridge-test", html, "text/html", "utf-8", "$base/bridge-test")
+                a.webView.loadDataWithBaseURL("$base/app/bridge-test", html, "text/html", "utf-8", "$base/app/bridge-test")
             }
             assertTrue("top frame got a reply", Dev.waitUntil(20_000) { !js(sc, "window.__top").isNullOrEmpty() })
             val top = JSONObject(js(sc, "window.__top")!!)
@@ -76,12 +76,31 @@ class WebAndBridgeTest {
             sc.onActivity { act = it }
             val ok = Dev.waitUntil(45_000) { TargetBridge.isOwnOrigin(act?.lastFinishedUrl) }
             assertTrue("last finished: ${act?.lastFinishedUrl}", ok)
-            // The real page can call the bridge (promise API).
-            js(sc, "window.__v='';TargetAndroid.version().then(function(r){window.__v=JSON.stringify(r)});'x'")
-            assertTrue(Dev.waitUntil(15_000) { !js(sc, "window.__v").isNullOrEmpty() })
-            val json = JSONObject(js(sc, "window.__v")!!)
-            assertTrue(json.getBoolean("ok"))
-            assertEquals("android", json.getString("platform"))
+            // Fix #6: the bridge is path-gated. On a bridge path the real page can call it
+            // (promise API); anywhere else — a signed-out emulator lands on /login — the
+            // shim API must not be installed and calls must be refused: no working bridge
+            // next to ads or the credential form. Assert whichever side this launch landed on.
+            val url = act?.lastFinishedUrl ?: ""
+            if (app.target.assistant.web.BridgeSecurity.isBridgeAllowedPath(url)) {
+                js(sc, "window.__v='';TargetAndroid.version().then(function(r){window.__v=JSON.stringify(r)});'x'")
+                assertTrue(Dev.waitUntil(15_000) { !js(sc, "window.__v").isNullOrEmpty() })
+                val json = JSONObject(js(sc, "window.__v")!!)
+                assertTrue(json.getBoolean("ok"))
+                assertEquals("android", json.getString("platform"))
+            } else {
+                // The platform always injects a bare window.TargetAndroid channel object on this
+                // origin (addWebMessageListener cannot be path-scoped), so absence of the object is
+                // not the security property. The fix's property is: no shim API is installed and
+                // every call is refused natively. Assert exactly that.
+                val shimAbsent = Dev.waitUntil(15_000) {
+                    js(sc, "typeof window.TargetDevice") == "undefined" &&
+                        js(sc, "typeof (window.TargetAndroid || {}).version") == "undefined"
+                }
+                assertTrue("bridge API must not be installed on $url", shimAbsent)
+                js(sc, "window.__r='';try{TargetAndroid.onmessage=function(e){window.__r=String(e.data)};TargetAndroid.postMessage(JSON.stringify({id:99,method:'version',args:[])});}catch(e){window.__r='threw'};'x'")
+                Thread.sleep(6_000)
+                assertEquals("bridge call must be refused on $url", "", js(sc, "window.__r") ?: "")
+            }
         }
     }
 

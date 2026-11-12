@@ -96,7 +96,7 @@ class MainActivity : ComponentActivity() {
             setAcceptCookie(true)
             setAcceptThirdPartyCookies(webView, true)
         }
-        // window.TargetAndroid: top frame on BASE_URL only (WebMessageListener with an origin rule), see TargetBridge.
+        // window.TargetAndroid: top frame, BASE_URL origin AND /app paths only (fix #6), see TargetBridge.
         bridge.install()
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =

@@ -27,7 +27,8 @@ import org.json.JSONObject
  * Security: the bridge is NOT an addJavascriptInterface object any more (those are visible to every frame,
  * including third-party iframes). It is a WebViewCompat.addWebMessageListener channel with an allowed-origin
  * rule of exactly BASE_URL's origin, and every message is also checked here: it must come from the TOP frame,
- * from BASE_URL's origin, while the top page is on BASE_URL ([BridgeSecurity.allowed]). Anything else is
+ * from BASE_URL's origin, while the top page is on BASE_URL AND on a bridge path (/app, or
+ * /auth/app-handoff for the login claim — [BridgeSecurity.allowed], fix #6). Anything else is
  * dropped without a reply. If the WebView is too old for WEB_MESSAGE_LISTENER, the bridge is simply absent.
  *
  * Page API (installed by a document-start shim, see [BridgeSecurity.SHIM_JS]): every method returns a
@@ -46,7 +47,7 @@ class TargetBridge(private val activity: Activity, private val webView: WebView)
     /** Messages refused (wrong frame / origin): for tests and debugging. */
     val refused = AtomicInteger(0)
 
-    private fun allowed(): Boolean = isOwnOrigin(currentUrl)
+    private fun allowed(): Boolean = isOwnOrigin(currentUrl) && BridgeSecurity.isBridgeAllowedPath(currentUrl)
 
     private fun denied() = JSONObject().put("ok", false).put("error", "origin not allowed").toString()
 
@@ -139,7 +140,7 @@ class TargetBridge(private val activity: Activity, private val webView: WebView)
      * message channel itself still enforces the origin rule, so calling this more than once is harmless.
      */
     fun injectShimIfNeeded(view: WebView, url: String?) {
-        if (!manualShim || !isOwnOrigin(url)) return
+        if (!manualShim || !isOwnOrigin(url) || !BridgeSecurity.isBridgeAllowedPath(url)) return
         view.evaluateJavascript(BridgeSecurity.shimJs(), null)
     }
 

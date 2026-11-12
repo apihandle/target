@@ -38,10 +38,41 @@ class BridgeSecurityTest {
         assertFalse("no page yet", BridgeSecurity.allowed("https://gettarget.vercel.app", true, null, base))
     }
 
+    @Test fun bridgeOnlyOnAppPaths() {
+        // The workspace itself, with and without query/trailing slash.
+        assertTrue(BridgeSecurity.isBridgeAllowedPath("https://gettarget.vercel.app/app"))
+        assertTrue(BridgeSecurity.isBridgeAllowedPath("https://gettarget.vercel.app/app/"))
+        assertTrue(BridgeSecurity.isBridgeAllowedPath("https://gettarget.vercel.app/app/chat/1?x=1#y"))
+        assertTrue(BridgeSecurity.isBridgeAllowedPath("/app/home"))
+        // The one login page that claims the parked session inside the WebView.
+        assertTrue(BridgeSecurity.isBridgeAllowedPath("https://gettarget.vercel.app/auth/app-handoff?code=abc"))
+        // Public / other paths on the SAME origin: refused (fix #6).
+        assertFalse("landing", BridgeSecurity.isBridgeAllowedPath("https://gettarget.vercel.app/"))
+        assertFalse("public page", BridgeSecurity.isBridgeAllowedPath("https://gettarget.vercel.app/p/123"))
+        assertFalse("share link", BridgeSecurity.isBridgeAllowedPath("https://gettarget.vercel.app/share/abc"))
+        assertFalse("login", BridgeSecurity.isBridgeAllowedPath("https://gettarget.vercel.app/login"))
+        assertFalse("other auth page", BridgeSecurity.isBridgeAllowedPath("https://gettarget.vercel.app/auth/app-return?code=abc"))
+        assertFalse("admin", BridgeSecurity.isBridgeAllowedPath("https://gettarget.vercel.app/admin"))
+        // Prefix tricks must not match.
+        assertFalse("look-alike segment", BridgeSecurity.isBridgeAllowedPath("https://gettarget.vercel.app/application"))
+        assertFalse("look-alike segment", BridgeSecurity.isBridgeAllowedPath("https://gettarget.vercel.app/app-evil"))
+        assertFalse(BridgeSecurity.isBridgeAllowedPath(""))
+        assertFalse(BridgeSecurity.isBridgeAllowedPath(null))
+    }
+
+    @Test fun allowedAlsoNeedsAnAppPath() {
+        val origin = "https://gettarget.vercel.app"
+        assertTrue(BridgeSecurity.allowed(origin, true, "https://gettarget.vercel.app/app", base))
+        assertTrue(BridgeSecurity.allowed(origin, true, "https://gettarget.vercel.app/auth/app-handoff?code=x", base))
+        assertFalse("same origin, public page", BridgeSecurity.allowed(origin, true, "https://gettarget.vercel.app/", base))
+        assertFalse("same origin, share page", BridgeSecurity.allowed(origin, true, "https://gettarget.vercel.app/share/abc", base))
+    }
+
     @Test fun shimListsEveryMethod() {
         val js = BridgeSecurity.shimJs()
         BridgeSecurity.METHODS.forEach { assertTrue(it, js.contains("'$it'")) }
         assertFalse(js.contains("%METHODS%"))
         assertTrue("iframes skip the shim", js.contains("window.top !== window"))
+        assertTrue("shim skips non-app pages", js.contains("location.pathname !== '/auth/app-handoff'"))
     }
 }

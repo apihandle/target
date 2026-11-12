@@ -81,10 +81,10 @@ describe("admin panel boundary (/admin, /api/admin)", () => {
     for (const f of adminCode) expect(f.src, f.path).not.toMatch(/secret_box|key_box|encrypted_credentials|encrypted_cookies|ciphertext|\bpreview\b.*vault|key_preview/);
   });
 
-  it("the Monetag tag never loads on /admin and the zone is unchanged", () => {
-    const tag = files.find((f) => f.path === join("components", "AdTag.tsx"))!;
-    expect(tag.src).toContain("12150496");
-    expect(tag.src).toContain("(app|admin|login|auth)");
+  it("no Monetag/AdTag code remains anywhere in src (fix #6)", () => {
+    expect(files.find((f) => f.path === join("components", "AdTag.tsx"))).toBeUndefined();
+    const bad = files.filter((f) => /nap5k|3nbf4|[Mm]onetag|AdTag/.test(f.src)).map((f) => f.path);
+    expect(bad).toEqual([]);
   });
 });
 

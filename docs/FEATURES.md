@@ -1,7 +1,7 @@
 # TARGET features (migration 0008)
 
 This branch adds eight features to the signed-in workspace (`/app`). The landing page, the root
-layout, the Monetag tag (`AdTag`) and `public/sw.js` are unchanged.
+layout is unchanged except the Monetag tag (`AdTag`), removed later by fix #6.
 
 | Feature | Where | Server pieces |
 | --- | --- | --- |
@@ -105,8 +105,7 @@ full link is shown once. `/share/[token]` is server-rendered with the anon key a
 Revoking sets `revoked_at` (a trigger stops it from being un-revoked) and the page 404s immediately. The
 page sends `noindex` (meta + `X-Robots-Tag`), `Referrer-Policy: no-referrer` and `Cache-Control: no-store`,
 and strips approval/action blocks from messages. It's outside `/app` and isn't part of the landing page.
-Note: the root layout's Monetag tag (unchanged) only skips `/app`, `/login` and `/auth`, so it also
-loads on `/share/*` like other public pages.
+Note: the root layout's Monetag tag was removed entirely by fix #6; nothing loads on `/share/*` any more.
 
 ### Scheduled prompts
 Jobs store cadence (daily/weekly), local time, weekday and IANA timezone; `next_run_at` is computed in
@@ -136,7 +135,7 @@ Picking one fills the composer; it never sends.
 registered only from `src/app/app/layout.tsx`, i.e. only on `/app` pages. The worker is registered with
 scope `/app` (not `/app/`) so the chat page, which lives at `/app` itself, is inside the installed app.
 It precaches only an offline page and icons, never caches API responses or signed-in pages, and shows the
-offline page when an `/app` navigation fails. `public/sw.js` (Monetag) is untouched.
+offline page when an `/app` navigation fails. `public/sw.js` was later turned into an inert no-op by fix #6 (it was a Monetag file).
 
 ## Tests
 `src/__tests__/features-0008.test.tsx` (route handlers against the in-memory Supabase stand-in, which
