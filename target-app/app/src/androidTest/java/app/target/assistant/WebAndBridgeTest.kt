@@ -78,8 +78,8 @@ class WebAndBridgeTest {
             assertTrue("last finished: ${act?.lastFinishedUrl}", ok)
             // Fix #6: the bridge is path-gated. On a bridge path the real page can call it
             // (promise API); anywhere else — a signed-out emulator lands on /login — the
-            // bridge must be ABSENT. That absence is the point of the fix: no bridge next
-            // to ads or the credential form. Assert whichever side this launch landed on.
+            // shim API must not be installed and calls must be refused: no working bridge
+            // next to ads or the credential form. Assert whichever side this launch landed on.
             val url = act?.lastFinishedUrl ?: ""
             if (app.target.assistant.web.BridgeSecurity.isBridgeAllowedPath(url)) {
                 js(sc, "window.__v='';TargetAndroid.version().then(function(r){window.__v=JSON.stringify(r)});'x'")
@@ -88,8 +88,18 @@ class WebAndBridgeTest {
                 assertTrue(json.getBoolean("ok"))
                 assertEquals("android", json.getString("platform"))
             } else {
-                val absent = Dev.waitUntil(15_000) { js(sc, "typeof window.TargetAndroid") == "undefined" }
-                assertTrue("bridge must be absent on $url", absent)
+                // The platform always injects a bare window.TargetAndroid channel object on this
+                // origin (addWebMessageListener cannot be path-scoped), so absence of the object is
+                // not the security property. The fix's property is: no shim API is installed and
+                // every call is refused natively. Assert exactly that.
+                val shimAbsent = Dev.waitUntil(15_000) {
+                    js(sc, "typeof window.TargetDevice") == "undefined" &&
+                        js(sc, "typeof (window.TargetAndroid || {}).version") == "undefined"
+                }
+                assertTrue("bridge API must not be installed on $url", shimAbsent)
+                js(sc, "window.__r='';try{TargetAndroid.onmessage=function(e){window.__r=String(e.data)};TargetAndroid.postMessage(JSON.stringify({id:99,method:'version',args:[])});}catch(e){window.__r='threw'};'x'")
+                Thread.sleep(6_000)
+                assertEquals("bridge call must be refused on $url", "", js(sc, "window.__r") ?: "")
             }
         }
     }
