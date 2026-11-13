@@ -8,6 +8,41 @@ interface VoiceModeModalProps {
   onExecuteAction?: (action: string) => void;
 }
 
+/* Web Speech API + Android bridge typings (not in the standard DOM lib) */
+interface SpeechRecognitionResultLike {
+  isFinal: boolean;
+  [index: number]: { transcript: string };
+}
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: ArrayLike<SpeechRecognitionResultLike>;
+}
+interface SpeechRecognitionErrorEventLike {
+  error: string;
+}
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+interface TargetAndroidBridge {
+  dial: (number: string) => Promise<void> | void;
+  openApp: (pkg: string) => Promise<void> | void;
+  flashlight: (on: boolean) => Promise<void> | void;
+  battery: () => Promise<{ level?: number }>;
+}
+interface TargetWindow extends Window {
+  SpeechRecognition?: new () => SpeechRecognitionLike;
+  webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+  TargetAndroid?: TargetAndroidBridge;
+  TargetDevice?: TargetAndroidBridge;
+}
+
 export default function VoiceModeModal({ onClose, onExecuteAction }: VoiceModeModalProps) {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -18,7 +53,7 @@ export default function VoiceModeModal({ onClose, onExecuteAction }: VoiceModeMo
     { id: "1", text: "Ready for voice commands", status: "Active" },
   ]);
   const [pulseLevel, setPulseLevel] = useState(1);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   // Initialize Speech Synthesis & Speech Recognition
   useEffect(() => {
@@ -27,14 +62,15 @@ export default function VoiceModeModal({ onClose, onExecuteAction }: VoiceModeMo
 
     // Setup speech recognition
     if (typeof window !== "undefined") {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const tw = window as TargetWindow;
+      const SpeechRecognition = tw.SpeechRecognition || tw.webkitSpeechRecognition;
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
         recognition.lang = language;
 
-        recognition.onresult = (event: any) => {
+        recognition.onresult = (event: SpeechRecognitionEventLike) => {
           let currentTranscript = "";
           for (let i = event.resultIndex; i < event.results.length; i++) {
             currentTranscript += event.results[i][0].transcript;
@@ -47,7 +83,7 @@ export default function VoiceModeModal({ onClose, onExecuteAction }: VoiceModeMo
           }
         };
 
-        recognition.onerror = (event: any) => {
+        recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
           console.warn("Speech recognition error:", event.error);
         };
 
@@ -127,7 +163,8 @@ export default function VoiceModeModal({ onClose, onExecuteAction }: VoiceModeMo
     const lower = cmd.toLowerCase();
 
     // Check Native Android Bridge Integration
-    const bridge = typeof window !== "undefined" ? (window as any).TargetAndroid || (window as any).TargetDevice : null;
+    const tw = typeof window !== "undefined" ? (window as TargetWindow) : null;
+    const bridge = tw ? tw.TargetAndroid || tw.TargetDevice : null;
 
     if (bridge) {
       if (lower.includes("call") || lower.includes("phone lagao")) {
