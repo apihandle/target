@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="assistant"
+        android:enabled="true"
+        android:icon="@drawable/ic_tile"
+        android:shortcutShortLabel="@string/shortcut_assistant">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="app.target.assistant"
+            android:targetClass="app.target.assistant.AssistActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="setup"
+        android:enabled="true"
+        android:icon="@drawable/ic_tile"
+        android:shortcutShortLabel="@string/shortcut_setup">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="app.target.assistant"
+            android:targetClass="app.target.assistant.SettingsActivity" />
+    </shortcut>
+</shortcuts>
