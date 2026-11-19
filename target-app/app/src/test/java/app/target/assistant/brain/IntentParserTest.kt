@@ -73,6 +73,12 @@ class IntentParserTest {
     @Test fun brightnessScreenKiLight() = assertEquals(Command.Brightness(null, true), p("screen ki light badhao"))
     @Test fun netOnKaro() = assertEquals(Command.SettingsPanel(Panel.MOBILE_DATA, true), p("net on karo"))
 
+    // ---- media / global ----
+    @Test fun gaanaRoko() = assertEquals(Command.MediaKey(MediaAction.PAUSE), p("gaana roko"))
+    @Test fun aglaGaana() = assertEquals(Command.MediaKey(MediaAction.NEXT), p("agla gaana bajao"))
+    @Test fun screenLock() = assertEquals(Command.Global(GlobalAction.LOCK), p("screen lock karo"))
+    @Test fun screenshot() = assertEquals(Command.Global(GlobalAction.SCREENSHOT), p("screenshot le lo"))
+
     // ---- fallback ----
     @Test fun questionGoesToWeb() = assertEquals(Command.Ask("aaj delhi mein mausam kaisa hai"), p("aaj delhi mein mausam kaisa hai"))
     @Test fun emptyGoesToWeb() = assertTrue(p("   ") is Command.Ask)

@@ -56,8 +56,12 @@ class IntentParserV2Test {
     @Test fun pauseAlone() = assertEquals(Command.MediaKey(MediaAction.PAUSE), p("pause"))
     @Test fun aglaGaana() = assertEquals(Command.MediaKey(MediaAction.NEXT), p("agla gaana"))
     @Test fun nextSong() = assertEquals(Command.MediaKey(MediaAction.NEXT), p("next song"))
+    @Test fun gaanaAageBadhao() = assertEquals(Command.MediaKey(MediaAction.NEXT), p("gaana aage badhao"))
     @Test fun previousSong() = assertEquals(Command.MediaKey(MediaAction.PREVIOUS), p("pichhla gaana chalao"))
+    @Test fun gaanaPeecheKaro() = assertEquals(Command.MediaKey(MediaAction.PREVIOUS), p("gaana peeche karo"))
     @Test fun musicChaluKaro() = assertEquals(Command.MediaKey(MediaAction.PLAY), p("music chalu karo"))
+    @Test fun musicPauseKaro() = assertEquals(Command.MediaKey(MediaAction.PAUSE), p("music pause karo"))
+    @Test fun songResumeKaro() = assertEquals(Command.MediaKey(MediaAction.PLAY), p("song resume karo"))
     @Test fun playStoreIsApp() = assertEquals(Command.OpenApp("play store"), p("open play store"))
 
     // ---- screen ----
@@ -76,13 +80,19 @@ class IntentParserV2Test {
     @Test fun scrollUp() = assertEquals(Command.Scroll(false), p("scroll up"))
     @Test fun swipeLeft() = assertEquals(Command.Swipe(Direction.LEFT), p("left swipe karo"))
     @Test fun goBack() = assertEquals(Command.Global(GlobalAction.BACK), p("wapas jao"))
+    @Test fun goBackPeeche() = assertEquals(Command.Global(GlobalAction.BACK), p("peeche jao"))
     @Test fun goHome() = assertEquals(Command.Global(GlobalAction.HOME), p("home screen pe jao"))
+    @Test fun goHomeMainScreen() = assertEquals(Command.Global(GlobalAction.HOME), p("main screen par jao"))
     @Test fun recents() = assertEquals(Command.Global(GlobalAction.RECENTS), p("recent apps dikhao"))
+    @Test fun recentsRunningApps() = assertEquals(Command.Global(GlobalAction.RECENTS), p("running apps dikhao"))
     @Test fun notificationPanel() = assertEquals(Command.Global(GlobalAction.NOTIFICATIONS), p("notifications kholo"))
     @Test fun quickSettings() = assertEquals(Command.Global(GlobalAction.QUICK_SETTINGS), p("quick settings kholo"))
+    @Test fun controlCenter() = assertEquals(Command.Global(GlobalAction.QUICK_SETTINGS), p("control center kholo"))
     @Test fun lockPhone() = assertEquals(Command.Global(GlobalAction.LOCK), p("phone lock karo"))
+    @Test fun screenLockKaro() = assertEquals(Command.Global(GlobalAction.LOCK), p("screen lock karo"))
     @Test fun lockEnglish() = assertEquals(Command.Global(GlobalAction.LOCK), p("lock the screen"))
     @Test fun screenshot() = assertEquals(Command.Global(GlobalAction.SCREENSHOT), p("screenshot le lo"))
+    @Test fun screenKiPhoto() = assertEquals(Command.Global(GlobalAction.SCREENSHOT), p("screen ki photo lo"))
     @Test fun takeScreenshot() = assertEquals(Command.Global(GlobalAction.SCREENSHOT), p("take a screenshot"))
 
     // ---- notifications ----

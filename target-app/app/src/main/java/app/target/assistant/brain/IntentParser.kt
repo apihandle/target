@@ -546,7 +546,7 @@ object IntentParser {
     }
 
     // ---- media ----------------------------------------------------------------------------------
-    private val MEDIA_WORD = "(?:gaana|gana|gaane|gane|song|songs|music|track|video|geet|audio)"
+    private val MEDIA_WORD = "(?:gaana|gana|gaane|gane|song|songs|music|track|tracks|video|geet|audio|dhun)"
 
     private fun parseMediaKey(u: U): Command? {
         val t = u.t
@@ -559,10 +559,10 @@ object IntentParser {
                 else -> Command.MediaKey(MediaAction.NEXT)
             }
             !media && !has(t, "\\b(pause|resume|skip)\\b") -> null
-            has(t, "\\b(agla|agle|next|skip|aage wala|aage)\\b") -> Command.MediaKey(MediaAction.NEXT)
-            has(t, "\\b(pichhla|pichla|pichle|pichhle|previous|prev|peeche wala|pehle wala|last wala)\\b") -> Command.MediaKey(MediaAction.PREVIOUS)
+            has(t, "\\b(agla|agle|next|skip|aage wala|aage|forward|aage badhao|aage karo)\\b") -> Command.MediaKey(MediaAction.NEXT)
+            has(t, "\\b(pichhla|pichla|pichle|pichhle|previous|prev|peeche wala|pehle wala|last wala|rewind|peeche karo)\\b") -> Command.MediaKey(MediaAction.PREVIOUS)
             has(t, "\\b(roko|rok do|rok|pause|band karo|band kar do|band|stop|ruko|thamo)\\b") -> Command.MediaKey(MediaAction.PAUSE)
-            has(t, "\\b(resume|chalu karo|chalu kar do|phir se chalao|wapas chalao|continue|unpause)\\b") -> Command.MediaKey(MediaAction.PLAY)
+            has(t, "\\b(resume|chalu karo|chalu kar do|phir se chalao|wapas chalao|continue|unpause|play karo|play kar do|shuru karo)\\b") -> Command.MediaKey(MediaAction.PLAY)
             else -> null
         }
     }
@@ -647,14 +647,14 @@ object IntentParser {
     private fun parseGlobal(u: U): Command? {
         val t = u.t
         return when {
-            has(t, "^(?:back|go back|wapas|wapas jao|peeche jao|piche jao|pichhe jao|back jao|back karo|back dabao)$") -> Command.Global(GlobalAction.BACK)
-            has(t, "^(?:home|go home|go to home screen|home jao|home pe jao|home par jao|home screen(?: pe jao| par jao| kholo| dikhao)?)$") -> Command.Global(GlobalAction.HOME)
-            has(t, "\\b(recent apps|recents|app switcher|overview)\\b|^recent\\s+(?:kholo|dikhao)$") -> Command.Global(GlobalAction.RECENTS)
-            has(t, "\\bquick settings\\b") -> Command.Global(GlobalAction.QUICK_SETTINGS)
-            has(t, "\\b(notifications?|notification)\\s+(?:panel|shade|bar)\\b|^(?:notifications?|notification)\\s+(?:kholo|khol do|dikhao|open karo)$|^(?:open|show|pull down)\\s+(?:the\\s+)?notifications?$") -> Command.Global(GlobalAction.NOTIFICATIONS)
+            has(t, "^(?:back|go back|wapas|wapas jao|peeche jao|piche jao|pichhe jao|back jao|back karo|back dabao|peeche chalo|piche chalo|peeche|piche)$") -> Command.Global(GlobalAction.BACK)
+            has(t, "^(?:home|go home|go to home screen|home jao|home pe jao|home par jao|home screen(?: pe jao| par jao| kholo| dikhao)?|main screen(?: pe jao| par jao| dikhao)?|home dabao|home button)$") -> Command.Global(GlobalAction.HOME)
+            has(t, "\\b(recent apps|recents|app switcher|overview|running apps|khuli hui apps)\\b|^recent\\s+(?:kholo|dikhao|dekho)$") -> Command.Global(GlobalAction.RECENTS)
+            has(t, "\\b(quick settings|control center|control centre)\\b|^(?:quick settings|control center|control centre)\\s+(?:kholo|dikhao)$") -> Command.Global(GlobalAction.QUICK_SETTINGS)
+            has(t, "\\b(notifications?|notification)\\s+(?:panel|shade|bar)\\b|^(?:notifications?|notification)\\s+(?:kholo|khol do|dikhao|open karo|dekho)$|^(?:open|show|pull down)\\s+(?:the\\s+)?notifications?$") -> Command.Global(GlobalAction.NOTIFICATIONS)
             has(t, "\\bunlock\\b") -> null
-            has(t, "^(?:(?:phone|screen|mobile)\\s+)?lock(?:\\s+(?:karo|kar do|kardo|kar))?$|^lock\\s+(?:the\\s+|my\\s+)?(?:phone|screen)$") -> Command.Global(GlobalAction.LOCK)
-            has(t, "^(?:screenshot|screen shot)(?:\\s+(?:lo|le lo|lelo|le|khicho|khincho|kheencho|khich lo|karo|kar do|lena))?$|^take\\s+(?:a\\s+)?screenshot$|^screen\\s+ki\\s+photo\\s+(?:lo|le lo)$") -> Command.Global(GlobalAction.SCREENSHOT)
+            has(t, "^(?:(?:phone|screen|mobile|display)\\s+)?lock(?:\\s+(?:karo|kar do|kardo|kar))?$|^lock\\s+(?:the\\s+|my\\s+)?(?:phone|screen|display)$|^(?:screen|display)\\s+(?:band|off)(?:\\s+(?:karo|kar do))?$") -> Command.Global(GlobalAction.LOCK)
+            has(t, "^(?:screenshot|screen shot)(?:\\s+(?:lo|le lo|lelo|le|khicho|khincho|kheencho|khich lo|karo|kar do|lena))?$|^take\\s+(?:a\\s+)?screenshot$|^screen\\s+(?:ki\\s+photo|capture)(?:\\s+(?:lo|le lo|karo|kar do))?$") -> Command.Global(GlobalAction.SCREENSHOT)
             else -> null
         }
     }
