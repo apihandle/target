@@ -1,7 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import TargetMobileApp from "@/components/mobile/TargetMobileApp";
 import CommandHubTab from "@/components/mobile/CommandHubTab";
+import VisionModeModal from "@/components/mobile/VisionModeModal";
+import DynamicPanelsTab from "@/components/mobile/DynamicPanelsTab";
+import VaultTab from "@/components/mobile/VaultTab";
+import AutopilotTab from "@/components/mobile/AutopilotTab";
 
 vi.mock("lucide-react", () => {
   const icon = () => <svg aria-hidden="true" />;
@@ -43,6 +47,15 @@ vi.mock("lucide-react", () => {
     PhoneOff: icon,
     Radio: icon,
     Volume2: icon,
+    Upload: icon,
+    RotateCcw: icon,
+    Trash2: icon,
+    Coins: icon,
+    TrendingUp: icon,
+    CreditCard: icon,
+    Car: icon,
+    Utensils: icon,
+    Copy: icon,
   };
 });
 
@@ -139,5 +152,78 @@ describe("TargetMobileApp navigation", () => {
     const vaultTabBtn = within(nav).getByRole("button", { name: "Vault" });
     fireEvent.click(vaultTabBtn);
     expect(screen.getByText(/ENCRYPTED HARDWARE VAULT/i)).toBeInTheDocument();
+  });
+});
+
+describe("VisionModeModal", () => {
+  it("switches presets and sends document query to chat", () => {
+    const onAsk = vi.fn();
+    const onClose = vi.fn();
+
+    render(<VisionModeModal onClose={onClose} onAskAboutDoc={onAsk} />);
+
+    expect(screen.getByText(/Acko Drive Plus Comprehensive/i)).toBeInTheDocument();
+
+    // Switch to Boarding Pass
+    fireEvent.click(screen.getByRole("button", { name: "Boarding Pass" }));
+    expect(screen.getByText(/IndiGo Flight 6E-204/i)).toBeInTheDocument();
+
+    // Click CTA
+    fireEvent.click(screen.getByRole("button", { name: /Sync Flight to Calendar/i }));
+    expect(onAsk).toHaveBeenCalledWith(expect.stringContaining("IndiGo 6E-204"));
+    expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe("DynamicPanelsTab", () => {
+  it("synthesizes new panels and allows deploying them", async () => {
+    vi.useFakeTimers();
+    render(<DynamicPanelsTab />);
+
+    const textarea = screen.getByPlaceholderText(/Compare gold spot/i);
+    fireEvent.change(textarea, { target: { value: "Gold spot prices in Mumbai" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /Generate Panel/i }));
+
+    act(() => {
+      vi.advanceTimersByTime(800);
+    });
+
+    expect(screen.getByText(/Mumbai 24K Gold & Bullion Sentinel/i)).toBeInTheDocument();
+
+    // Deploy panel
+    fireEvent.click(screen.getByRole("button", { name: /Deploy Live Panel/i }));
+    expect(screen.getByText(/Deployed to Hub/i)).toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+});
+
+describe("VaultTab", () => {
+  it("generates a single-use burner card", () => {
+    render(<VaultTab />);
+
+    expect(screen.getByText("TARGET Obsidian Enclave")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Generate Burner Card/i }));
+
+    expect(screen.getByText("Disposable Autopilot Burner")).toBeInTheDocument();
+    expect(screen.getByText("ONE-TIME BURNER")).toBeInTheDocument();
+  });
+});
+
+describe("AutopilotTab", () => {
+  it("switches between active tasks and updates virtual DOM preview", () => {
+    render(<AutopilotTab onTakeOver={vi.fn()} onApprovePayment={vi.fn()} />);
+
+    expect(screen.getByText("Acko Drive Secure Plus (Comprehensive)")).toBeInTheDocument();
+
+    // Switch to Flight 6E-204
+    fireEvent.click(screen.getByRole("button", { name: /Flight 6E-204/i }));
+    expect(screen.getByText("IndiGo Flight 6E-204 Seat Selection")).toBeInTheDocument();
+
+    // Switch to Skyline Table
+    fireEvent.click(screen.getByRole("button", { name: /Skyline Table/i }));
+    expect(screen.getByText("Skyline Rooftop Lounge Table Reservation")).toBeInTheDocument();
   });
 });
