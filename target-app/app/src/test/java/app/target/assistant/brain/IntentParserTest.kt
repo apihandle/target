@@ -64,12 +64,14 @@ class IntentParserTest {
     @Test fun batteryChargingStatus() = assertEquals(Command.Battery, p("charging ho rahi hai kya"))
     @Test fun batteryBetriKitniHai() = assertEquals(Command.Battery, p("betri kitni bachi hai"))
 
-    // ---- volume / ringer ----
+    // ---- volume / ringer / brightness ----
     @Test fun volumeSetPercent() = assertEquals(Command.Volume(VolumeAction.SET, 70), p("volume 70% kar do"))
     @Test fun volumeAwaazAadhi() = assertEquals(Command.Volume(VolumeAction.SET, 50), p("awaaz aadhi kar do"))
     @Test fun volumeMute() = assertEquals(Command.Volume(VolumeAction.MUTE), p("awaaz band kar do"))
     @Test fun ringerSilent() = assertEquals(Command.Ringer(RingerMode.SILENT), p("phone silent mode pe daalo"))
     @Test fun ringerNormal() = assertEquals(Command.Ringer(RingerMode.NORMAL), p("phone normal mode pe lagao"))
+    @Test fun brightnessScreenKiLight() = assertEquals(Command.Brightness(null, true), p("screen ki light badhao"))
+    @Test fun netOnKaro() = assertEquals(Command.SettingsPanel(Panel.MOBILE_DATA, true), p("net on karo"))
 
     // ---- fallback ----
     @Test fun questionGoesToWeb() = assertEquals(Command.Ask("aaj delhi mein mausam kaisa hai"), p("aaj delhi mein mausam kaisa hai"))

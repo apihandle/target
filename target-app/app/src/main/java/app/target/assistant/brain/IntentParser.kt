@@ -706,11 +706,13 @@ object IntentParser {
 
     private fun parseBrightness(u: U): Command? {
         val t = u.t
-        if (!has(t, "\\b(brightness|roshni|chamak|screen light|display light|brighter|dimmer)\\b")) return null
+        if (!has(t, "\\b(brightness|roshni|chamak|screen light|display light|screen ki light|display ki light|screen ki roshni|brighter|dimmer)\\b")) return null
         Regex("\\b(\\d{1,3})\\s*(%|percent|pratishat|pratisat)").find(t)?.let { return Command.Brightness(it.groupValues[1].toInt().coerceIn(0, 100), null) }
-        Regex("\\b(?:brightness|roshni)\\s+(\\d{1,3})\\b").find(t)?.let { return Command.Brightness(it.groupValues[1].toInt().coerceIn(0, 100), null) }
+        Regex("\\b(?:brightness|roshni|chamak)\\s+(?:ko|pe|par)?\\s*(\\d{1,3})\\b").find(t)?.let { return Command.Brightness(it.groupValues[1].toInt().coerceIn(0, 100), null) }
+        if (has(t, "\\b(aadha|aadhi|half)\\b")) return Command.Brightness(50, null)
+        if (has(t, "\\b(zero|bilkul kam)\\b")) return Command.Brightness(0, null)
         return when {
-            has(t, "\\b(full|max|maximum|poori|puri|sabse zyada)\\b") -> Command.Brightness(100, null)
+            has(t, "\\b(full|max|maximum|poori|puri|sabse zyada|100%|100 percent)\\b") -> Command.Brightness(100, null)
             has(t, "\\b(kam|low|down|dim|dimmer|decrease|reduce|ghatao|halki|minimum|min)\\b") -> Command.Brightness(null, false)
             else -> Command.Brightness(null, true)
         }
@@ -725,7 +727,7 @@ object IntentParser {
             has(t, "\\b(airplane|aeroplane|aeroplan|flight|hawai jahaz)\\s*mode\\b|\\bflight mod\\b") -> Panel.AIRPLANE
             has(t, "\\b(battery|power)\\s+(saver|save|saving)\\b") -> Panel.BATTERY_SAVER
             has(t, "\\bnfc\\b") -> Panel.NFC
-            has(t, "\\b(mobile data|cellular data|cellular|mobile internet)\\b|^(?:data|internet)\\s+(?:on|off|band|chalu|kholo)|\\b(?:data|internet)\\s+(?:on|off|band|chalu)\\s+(?:karo|kar do)\\b") -> Panel.MOBILE_DATA
+            has(t, "\\b(mobile data|cellular data|cellular|mobile internet)\\b|^(?:data|internet|net)\\s+(?:on|off|band|chalu|kholo)|\\b(?:data|internet|net)\\s+(?:on|off|band|chalu)\\s+(?:karo|kar do)\\b") -> Panel.MOBILE_DATA
             has(t, "\\b(location|gps|lokeshan)\\b") && has(t, "\\b(on|off|band|chalu|kholo|settings|turn)\\b") -> Panel.LOCATION
             else -> return null
         }
