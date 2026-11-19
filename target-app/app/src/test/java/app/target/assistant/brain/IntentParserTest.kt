@@ -64,6 +64,13 @@ class IntentParserTest {
     @Test fun batteryChargingStatus() = assertEquals(Command.Battery, p("charging ho rahi hai kya"))
     @Test fun batteryBetriKitniHai() = assertEquals(Command.Battery, p("betri kitni bachi hai"))
 
+    // ---- volume / ringer ----
+    @Test fun volumeSetPercent() = assertEquals(Command.Volume(VolumeAction.SET, 70), p("volume 70% kar do"))
+    @Test fun volumeAwaazAadhi() = assertEquals(Command.Volume(VolumeAction.SET, 50), p("awaaz aadhi kar do"))
+    @Test fun volumeMute() = assertEquals(Command.Volume(VolumeAction.MUTE), p("awaaz band kar do"))
+    @Test fun ringerSilent() = assertEquals(Command.Ringer(RingerMode.SILENT), p("phone silent mode pe daalo"))
+    @Test fun ringerNormal() = assertEquals(Command.Ringer(RingerMode.NORMAL), p("phone normal mode pe lagao"))
+
     // ---- fallback ----
     @Test fun questionGoesToWeb() = assertEquals(Command.Ask("aaj delhi mein mausam kaisa hai"), p("aaj delhi mein mausam kaisa hai"))
     @Test fun emptyGoesToWeb() = assertTrue(p("   ") is Command.Ask)

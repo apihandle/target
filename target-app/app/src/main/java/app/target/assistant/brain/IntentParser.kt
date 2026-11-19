@@ -56,7 +56,7 @@ sealed class Command {
     data class CameraAsk(val question: String) : Command()
 
     // system
-    data class Volume(val action: VolumeAction) : Command()
+    data class Volume(val action: VolumeAction, val percent: Int? = null) : Command()
     data class Ringer(val mode: RingerMode) : Command()
     data class Dnd(val on: Boolean) : Command()
     data class Brightness(val percent: Int?, val up: Boolean?) : Command()
@@ -78,7 +78,7 @@ enum class MediaApp { YOUTUBE, YOUTUBE_MUSIC, SPOTIFY }
 enum class MediaAction { PLAY, PAUSE, NEXT, PREVIOUS }
 enum class Direction { LEFT, RIGHT, UP, DOWN }
 enum class GlobalAction { BACK, HOME, RECENTS, NOTIFICATIONS, QUICK_SETTINGS, LOCK, SCREENSHOT }
-enum class VolumeAction { UP, DOWN, MUTE, UNMUTE, MAX }
+enum class VolumeAction { UP, DOWN, MUTE, UNMUTE, MAX, SET }
 enum class RingerMode { SILENT, VIBRATE, NORMAL }
 enum class Panel { WIFI, BLUETOOTH, MOBILE_DATA, NFC, HOTSPOT, AIRPLANE, BATTERY_SAVER, LOCATION }
 
@@ -662,12 +662,25 @@ object IntentParser {
     // ---- system ---------------------------------------------------------------------------------
     private fun parseVolume(u: U): Command? {
         val t = u.t
-        if (has(t, "^(?:mute|mute karo|mute kar do|phone mute karo)$")) return Command.Volume(VolumeAction.MUTE)
-        if (has(t, "^(?:unmute|unmute karo|unmute kar do)$")) return Command.Volume(VolumeAction.UNMUTE)
+        if (has(t, "^(?:mute|mute karo|mute kar do|phone mute karo|sound band|sound band karo|sound band kar do|awaaz band|awaz band|awaaz band karo|awaaz band kar do)$")) return Command.Volume(VolumeAction.MUTE)
+        if (has(t, "^(?:unmute|unmute karo|unmute kar do|sound on|sound on karo|sound chalu|awaaz chalu|awaaz chalu karo)$")) return Command.Volume(VolumeAction.UNMUTE)
         if (!has(t, "\\b(volume|awaaz|awaz|aawaz|aavaaz|sound|aawaj|awaj)\\b")) return null
+
+        Regex("\\b(?:volume|awaaz|awaz|aawaz|sound)\\s*(?:ko|to|pe|par|per)?\\s*(\\d{1,3})\\s*(?:%|percent|pratishat|pratisat)?\\b").find(t)?.let {
+            val num = it.groupValues[1].toIntOrNull()
+            if (num != null) return Command.Volume(VolumeAction.SET, num.coerceIn(0, 100))
+        }
+        Regex("\\b(\\d{1,3})\\s*(?:%|percent|pratishat|pratisat)\\s*(?:volume|awaaz|awaz|sound)?\\b").find(t)?.let {
+            val num = it.groupValues[1].toIntOrNull()
+            if (num != null) return Command.Volume(VolumeAction.SET, num.coerceIn(0, 100))
+        }
+        if (has(t, "\\b(aadha|aadhi|half)\\b")) {
+            return Command.Volume(VolumeAction.SET, 50)
+        }
+
         return when {
             has(t, "\\b(unmute|wapas|chalu|on)\\b") && !has(t, "\\b(up|badhao)\\b") -> Command.Volume(VolumeAction.UNMUTE)
-            has(t, "\\b(full|max|maximum|poora|pura|sabse tez|poori|puri)\\b") -> Command.Volume(VolumeAction.MAX)
+            has(t, "\\b(full|max|maximum|poora|pura|sabse tez|poori|puri|100%|100 percent)\\b") -> Command.Volume(VolumeAction.MAX)
             has(t, "\\b(mute|band|off|zero|bilkul band|khatam)\\b") -> Command.Volume(VolumeAction.MUTE)
             has(t, "\\b(kam|dheere|dheema|dheemi|down|decrease|lower|reduce|quieter|neeche|halka|halki|ghatao|ghata do|low)\\b") -> Command.Volume(VolumeAction.DOWN)
             has(t, "\\b(badhao|badha do|badhaao|tez|zyada|jyada|up|increase|louder|high|upar|bada|raise|badha)\\b") -> Command.Volume(VolumeAction.UP)
@@ -678,9 +691,9 @@ object IntentParser {
     private fun parseRinger(u: U): Command? {
         val t = u.t
         return when {
-            has(t, "\\bsilent\\b") -> if (has(t, "\\b(hatao|hata do|off|band|remove|normal|nikalo|disable)\\b")) Command.Ringer(RingerMode.NORMAL) else Command.Ringer(RingerMode.SILENT)
-            has(t, "\\b(vibrate|vibration|vibrat|vibrator)\\b") -> if (has(t, "\\b(off|band|hatao)\\b")) Command.Ringer(RingerMode.NORMAL) else Command.Ringer(RingerMode.VIBRATE)
-            has(t, "^(?:ringer|ring)\\s+(?:on|normal|chalu)|\\b(normal|general|ring|ringing)\\s+mode\\b") -> Command.Ringer(RingerMode.NORMAL)
+            has(t, "\\b(silent|saylent|sailent)\\b") -> if (has(t, "\\b(hatao|hata do|off|band|remove|normal|nikalo|disable)\\b")) Command.Ringer(RingerMode.NORMAL) else Command.Ringer(RingerMode.SILENT)
+            has(t, "\\b(vibrate|vibration|vibrat|vibrator|kampan)\\b") -> if (has(t, "\\b(off|band|hatao)\\b")) Command.Ringer(RingerMode.NORMAL) else Command.Ringer(RingerMode.VIBRATE)
+            has(t, "^(?:ringer|ring)\\s+(?:on|normal|chalu)|\\b(normal|general|ring|ringing)\\s+mode\\b|\\bphone\\s+normal\\b") -> Command.Ringer(RingerMode.NORMAL)
             else -> null
         }
     }
