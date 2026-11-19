@@ -184,7 +184,7 @@ class CommandRunner(private val context: Context) {
             })
 
             is Command.Volume -> {
-                val pct = SystemControl.volume(context, cmd.action)
+                val pct = SystemControl.volume(context, cmd.action, cmd.percent)
                 Outcome(when (cmd.action) {
                     VolumeAction.MUTE -> s(R.string.reply_muted)
                     else -> s(R.string.reply_volume, pct.coerceAtLeast(0))

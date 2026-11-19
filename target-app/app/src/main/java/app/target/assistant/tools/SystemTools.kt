@@ -100,7 +100,7 @@ object SystemControl {
 
     enum class Result { DONE, NEEDS_ACCESS, PANEL_OPENED, FAILED }
 
-    fun volume(context: Context, action: VolumeAction): Int {
+    fun volume(context: Context, action: VolumeAction, percent: Int? = null): Int {
         val am = context.getSystemService(AudioManager::class.java) ?: return -1
         val s = AudioManager.STREAM_MUSIC
         val flags = AudioManager.FLAG_SHOW_UI
@@ -110,6 +110,11 @@ object SystemControl {
             VolumeAction.MUTE -> am.adjustStreamVolume(s, AudioManager.ADJUST_MUTE, flags)
             VolumeAction.UNMUTE -> am.adjustStreamVolume(s, AudioManager.ADJUST_UNMUTE, flags)
             VolumeAction.MAX -> am.setStreamVolume(s, am.getStreamMaxVolume(s), flags)
+            VolumeAction.SET -> {
+                val max = am.getStreamMaxVolume(s)
+                val target = ((percent ?: 50) * max / 100).coerceIn(0, max)
+                am.setStreamVolume(s, target, flags)
+            }
         }
         val max = am.getStreamMaxVolume(s).coerceAtLeast(1)
         return am.getStreamVolume(s) * 100 / max
