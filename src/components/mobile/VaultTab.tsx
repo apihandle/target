@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ShieldCheck, Eye, EyeOff, Lock, Key, CreditCard, RefreshCw, AlertTriangle, CheckCircle, Smartphone } from "lucide-react";
+import { ShieldCheck, Eye, EyeOff } from "lucide-react";
 
 export default function VaultTab() {
   const [showSensitive, setShowSensitive] = useState(false);

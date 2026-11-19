@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, KeyRound, ShieldCheck, CheckCircle2, FileDown, ArrowRight, Smartphone, Lock, AlertCircle } from "lucide-react";
+import { X, ShieldCheck, CheckCircle2, FileDown, ArrowRight, Lock } from "lucide-react";
 
 interface AutopilotTakeoverModalProps {
   onClose: () => void;

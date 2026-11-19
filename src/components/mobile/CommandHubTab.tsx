@@ -1,17 +1,27 @@
 "use client";
 
-import React, { useState } from "react";
-import { Mic, Camera, ArrowUp, Sparkles, AlertCircle, CheckCircle2, ChevronRight, Zap } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Mic, Camera, ArrowUp, Sparkles, AlertCircle, CheckCircle2, ChevronRight, Zap, Loader2 } from "lucide-react";
 import { BriefingItem, ChatMessage } from "./types";
 
 interface CommandHubTabProps {
   onOpenVoice: () => void;
   onOpenVision: () => void;
   onOpenAutopilot: () => void;
+  queuedPrompt?: string | null;
+  onClearQueuedPrompt?: () => void;
 }
 
-export default function CommandHubTab({ onOpenVoice, onOpenVision, onOpenAutopilot }: CommandHubTabProps) {
+export default function CommandHubTab({
+  onOpenVoice,
+  onOpenVision,
+  onOpenAutopilot,
+  queuedPrompt,
+  onClearQueuedPrompt,
+}: CommandHubTabProps) {
   const [inputText, setInputText] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "1",
@@ -51,27 +61,99 @@ export default function CommandHubTab({ onOpenVoice, onOpenVision, onOpenAutopil
     },
   ];
 
-  const handleSend = () => {
-    if (!inputText.trim()) return;
-    const userMsg: ChatMessage = {
-      id: Date.now().toString(),
-      sender: "user",
-      text: inputText,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-    setInputText("");
+  const handleSend = async (customText?: string) => {
+    const text = (customText ?? inputText).trim();
+    if (!text || isStreaming) return;
 
-    // Simulated assistant response
-    setTimeout(() => {
-      const reply: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        sender: "target",
-        text: `Understood. Analyzing "${userMsg.text}". All secure parameters checked against your Vault Enclave.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      };
-      setMessages((prev) => [...prev, reply]);
-    }, 800);
+    const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const userMsg: ChatMessage = {
+      id: `u-${Date.now()}`,
+      sender: "user",
+      text,
+      timestamp: time,
+    };
+    const assistantId = `a-${Date.now()}`;
+    const initialAssistantMsg: ChatMessage = {
+      id: assistantId,
+      sender: "target",
+      text: "",
+      timestamp: time,
+    };
+
+    setMessages((prev) => [...prev, userMsg, initialAssistantMsg]);
+    if (!customText) setInputText("");
+    setIsStreaming(true);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({ message: text }),
+      });
+      if (!res.ok || !res.body) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error || `Request failed (${res.status})`);
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let streamed = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = dec.decode(value, { stream: true });
+        streamed += chunk;
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? { ...m, text: streamed } : m))
+        );
+      }
+      if (!streamed.trim()) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, text: "All parameters analyzed and aligned with your Vault Enclave." }
+              : m
+          )
+        );
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        const msg = err instanceof Error ? err.message : "Request failed";
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, text: `Maaf kijiye, TARGET reply nahi kar paya: ${msg}` }
+              : m
+          )
+        );
+      }
+    } finally {
+      setIsStreaming(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (queuedPrompt && queuedPrompt.trim()) {
+      const prompt = queuedPrompt.trim();
+      onClearQueuedPrompt?.();
+      const timer = setTimeout(() => {
+        handleSend(prompt);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queuedPrompt]);
+
+  const handleBriefingAction = (item: BriefingItem) => {
+    if (item.actionText === "Open Autopilot") {
+      onOpenAutopilot();
+    } else {
+      handleSend(`${item.actionText}: ${item.title} (${item.subtitle})`);
+    }
   };
 
   return (
@@ -145,7 +227,7 @@ export default function CommandHubTab({ onOpenVoice, onOpenVision, onOpenAutopil
                   Requires Biometric Authorization
                 </span>
                 <button
-                  onClick={item.actionText === "Open Autopilot" ? onOpenAutopilot : undefined}
+                  onClick={() => handleBriefingAction(item)}
                   className="px-3 py-1 rounded-full bg-champagne-gold text-obsidian-lowest text-xs font-semibold hover:bg-white flex items-center space-x-1 transition-all shadow-sm"
                 >
                   <span>{item.actionText}</span>
@@ -174,7 +256,15 @@ export default function CommandHubTab({ onOpenVoice, onOpenVision, onOpenAutopil
                     : "bg-obsidian-container border border-white/10 text-champagne-gold rounded-bl-none shadow-sm"
                 }`}
               >
-                <p>{m.text}</p>
+                {m.text ? (
+                  <p className="whitespace-pre-wrap">{m.text}</p>
+                ) : (
+                  <div className="flex items-center space-x-1.5 py-1 text-champagne-accent">
+                    <span className="w-1.5 h-1.5 rounded-full bg-champagne-accent animate-bounce" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-champagne-accent animate-bounce [animation-delay:150ms]" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-champagne-accent animate-bounce [animation-delay:300ms]" />
+                  </div>
+                )}
 
                 {m.card && (
                   <div className="mt-2.5 p-2.5 rounded-xl bg-obsidian-lowest border border-champagne-accent/30 text-white">
@@ -217,10 +307,11 @@ export default function CommandHubTab({ onOpenVoice, onOpenVision, onOpenAutopil
           <input
             type="text"
             value={inputText}
+            disabled={isStreaming}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            placeholder="Ask TARGET, schedule actions, or build panel..."
-            className="flex-1 bg-transparent border-none text-xs text-champagne-gold placeholder-white/30 focus:outline-none px-2"
+            placeholder={isStreaming ? "TARGET is thinking..." : "Ask TARGET, schedule actions, or build panel..."}
+            className="flex-1 bg-transparent border-none text-xs text-champagne-gold placeholder-white/30 focus:outline-none px-2 disabled:opacity-50"
           />
 
           <button
@@ -231,13 +322,19 @@ export default function CommandHubTab({ onOpenVoice, onOpenVision, onOpenAutopil
             <Mic className="w-4 h-4" />
           </button>
 
-          {inputText.trim() && (
-            <button
-              onClick={handleSend}
-              className="w-10 h-10 rounded-full bg-champagne-gold text-obsidian-lowest flex items-center justify-center hover:bg-white transition-all ml-1 shrink-0 shadow-sm"
-            >
-              <ArrowUp className="w-4 h-4 stroke-[2.5]" />
-            </button>
+          {isStreaming ? (
+            <div className="w-10 h-10 rounded-full bg-champagne-soft border border-champagne-accent/40 flex items-center justify-center text-champagne-accent ml-1 shrink-0">
+              <Loader2 className="w-4 h-4 animate-spin" />
+            </div>
+          ) : (
+            inputText.trim() && (
+              <button
+                onClick={() => handleSend()}
+                className="w-10 h-10 rounded-full bg-champagne-gold text-obsidian-lowest flex items-center justify-center hover:bg-white transition-all ml-1 shrink-0 shadow-sm"
+              >
+                <ArrowUp className="w-4 h-4 stroke-[2.5]" />
+              </button>
+            )
           )}
         </div>
       </div>

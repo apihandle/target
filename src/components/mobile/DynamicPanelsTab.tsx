@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Sparkles, Layers, Box, Check, Plus, ExternalLink, ArrowRight, Package, DollarSign, Plane } from "lucide-react";
+import { Sparkles, Layers, Check, Plus, Package, DollarSign, Plane } from "lucide-react";
 
 export default function DynamicPanelsTab() {
   const [prompt, setPrompt] = useState("Track my international parcels from DHL & FedEx in INR");

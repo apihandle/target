@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, Camera, Zap, FileText, Sparkles, Check, Scan, Eye } from "lucide-react";
+import { X, Zap, Sparkles, Scan } from "lucide-react";
 
 interface VisionModeModalProps {
   onClose: () => void;
@@ -10,7 +10,6 @@ interface VisionModeModalProps {
 
 export default function VisionModeModal({ onClose, onAskAboutDoc }: VisionModeModalProps) {
   const [flashOn, setFlashOn] = useState(false);
-  const [captured, setCaptured] = useState(false);
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col justify-between p-6 select-none animate-in fade-in duration-300">

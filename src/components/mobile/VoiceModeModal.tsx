@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { X, Mic, MicOff, Globe, PhoneOff, Radio, Sparkles, Volume2, VolumeX, Bot, Smartphone } from "lucide-react";
+import { X, Mic, MicOff, Globe, PhoneOff, Radio, Sparkles, Volume2 } from "lucide-react";
 
 interface VoiceModeModalProps {
   onClose: () => void;
@@ -26,15 +26,16 @@ interface SpeechRecognitionLike {
   lang: string;
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
   onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onstart: (() => void) | null;
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
 }
 interface TargetAndroidBridge {
-  dial: (number: string) => Promise<void> | void;
-  openApp: (pkg: string) => Promise<void> | void;
-  flashlight: (on: boolean) => Promise<void> | void;
-  battery: () => Promise<{ level?: number }>;
+  dial: (number: string) => Promise<{ ok?: boolean; error?: string } | void> | { ok?: boolean; error?: string } | void;
+  openApp: (pkg: string) => Promise<{ ok?: boolean; error?: string } | void> | { ok?: boolean; error?: string } | void;
+  flashlight: (on: boolean) => Promise<{ ok?: boolean; error?: string } | void> | { ok?: boolean; error?: string } | void;
+  battery: () => Promise<{ ok?: boolean; level?: number; charging?: boolean; error?: string }>;
 }
 interface TargetWindow extends Window {
   SpeechRecognition?: new () => SpeechRecognitionLike;
@@ -54,13 +55,17 @@ export default function VoiceModeModal({ onClose, onExecuteAction }: VoiceModeMo
   ]);
   const [pulseLevel, setPulseLevel] = useState(1);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const listeningRef = useRef(false);
+  const languageRef = useRef(language);
+  const speakRef = useRef<(text: string) => void>(() => undefined);
+  const activeRequestRef = useRef<AbortController | null>(null);
+  const commandHandlerRef = useRef<(command: string) => void>(() => undefined);
+  languageRef.current = language;
 
-  // Initialize Speech Synthesis & Speech Recognition
+  // Initialize speech once. Refs keep browser callbacks in sync without restarting recognition on every render.
   useEffect(() => {
-    // Speak initial greeting
-    speakResponse("Namaste! Main aapka TARGET personal AI assistant hoon. Boliye, main aapke liye kya karoon?");
+    speakRef.current("Namaste! Main aapka TARGET personal AI assistant hoon. Boliye, main aapke liye kya karoon?");
 
-    // Setup speech recognition
     if (typeof window !== "undefined") {
       const tw = window as TargetWindow;
       const SpeechRecognition = tw.SpeechRecognition || tw.webkitSpeechRecognition;
@@ -69,46 +74,57 @@ export default function VoiceModeModal({ onClose, onExecuteAction }: VoiceModeMo
         recognition.continuous = true;
         recognition.interimResults = true;
         recognition.lang = language;
-
         recognition.onresult = (event: SpeechRecognitionEventLike) => {
           let currentTranscript = "";
           for (let i = event.resultIndex; i < event.results.length; i++) {
             currentTranscript += event.results[i][0].transcript;
           }
           setTranscript(currentTranscript);
-
-          // If final result, process intent
-          if (event.results[event.results.length - 1].isFinal) {
-            processVoiceCommand(currentTranscript.trim());
+          if (event.results[event.results.length - 1]?.isFinal) {
+            commandHandlerRef.current(currentTranscript.trim());
           }
         };
-
         recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
+          if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+            listeningRef.current = false;
+            setIsListening(false);
+          }
           console.warn("Speech recognition error:", event.error);
         };
-
+        recognition.onstart = () => {
+          listeningRef.current = true;
+          setIsListening(true);
+        };
         recognition.onend = () => {
-          if (isListening) {
-            try { recognition.start(); } catch (_) {}
+          if (listeningRef.current && recognitionRef.current === recognition) {
+            try { recognition.start(); } catch { /* recognition may already be starting */ }
+          } else {
+            setIsListening(false);
           }
         };
-
         recognitionRef.current = recognition;
         try {
           recognition.start();
-          setIsListening(true);
-        } catch (_) {}
+        } catch {
+          listeningRef.current = false;
+        }
       }
     }
 
     return () => {
+      listeningRef.current = false;
+      activeRequestRef.current?.abort();
       if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch (_) {}
+        recognitionRef.current.onend = null;
+        try { recognitionRef.current.stop(); } catch { /* already stopped */ }
+        recognitionRef.current = null;
       }
       if (typeof window !== "undefined" && window.speechSynthesis) {
         window.speechSynthesis.cancel();
       }
     };
+  // Initial setup only; language changes are synchronized in their own effect.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Sync recognition language
@@ -132,20 +148,20 @@ export default function VoiceModeModal({ onClose, onExecuteAction }: VoiceModeMo
     return () => clearInterval(interval);
   }, [isSpeaking, isListening, transcript]);
 
-  // Text to Speech Function
   const speakResponse = (text: string) => {
+    setAssistantResponse(text);
     if (typeof window === "undefined" || !window.speechSynthesis) return;
 
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = language;
+    const voiceLanguage = languageRef.current;
+    utterance.lang = voiceLanguage;
     utterance.rate = 1.0;
     utterance.pitch = 1.05;
 
-    // Pick a natural voice if available
     const voices = window.speechSynthesis.getVoices();
     const matchVoice = voices.find(
-      (v) => v.lang.startsWith(language.slice(0, 2)) || (language === "hi-IN" && v.name.includes("India"))
+      (v) => v.lang.startsWith(voiceLanguage.slice(0, 2)) || (voiceLanguage === "hi-IN" && v.name.includes("India"))
     );
     if (matchVoice) utterance.voice = matchVoice;
 
@@ -154,78 +170,75 @@ export default function VoiceModeModal({ onClose, onExecuteAction }: VoiceModeMo
     utterance.onerror = () => setIsSpeaking(false);
 
     window.speechSynthesis.speak(utterance);
-    setAssistantResponse(text);
   };
+  speakRef.current = speakResponse;
 
-  // AI Command & Intent Processor
   const processVoiceCommand = async (cmd: string) => {
-    if (!cmd) return;
-    const lower = cmd.toLowerCase();
+    const text = cmd.trim();
+    if (!text || activeRequestRef.current) return;
 
-    // Check Native Android Bridge Integration
-    const tw = typeof window !== "undefined" ? (window as TargetWindow) : null;
-    const bridge = tw ? tw.TargetAndroid || tw.TargetDevice : null;
+    const controller = new AbortController();
+    activeRequestRef.current = controller;
+    addRecentAction(text, "Sending");
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text }),
+        signal: controller.signal,
+      });
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error || `Request failed (${response.status})`);
+      }
 
-    if (bridge) {
-      if (lower.includes("call") || lower.includes("phone lagao")) {
-        speakResponse("Dialer open kar raha hoon.");
-        try { await bridge.dial("198"); } catch (_) {}
-        addRecentAction(`Call triggered: ${cmd}`, "Bridge Executed");
-        return;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let reply = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        reply += decoder.decode(value, { stream: true });
       }
-      if (lower.includes("whatsapp")) {
-        speakResponse("WhatsApp open kar raha hoon.");
-        try { await bridge.openApp("whatsapp"); } catch (_) {}
-        addRecentAction("WhatsApp Opened", "Bridge Executed");
-        return;
+      reply += decoder.decode();
+      const spokenReply = reply.trim();
+      if (!spokenReply) throw new Error("TARGET returned an empty reply.");
+      speakResponse(spokenReply);
+      addRecentAction("TARGET replied", "Complete");
+      onExecuteAction?.(text);
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        const message = error instanceof Error ? error.message : "Voice request failed.";
+        speakResponse(`Maaf kijiye, ${message}`);
+        addRecentAction(message, "Failed");
       }
-      if (lower.includes("torch") || lower.includes("flashlight")) {
-        speakResponse("Flashlight on kar di hai.");
-        try { await bridge.flashlight(true); } catch (_) {}
-        addRecentAction("Torch Turned ON", "Bridge Executed");
-        return;
-      }
-      if (lower.includes("battery")) {
-        try {
-          const b = await bridge.battery();
-          speakResponse(`Phone battery level ${b.level || 85} percent hai.`);
-          addRecentAction(`Battery: ${b.level}%`, "Status");
-          return;
-        } catch (_) {}
-      }
-    }
-
-    // Smart Conversational Responses
-    if (lower.includes("insurance") || lower.includes("acko") || lower.includes("policy")) {
-      speakResponse("Maine Acko policy check kar li hai. Renewal due hai, aur TGT_EXCLUSIVE coupon se baarah sau rupaye bachenge. Autopilot approval ready hai.");
-      addRecentAction("Acko Policy Inspected", "Autopilot Ready");
-    } else if (lower.includes("flight") || lower.includes("ticket") || lower.includes("indigo")) {
-      speakResponse("IndiGo flight 6E-204 hold par hai, seat 12B select ho chuki hai.");
-      addRecentAction("IndiGo 6E-204 Flight Hold", "Confirmed");
-    } else if (lower.includes("dinner") || lower.includes("restaurant") || lower.includes("table")) {
-      speakResponse("Skyline Rooftop par aaj raat 8 baje 2 logon ki table reserve ho gayi hai.");
-      addRecentAction("Skyline Rooftop Dinner 8 PM", "Reserved");
-    } else if (lower.includes("kya kar sakte ho") || lower.includes("who are you") || lower.includes("kaun ho")) {
-      speakResponse("Main TARGET hoon, aapka autonomous virtual AI assistant. Main real-world browser checkout, insurance renewal, call, WhatsApp, calendar sync aur dynamic mini-apps synthesize kar sakta hoon.");
-      addRecentAction("Capability Briefing", "Info");
-    } else {
-      // Natural AI reply
-      speakResponse(`Ji, maine sun liya: "${cmd}". Main ise aapke Vault Enclave ke sath process kar raha hoon.`);
-      addRecentAction(cmd, "Processed");
+    } finally {
+      if (activeRequestRef.current === controller) activeRequestRef.current = null;
     }
   };
 
   const addRecentAction = (text: string, status: string) => {
-    setRecentActions((prev) => [{ id: Date.now().toString(), text, status }, ...prev.slice(0, 2)]);
+    setRecentActions((prev) => [{ id: `${Date.now()}-${Math.random()}`, text, status }, ...prev.slice(0, 2)]);
   };
+  commandHandlerRef.current = processVoiceCommand;
 
   const toggleMic = () => {
-    if (isListening) {
-      if (recognitionRef.current) try { recognitionRef.current.stop(); } catch (_) {}
+    const recognition = recognitionRef.current;
+    if (!recognition) return;
+    if (listeningRef.current) {
+      listeningRef.current = false;
+      try { recognition.stop(); } catch { /* already stopped */ }
       setIsListening(false);
     } else {
-      if (recognitionRef.current) try { recognitionRef.current.start(); } catch (_) {}
+      // Mark intent before start: browsers may dispatch onstart asynchronously.
+      listeningRef.current = true;
       setIsListening(true);
+      try {
+        recognition.start();
+      } catch {
+        listeningRef.current = false;
+        setIsListening(false);
+      }
     }
   };
 
@@ -320,6 +333,8 @@ export default function VoiceModeModal({ onClose, onExecuteAction }: VoiceModeMo
       <div className="flex items-center justify-around max-w-xs mx-auto w-full pb-3">
         {/* Mic Toggle */}
         <button
+          type="button"
+          aria-label={isListening ? "Stop microphone" : "Start microphone"}
           onClick={toggleMic}
           className={`w-14 h-14 rounded-full border flex items-center justify-center transition-all ${
             isListening

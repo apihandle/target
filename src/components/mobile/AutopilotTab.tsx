@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ShieldAlert, Play, Pause, CheckCircle2, ScanFace, ExternalLink, Cpu, RefreshCw, KeyRound } from "lucide-react";
+import { ShieldAlert, Play, Pause, CheckCircle2, ScanFace, Cpu, RefreshCw, KeyRound } from "lucide-react";
 
 interface AutopilotTabProps {
   onTakeOver: () => void;

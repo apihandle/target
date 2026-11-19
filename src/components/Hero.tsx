@@ -40,6 +40,10 @@ export const SURPRISES = [
   "Give me a 20-minute home workout",
 ];
 
+function getRandomSurprise() {
+  return SURPRISES[Math.floor(Math.random() * SURPRISES.length)];
+}
+
 export default function Hero() {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -53,7 +57,7 @@ export default function Hero() {
   }
 
   function pick(prompt: string | null) {
-    const text = prompt ?? SURPRISES[Math.floor(Math.random() * SURPRISES.length)];
+    const text = prompt ?? getRandomSurprise();
     setQuery(text);
     requestAnimationFrame(() => inputRef.current?.focus());
   }

@@ -14,10 +14,11 @@ import AutopilotTakeoverModal from "./AutopilotTakeoverModal";
 export default function TargetMobileApp() {
   const [activeTab, setActiveTab] = useState<MobileTab>("thread");
   const [activeOverlay, setActiveOverlay] = useState<ModalOverlay>(null);
+  const [queuedPrompt, setQueuedPrompt] = useState<string | null>(null);
 
   const handleAskAboutDoc = (docSummary: string) => {
+    setQueuedPrompt(`Please analyze this document: ${docSummary}`);
     setActiveTab("thread");
-    // Switch to thread and show message
   };
 
   return (
@@ -29,6 +30,8 @@ export default function TargetMobileApp() {
             onOpenVoice={() => setActiveOverlay("voice")}
             onOpenVision={() => setActiveOverlay("vision")}
             onOpenAutopilot={() => setActiveTab("autopilot")}
+            queuedPrompt={queuedPrompt}
+            onClearQueuedPrompt={() => setQueuedPrompt(null)}
           />
         )}
 
@@ -49,7 +52,12 @@ export default function TargetMobileApp() {
 
       {/* Modal Overlays */}
       {activeOverlay === "voice" && (
-        <VoiceModeModal onClose={() => setActiveOverlay(null)} />
+        <VoiceModeModal
+          onClose={() => setActiveOverlay(null)}
+          onExecuteAction={(action) => {
+            setQueuedPrompt(action);
+          }}
+        />
       )}
 
       {activeOverlay === "vision" && (
