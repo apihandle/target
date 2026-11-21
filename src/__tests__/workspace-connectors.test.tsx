@@ -100,7 +100,7 @@ describe("tool registry", () => {
   });
 
   it("stays hidden in the UI", () => {
-    expect([...SHOWN_CONNECTORS]).toEqual(["github", "google", "supabase", "vercel"]);
+    expect([...SHOWN_CONNECTORS]).toEqual(["github", "google", "supabase", "vercel", "blogger"]);
   });
 });
 

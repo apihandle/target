@@ -4,6 +4,7 @@ import { removeConnection } from "@/lib/connectors/store";
 import { checkLimit, LIMITS, tooMany } from "@/lib/connectors/rateLimit";
 import { logActivity } from "@/lib/server/activity";
 import { deleteSiteSessions } from "@/lib/server/siteSessions";
+import { clearBloggerBlog } from "@/lib/server/socialBlogger";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,9 @@ export async function POST(_req: Request, props: { params: Promise<{ id: string 
     removed = !!data?.length;
   }
   if (!removed) return notFound();
+  // Disconnecting Blogger also forgets which blog social posts were going to (best effort: the
+  // connection is already gone, and the composer re-checks the connection before publishing anyway).
+  if (c.id === "blogger") { try { await clearBloggerBlog(a.db, a.user.id); } catch { /* best effort */ } }
   await logActivity(a.db, a.user.id, { category: "connection", title: `Disconnected ${c.name}`, detail: signedOut ? `Also signed out of ${signedOut} website${signedOut === 1 ? "" : "s"} joined with this account.` : undefined });
   return json({ ok: true, signedOutSites: signedOut });
 }

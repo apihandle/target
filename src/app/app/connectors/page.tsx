@@ -1,4 +1,5 @@
 import AppShell, { getSessionOrRedirect } from "@/components/AppShell";
+import BloggerBlogPicker from "@/components/BloggerBlogPicker";
 import ConnectorsGrid from "@/components/ConnectorsGrid";
 import { Page, PageHeader } from "@/components/ui/Card";
 import { connectorViews, CONNECTOR_ID } from "@/lib/connectors/registry";
@@ -44,6 +45,7 @@ export default async function ConnectorsPage(
         {connected && !notice && <p role="status" className="mt-6 rounded-xl border border-ok/30 bg-ok-subtle px-4 py-3 text-sm text-ok">{connected.name} connected.</p>}
         {loadError && <p role="alert" className="mt-6 rounded-xl border border-warn/30 bg-warn-subtle px-4 py-3 text-sm text-warn">Connection status couldn&apos;t load (apply migration 0007). Connectors are shown as not connected.</p>}
         <ConnectorsGrid initial={views} focus={focus} returnTo={safeReturnTo(searchParams.return)} />
+        {views.find((v) => v.id === "blogger")?.status === "connected" && <BloggerBlogPicker />}
       </Page>
     </AppShell>
   );

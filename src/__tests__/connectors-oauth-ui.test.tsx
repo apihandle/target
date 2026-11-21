@@ -9,16 +9,17 @@ const ENV = {
   GITHUB_OAUTH_CLIENT_ID: "a", GITHUB_OAUTH_CLIENT_SECRET: "b", GOOGLE_OAUTH_CLIENT_ID: "c", GOOGLE_OAUTH_CLIENT_SECRET: "d",
   SUPABASE_OAUTH_CLIENT_ID: "e", SUPABASE_OAUTH_CLIENT_SECRET: "f",
   VERCEL_OAUTH_CLIENT_ID: "g", VERCEL_OAUTH_CLIENT_SECRET: "h", VERCEL_INTEGRATION_SLUG: "target",
+  BLOGGER_OAUTH_CLIENT_ID: "i", BLOGGER_OAUTH_CLIENT_SECRET: "j",
 };
 const shownViews = (env: Record<string, string> = ENV, conns = []) => SHOWN_CONNECTORS.map((id) => connectorViews(env, conns).find((v) => v.id === id)!);
 const card = (id: string) => screen.getAllByTestId("connector-card").find((c) => c.getAttribute("data-id") === id)!;
 
-describe("Connectors page: four OAuth connectors, no token inputs", () => {
-  it("lists GitHub, Google, Supabase, Vercel in that order; Figma is hidden", () => {
-    expect([...SHOWN_CONNECTORS]).toEqual(["github", "google", "supabase", "vercel"]);
+describe("Connectors page: OAuth connectors, no token inputs", () => {
+  it("lists GitHub, Google, Supabase, Vercel, Blogger in that order; Figma is hidden", () => {
+    expect([...SHOWN_CONNECTORS]).toEqual(["github", "google", "supabase", "vercel", "blogger"]);
     for (const id of SHOWN_CONNECTORS) expect(getConnector(id)?.auth).toBe("oauth");
     render(<ConnectorsGrid initial={shownViews()} />);
-    expect(screen.getAllByTestId("connector-card").map((c) => c.getAttribute("data-id"))).toEqual(["github", "google", "supabase", "vercel"]);
+    expect(screen.getAllByTestId("connector-card").map((c) => c.getAttribute("data-id"))).toEqual(["github", "google", "supabase", "vercel", "blogger"]);
     expect(screen.queryByText("Figma")).toBeNull();
   });
 
@@ -36,7 +37,7 @@ describe("Connectors page: four OAuth connectors, no token inputs", () => {
     const env: Record<string, string> = { ...ENV };
     delete env.VERCEL_INTEGRATION_SLUG; delete env.SUPABASE_OAUTH_CLIENT_SECRET;
     render(<ConnectorsGrid initial={shownViews(env)} />);
-    expect(screen.getAllByTestId("connector-card").map((c) => c.getAttribute("data-id"))).toEqual(["github", "google"]);
+    expect(screen.getAllByTestId("connector-card").map((c) => c.getAttribute("data-id"))).toEqual(["github", "google", "blogger"]);
   });
 
   it("a connected Supabase shows its account and Disconnect", () => {
