@@ -33,15 +33,6 @@ const config: Config = {
         warn: { DEFAULT: "#f5c451", subtle: "#2a2310" },
         danger: { DEFAULT: "#f47c7c", subtle: "#2c1517" },
         info: { DEFAULT: "#7fb3f5", subtle: "#121d2c" },
-        obsidian: {
-          surface: "#0e1416",
-          dim: "#0e1416",
-          bright: "#343a3d",
-          lowest: "#090f11",
-          low: "#161d1f",
-          container: "#1c2427",
-          high: "#273034",
-        },
         champagne: {
           gold: "#e6e0d4",
           accent: "#c5a059",
