@@ -46,6 +46,8 @@ export async function updateSession(request: NextRequest, event?: Pick<NextFetch
         return request.cookies.getAll();
       },
       setAll(cookiesToSet) {
+        // Cookie options pass through unchanged on purpose (auth cookies stay JS-readable for
+        // the browser client that shares this store) — see the note in lib/supabase/server.ts.
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
         response = NextResponse.next({ request });
         cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));

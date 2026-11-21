@@ -19,6 +19,19 @@ export function detectInApp(ua: string): InApp {
   return null;
 }
 
+/**
+ * TARGET's own Android app: MainActivity appends "TargetAndroid/<version>" to the WebView
+ * user agent. detectInApp also matches its WebView (the generic "; wv)" Android rule), but
+ * sign-in DOES work there — the app intercepts /auth/google before the WebView loads it and
+ * runs the Custom Tab + handoff flow — so the "open in your real browser" diversion in
+ * GoogleButton must never fire for this UA. Without this exception the button bounced the
+ * login page into Chrome, the whole sign-in ran as a plain web flow there, and the app
+ * WebView was never signed in.
+ */
+export function isTargetApp(ua: string): boolean {
+  return /\bTargetAndroid\//.test(ua);
+}
+
 /** Android: an intent URL opens the same page in Chrome (or the default browser). */
 export function openInBrowserUrl(href: string): string {
   const u = new URL(href);

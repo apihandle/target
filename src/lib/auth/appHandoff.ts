@@ -14,7 +14,7 @@ import { safeNext } from "@/lib/ids";
  * a random code and redirects Chrome to /auth/app-return?code=…, an Android App Link that
  * reopens the app. The app loads /auth/app-handoff?code=… in its WebView, which consumes the
  * code exactly once and calls supabase.auth.setSession(), so the session cookies land in the
- * WebView. Only the SHA-256 hash of the code is stored; codes expire after 60 seconds and are
+ * WebView. Only the SHA-256 hash of the code is stored; codes expire after 120 seconds and are
  * deleted when consumed, so each code can be used once.
  *
  * Fix #4 — the code alone used to be a bearer token: any browser that opened the handoff URL
@@ -30,7 +30,11 @@ import { safeNext } from "@/lib/ids";
  * build. A failed verifier check does NOT consume the code (the real app can still claim it
  * within the TTL); only a successful claim — or expiry — deletes the row.
  */
-export const HANDOFF_TTL_MS = 60 * 1000;
+// 120 s: the claim happens after Chrome hands off to the app (App Link resolution, a possible
+// app cold start or chooser, then a WebView page load), and 60 s proved too tight on slower
+// devices — the code had expired before the WebView asked for the session. Still single-use
+// and, for current app builds, PKCE-bound to the phone that started sign-in.
+export const HANDOFF_TTL_MS = 120 * 1000;
 
 export type HandoffSession = { access_token: string; refresh_token: string };
 export type HandoffRow = { session_enc: string; next: string | null; expires_at: string; code_challenge: string | null };

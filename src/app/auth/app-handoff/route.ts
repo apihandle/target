@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  * accepted two ways:
  *   - GET ?verifier=… — the shape the WebView uses: a top-level page navigation cannot carry a
  *     body. Query strings can land in proxy/server logs, which is accepted here because both
- *     the code and the verifier are single-use and die with the 60 s handoff TTL.
+ *     the code and the verifier are single-use and die with the short handoff TTL.
  *   - POST with a JSON (or form) body { code, verifier } — the preferred shape for any
  *     non-browser caller, since bodies are not written to access logs.
  * Handoffs without a stored challenge (older app builds) need no verifier, as before.

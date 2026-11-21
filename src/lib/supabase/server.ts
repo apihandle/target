@@ -13,6 +13,12 @@ export async function createClient() {
         },
         setAll(cookiesToSet) {
           try {
+            // Deliberately pass @supabase/ssr's options through unchanged — in particular the
+            // auth cookies stay httpOnly: false (the library default). The browser client
+            // shares this same cookie store: useSignedIn, SessionKeeper (background refresh,
+            // the 401-retry fetch patch) and Chat read/refresh the session from JS, so marking
+            // the cookies HttpOnly would sign the web UI out from under the server session.
+            // XSS exposure is mitigated by the strict CSP in next.config.mjs instead.
             cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
           } catch {
             // called from a Server Component; middleware refreshes the session

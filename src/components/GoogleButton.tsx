@@ -1,14 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
-import { detectInApp, openInBrowserUrl, type InApp } from "@/lib/browser";
+import { detectInApp, isTargetApp, openInBrowserUrl, type InApp } from "@/lib/browser";
 
 export default function GoogleButton({ next = "/app", variant = "dark" }: { next?: string; variant?: "dark" | "glass" }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [inApp, setInApp] = useState<InApp>(null);
+  const [targetApp, setTargetApp] = useState(false);
   const [copied, setCopied] = useState(false);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- reads a browser-only API after mount so server and client markup match
-  useEffect(() => { setInApp(detectInApp(navigator.userAgent)); }, []);
+  useEffect(() => { setInApp(detectInApp(navigator.userAgent)); setTargetApp(isTargetApp(navigator.userAgent)); }, []);
 
   async function copyLink() {
     try { await navigator.clipboard.writeText(window.location.href); setCopied(true); } catch { setCopied(false); }
@@ -16,7 +17,9 @@ export default function GoogleButton({ next = "/app", variant = "dark" }: { next
 
   async function go() {
     // Google refuses sign-in inside app browsers, so send the user to their real browser first.
-    if (inApp?.android) { window.location.href = openInBrowserUrl(window.location.href); return; }
+    // TARGET's own app is the exception: its shell intercepts /auth/google and runs the Custom
+    // Tab + handoff flow, so the normal navigation below is exactly what starts app sign-in.
+    if (!targetApp && inApp?.android) { window.location.href = openInBrowserUrl(window.location.href); return; }
     setError(null);
     setLoading(true);
     // Runs on TARGET's own domain so Google shows gettarget.vercel.app, and also connects Gmail, Calendar and Drive.
@@ -45,7 +48,7 @@ export default function GoogleButton({ next = "/app", variant = "dark" }: { next
         </svg>
         {loading ? "Opening Google…" : "Continue with Google"}
       </button>
-      {inApp && (
+      {inApp && !targetApp && (
         <div data-testid="inapp-warning" className="mt-2 rounded-xl border border-accent/30 bg-black/30 px-3 py-2 text-center text-xs text-stucco/80">
           Google sign-in doesn&apos;t work inside {inApp.app}. {inApp.android ? "Tapping the button opens TARGET in your browser." : "Open this page in Safari: tap the menu, then Open in browser."}
           {!inApp.android && <button type="button" onClick={copyLink} className="ml-1 underline" data-testid="inapp-copy">{copied ? "Link copied" : "Copy link"}</button>}
