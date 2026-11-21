@@ -14,6 +14,7 @@ import { slackConnector } from "@/lib/connectors/slack";
 import { notion } from "@/lib/connectors/notion";
 import { blogger } from "@/lib/connectors/blogger";
 import { facebook, instagram } from "@/lib/connectors/meta";
+import { youtube } from "@/lib/connectors/youtube";
 
 export const CONNECTORS: ConnectorDef[] = [
   supabase,
@@ -27,6 +28,7 @@ export const CONNECTORS: ConnectorDef[] = [
   blogger,
   facebook,
   instagram,
+  youtube,
 ];
 
 const BY_ID = new Map(CONNECTORS.map((c) => [c.id, c]));

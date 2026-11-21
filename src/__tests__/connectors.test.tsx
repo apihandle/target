@@ -93,7 +93,7 @@ describe("crypto", () => {
 // ------------------------------------------------------------------ registry
 describe("registry", () => {
   it("has the requested connectors in order with complete, unique definitions", () => {
-    expect(CONNECTORS.map((c) => c.id)).toEqual(["supabase", "vercel", "github", "google", "figma", "canva", "slack", "notion", "blogger", "facebook", "instagram"]);
+    expect(CONNECTORS.map((c) => c.id)).toEqual(["supabase", "vercel", "github", "google", "figma", "canva", "slack", "notion", "blogger", "facebook", "instagram", "youtube"]);
     for (const c of CONNECTORS) {
       expect(c.name && c.icon && c.description && c.capabilities.length && c.permissions.length).toBeTruthy();
       expect(["oauth", "api_key"]).toContain(c.auth);

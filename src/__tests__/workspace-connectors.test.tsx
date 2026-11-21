@@ -99,8 +99,8 @@ describe("tool registry", () => {
     }
   });
 
-  it("stays hidden in the UI", () => {
-    expect([...SHOWN_CONNECTORS]).toEqual(["github", "google", "supabase", "vercel", "blogger", "facebook", "instagram"]);
+  it("is shown in the UI alongside the other connectors", () => {
+    expect([...SHOWN_CONNECTORS]).toEqual(["github", "google", "supabase", "vercel", "blogger", "facebook", "instagram", "youtube", "canva", "figma", "notion", "slack"]);
   });
 });
 
