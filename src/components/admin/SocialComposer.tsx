@@ -67,13 +67,31 @@ async function postJson(url: string, method: string, body: Record<string, unknow
 const errText = (j: Record<string, unknown>, status: number) => (typeof j.error === "string" ? j.error : `Failed (HTTP ${status})`);
 
 /**
- * The /admin/social composer: save your own Gemini key (stored sealed, like any provider key), draft a post
- * with it, edit, then publish the confirmed text to TARGET's Facebook Page and/or Instagram — now, or at a
- * scheduled time (the social cron publishes the queue on its own; a scheduled post can also ask Gemini to
- * write the text at post time). Publishing/scheduling is a two-step confirm here and the API additionally
- * requires confirm: true + writes an audit entry first.
+ * The social composer, shared by /admin/social and /app/social: save your own Gemini key (stored sealed,
+ * like any provider key), draft a post with it, edit, then publish the confirmed text to the selected
+ * Facebook Page / Instagram / Blogger destinations — now, or at a scheduled time (the social cron
+ * publishes the queue on its own; a scheduled post can also ask Gemini to write the text at post time).
+ * Publishing/scheduling is a two-step confirm here. `apiBase` picks the API family: the admin routes
+ * (which additionally require confirm: true + write an audit entry first) or the user twins under
+ * /api/social, where every destination resolves to the signed-in user's own connected accounts.
  */
-export default function SocialComposer({ initial }: { initial: SocialStatus }) {
+export type SocialComposerProps = {
+  initial: SocialStatus;
+  apiBase?: string;
+  /** Sentence shown at the publish/schedule confirm step. Admin default mentions the audit log. */
+  confirmNote?: string;
+  /** Per-target hint overrides for the destination chips (e.g. the user's own Page name / @username). */
+  targetHints?: Partial<Record<SocialTarget, string>>;
+  defaultTargets?: SocialTarget[];
+};
+
+export default function SocialComposer({
+  initial,
+  apiBase = "/api/admin/social",
+  confirmNote = "This is recorded in the admin audit log.",
+  targetHints,
+  defaultTargets,
+}: SocialComposerProps) {
   const [gemini, setGemini] = useState(initial.gemini);
   const [keyInput, setKeyInput] = useState("");
   const [modelInput, setModelInput] = useState(initial.gemini.model ?? "");
@@ -97,7 +115,7 @@ export default function SocialComposer({ initial }: { initial: SocialStatus }) {
   const [message, setMessage] = useState("");
   const [link, setLink] = useState("");
   const [imageUrl, setImageUrl] = useState("");
-  const [targets, setTargets] = useState<SocialTarget[]>(["facebook"]);
+  const [targets, setTargets] = useState<SocialTarget[]>(defaultTargets ?? ["facebook"]);
   const [confirmPublish, setConfirmPublish] = useState(false);
   const [pubBusy, setPubBusy] = useState(false);
   const [results, setResults] = useState<TargetResult[] | null>(null);
@@ -122,7 +140,7 @@ export default function SocialComposer({ initial }: { initial: SocialStatus }) {
   const saveKey = async () => {
     setKeyBusy(true); setKeyNote(null);
     try {
-      const { res, j } = await postJson("/api/admin/social/key", "POST", { apiKey: keyInput, model: modelInput.trim() || undefined, confirm: true });
+      const { res, j } = await postJson(`${apiBase}/key`, "POST", { apiKey: keyInput, model: modelInput.trim() || undefined, confirm: true });
       if (!res.ok) setKeyNote({ ok: false, text: errText(j, res.status) });
       else {
         const g = j.gemini as SocialStatus["gemini"];
@@ -136,7 +154,7 @@ export default function SocialComposer({ initial }: { initial: SocialStatus }) {
   const removeKey = async () => {
     setKeyBusy(true); setKeyNote(null);
     try {
-      const { res, j } = await postJson("/api/admin/social/key", "DELETE", { confirm: true });
+      const { res, j } = await postJson(`${apiBase}/key`, "DELETE", { confirm: true });
       if (!res.ok) setKeyNote({ ok: false, text: errText(j, res.status) });
       else { setGemini({ saved: false, preview: "", model: null }); setModelInput(""); setKeyNote({ ok: true, text: "Key removed." }); }
     } catch { setKeyNote({ ok: false, text: "Network error. The key was not removed." }); }
@@ -146,7 +164,7 @@ export default function SocialComposer({ initial }: { initial: SocialStatus }) {
   const loadBlogs = async () => {
     setBloggerBusy(true); setBloggerNote(null);
     try {
-      const res = await fetch("/api/admin/social/blogger", { cache: "no-store" });
+      const res = await fetch(`${apiBase}/blogger`, { cache: "no-store" });
       const j = (await res.json().catch(() => ({}))) as Record<string, unknown>;
       if (!res.ok) setBloggerNote({ ok: false, text: errText(j, res.status) });
       else {
@@ -164,7 +182,7 @@ export default function SocialComposer({ initial }: { initial: SocialStatus }) {
   const saveBlog = async () => {
     setBloggerBusy(true); setBloggerNote(null);
     try {
-      const { res, j } = await postJson("/api/admin/social/blogger", "POST", { blogId: blogPick, confirm: true });
+      const { res, j } = await postJson(`${apiBase}/blogger`, "POST", { blogId: blogPick, confirm: true });
       if (!res.ok) setBloggerNote({ ok: false, text: errText(j, res.status) });
       else {
         if (j.status) setBlogger(j.status as BloggerStatusView);
@@ -177,7 +195,7 @@ export default function SocialComposer({ initial }: { initial: SocialStatus }) {
   const disconnectBlogger = async () => {
     setBloggerBusy(true); setBloggerNote(null);
     try {
-      await postJson("/api/admin/social/blogger", "DELETE", { confirm: true });
+      await postJson(`${apiBase}/blogger`, "DELETE", { confirm: true });
       const { res, j } = await postJson("/api/connectors/blogger/disconnect", "POST", {});
       if (!res.ok) setBloggerNote({ ok: false, text: errText(j, res.status) });
       else window.location.reload();
@@ -188,7 +206,7 @@ export default function SocialComposer({ initial }: { initial: SocialStatus }) {
   const generate = async () => {
     setDraftBusy(true); setDraftNote(null);
     try {
-      const { res, j } = await postJson("/api/admin/social/generate", "POST", { topic, tone });
+      const { res, j } = await postJson(`${apiBase}/generate`, "POST", { topic, tone });
       if (!res.ok) setDraftNote({ ok: false, text: errText(j, res.status) });
       else if (typeof j.text === "string") {
         setMessage(j.text);
@@ -201,7 +219,7 @@ export default function SocialComposer({ initial }: { initial: SocialStatus }) {
   const publish = async () => {
     setPubBusy(true); setPubError(null); setResults(null);
     try {
-      const { res, j } = await postJson("/api/admin/social/publish", "POST", {
+      const { res, j } = await postJson(`${apiBase}/publish`, "POST", {
         message, link: link.trim() || undefined, imageUrl: imageUrl.trim() || undefined,
         title: title.trim() || undefined, targets, confirm: true,
       });
@@ -214,11 +232,11 @@ export default function SocialComposer({ initial }: { initial: SocialStatus }) {
 
   const fetchQueue = useCallback(async (): Promise<ScheduledPost[] | null> => {
     try {
-      const res = await fetch("/api/admin/social/schedule", { cache: "no-store" });
+      const res = await fetch(`${apiBase}/schedule`, { cache: "no-store" });
       const j = (await res.json().catch(() => ({}))) as Record<string, unknown>;
       return res.ok && Array.isArray(j.posts) ? (j.posts as ScheduledPost[]) : null;
     } catch { return null; }
-  }, []);
+  }, [apiBase]);
 
   const loadQueue = useCallback(async () => {
     setQueueBusy(true);
@@ -236,7 +254,7 @@ export default function SocialComposer({ initial }: { initial: SocialStatus }) {
   const schedule = async () => {
     setSchedBusy(true); setSchedNote(null);
     try {
-      const { res, j } = await postJson("/api/admin/social/schedule", "POST", {
+      const { res, j } = await postJson(`${apiBase}/schedule`, "POST", {
         confirm: true,
         scheduledAt: schedAt ? new Date(schedAt).toISOString() : "",
         targets,
@@ -261,7 +279,7 @@ export default function SocialComposer({ initial }: { initial: SocialStatus }) {
   const cancelPost = async (id: string) => {
     setCancelBusy(true);
     try {
-      const { res, j } = await postJson("/api/admin/social/schedule", "DELETE", { id, confirm: true });
+      const { res, j } = await postJson(`${apiBase}/schedule`, "DELETE", { id, confirm: true });
       if (!res.ok) setSchedNote({ ok: false, text: errText(j, res.status) });
       else if (Array.isArray(j.posts)) setQueue(j.posts as ScheduledPost[]);
     } catch { setSchedNote({ ok: false, text: "Network error. The post was not cancelled." }); }
@@ -423,7 +441,7 @@ export default function SocialComposer({ initial }: { initial: SocialStatus }) {
                   ? { ready: true as const }
                   : initial.targets.blogger
                 : initial.targets[t.id];
-              const hint = t.id === "blogger" && blogger.blog ? `A post on ${blogger.blog.blogName || "your blog"}` : t.hint;
+              const hint = t.id === "blogger" && blogger.blog ? `A post on ${blogger.blog.blogName || "your blog"}` : (targetHints?.[t.id] ?? t.hint);
               const on = targets.includes(t.id);
               return (
                 <label key={t.id} className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-sm ${on ? "border-accent/40 bg-accent/10 text-ink" : "border-line-strong bg-surface-2 text-muted"}`}>
@@ -442,7 +460,7 @@ export default function SocialComposer({ initial }: { initial: SocialStatus }) {
             </button>
           ) : (
             <>
-              <span className="text-xs text-muted">Post this to {targets.map((t) => SOCIAL_TARGETS.find((x) => x.id === t)?.label).join(" and ")}? This is recorded in the admin audit log.</span>
+              <span className="text-xs text-muted">Post this to {targets.map((t) => SOCIAL_TARGETS.find((x) => x.id === t)?.label).join(" and ")}? {confirmNote}</span>
               <button type="button" className={btnPrimary} disabled={pubBusy} onClick={publish} data-testid="social-publish-confirm">{pubBusy ? "Posting…" : "Yes, publish"}</button>
               <button type="button" className={btnGhost} disabled={pubBusy} onClick={() => setConfirmPublish(false)}>Cancel</button>
             </>
@@ -500,7 +518,7 @@ export default function SocialComposer({ initial }: { initial: SocialStatus }) {
             ) : (
               <>
                 <span className="text-xs text-muted">
-                  Schedule {schedAuto ? "an AI-written post" : "this post"} for {schedAt ? whenText(new Date(schedAt).toISOString()) : ""} to {targets.map((t) => SOCIAL_TARGETS.find((x) => x.id === t)?.label).join(" and ")}? This is recorded in the admin audit log.
+                  Schedule {schedAuto ? "an AI-written post" : "this post"} for {schedAt ? whenText(new Date(schedAt).toISOString()) : ""} to {targets.map((t) => SOCIAL_TARGETS.find((x) => x.id === t)?.label).join(" and ")}? {confirmNote}
                 </span>
                 <button type="button" className={btnPrimary} disabled={schedBusy} onClick={schedule} data-testid="social-schedule-confirm">{schedBusy ? "Scheduling…" : "Yes, schedule"}</button>
                 <button type="button" className={btnGhost} disabled={schedBusy} onClick={() => setConfirmSchedule(false)}>Cancel</button>

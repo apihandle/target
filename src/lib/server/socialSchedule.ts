@@ -6,6 +6,9 @@ import { metaConfig, postInputProblem, publishSocialPost, type BloggerPublishSet
 import { loadGeminiKey } from "@/lib/server/socialKeys";
 import { generateSocialDraft } from "@/lib/server/socialDraft";
 import { resolveBloggerSetup } from "@/lib/server/socialBlogger";
+import { resolveMetaSetup, type MetaPublishSetup } from "@/lib/server/socialMeta";
+import { isAdminUser } from "@/lib/server/adminCheck";
+import type { User } from "@supabase/supabase-js";
 
 /**
  * Scheduled social posts (migration 0024; Blogger target + title column added by 0025): the queue +
@@ -184,7 +187,24 @@ type RunDeps = {
   fetch?: typeof fetch;
   /** Resolve the Blogger publish setup for a post's owner (defaults to the real connection store). */
   bloggerFor?: (userId: string) => Promise<BloggerPublishSetup>;
+  /** Resolve the Meta publish setup for a post's owner (defaults to their own connection, env fallback for the owner). */
+  metaFor?: (userId: string) => Promise<MetaPublishSetup>;
 };
+
+/**
+ * Whether this user id belongs to a site admin, via the service-role auth API. Null when the client
+ * can't answer (unit-test fakes, local dev) — callers treat null as "can't tell", not as "no".
+ */
+async function isAdminUserId(db: Db, userId: string, env?: Record<string, string | undefined>): Promise<boolean | null> {
+  const admin = (db as { auth?: { admin?: { getUserById?: unknown } } }).auth?.admin;
+  if (!admin || typeof admin.getUserById !== "function") return null;
+  try {
+    const { data } = await (admin.getUserById as (id: string) => Promise<{ data: { user: User | null } }>)(userId);
+    return data?.user ? isAdminUser(data.user, env) : false;
+  } catch {
+    return null;
+  }
+}
 
 async function finishPost(db: Db, id: string, patch: Record<string, unknown>): Promise<void> {
   // Guarded on "publishing": only the runner that claimed the row may write its outcome.
@@ -239,7 +259,31 @@ export async function runScheduledPost(
     const blogger = targets.includes("blogger")
       ? await (deps.bloggerFor ?? ((userId: string) => resolveBloggerSetup(db, userId, f, deps.env)))(post.user_id)
       : undefined;
-    const results = await publishSocialPost(metaConfig(deps.env), input, targets, f, blogger);
+    // Meta is per-user too (phase 2): the post publishes with the POSTING user's own connection —
+    // their picked Page and its token, never another user's. The env owner config remains the
+    // fallback for the owner's own posts only: when the resolved setup comes from env and the
+    // poster is a confirmed non-admin (e.g. they disconnected Meta after scheduling), the Meta
+    // targets fail with the reason instead of landing on the owner's Page.
+    const metaTargets = targets.filter((t) => t !== "blogger");
+    let metaCfg = metaConfig(deps.env);
+    let metaFailure: string | null = null;
+    if (metaTargets.length) {
+      const setup = await (deps.metaFor ?? ((userId: string) => resolveMetaSetup(userId, deps.env)))(post.user_id);
+      if (!setup.ready) metaFailure = setup.reason;
+      else if (setup.source === "env" && (await isAdminUserId(db, post.user_id, deps.env)) === false) {
+        metaFailure = "The post's owner has no Meta account connected, so there is no Page of theirs to post to. (The site owner's Page is only used for the owner's own posts.)";
+      } else metaCfg = setup.cfg;
+    }
+    let results: TargetResult[];
+    if (metaFailure === null) {
+      results = await publishSocialPost(metaCfg, input, targets, f, blogger);
+    } else if (targets.includes("blogger")) {
+      // A Blogger target still publishes on its own; the Meta results are spliced back in order.
+      const bResults = await publishSocialPost(metaCfg, input, ["blogger"], f, blogger);
+      results = targets.map((t) => (t === "blogger" ? bResults[0] : { target: t, ok: false as const, error: metaFailure! }));
+    } else {
+      results = metaTargets.map((t) => ({ target: t, ok: false as const, error: metaFailure! }));
+    }
     const okCount = results.filter((r) => r.ok).length;
     if (okCount === 0) {
       const why = results.map((r) => (r.ok ? "" : `${r.target}: ${r.error}`)).filter(Boolean).join(" · ");

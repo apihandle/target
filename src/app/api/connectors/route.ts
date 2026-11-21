@@ -1,6 +1,7 @@
 import { json, requireUser, unauthorized } from "@/lib/server/auth";
 import { connectorViews } from "@/lib/connectors/registry";
 import { listConnections } from "@/lib/connectors/store";
+import { metaPublicInfo, patchMetaViews } from "@/lib/server/socialMeta";
 
 export const dynamic = "force-dynamic";
 
@@ -12,5 +13,6 @@ export async function GET() {
   let warning: string | undefined;
   try { connections = await listConnections(a.db, a.user.id); }
   catch { warning = "Connection status couldn't load (apply migration 0007)."; }
-  return json({ connectors: connectorViews(process.env, connections), ...(warning ? { warning } : {}) });
+  const info = await metaPublicInfo(a.user.id).catch(() => null);
+  return json({ connectors: patchMetaViews(connectorViews(process.env, connections), info), ...(warning ? { warning } : {}) });
 }

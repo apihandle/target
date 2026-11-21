@@ -22,6 +22,10 @@ export async function GET(req: Request, props: { params: Promise<{ id: string }>
   const origin = url.origin;
   const page = (q: string) => NextResponse.redirect(`${origin}/app/connectors?${q}`, { status: 303 });
   if (params.id === "google" && (url.searchParams.get("state") ?? "").startsWith(LOGIN_PREFIX)) return googleLogin(url);
+  // Facebook may be configured with either card's callback path; the real flow lives at meta/callback.
+  if (params.id === "facebook" || params.id === "instagram") {
+    return NextResponse.redirect(`${origin}/api/connectors/meta/callback${url.search}`, { status: 303 });
+  }
   const a = await requireUser();
   if (!a) return NextResponse.redirect(`${origin}/login?next=/app/connectors`, { status: 303 });
   const c = CONNECTOR_ID.test(params.id) ? getConnector(params.id) : undefined;

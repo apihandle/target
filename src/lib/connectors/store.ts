@@ -113,6 +113,21 @@ export async function getCredentials(userId: string, c: ConnectorDef, f: typeof 
   return { creds, info: { connector_id: c.id, status: "connected", scopes: row.scopes ?? [], account_label: row.account_label ?? "", meta: creds.meta ?? {} } };
 }
 
+/**
+ * Read-only credential access for connectors whose tokens never refresh through the generic flow
+ * (e.g. Meta: the long-lived user token is exchanged at connect time and simply expires). Returns the
+ * decrypted credentials and the row's public info, or null when there is no connected row. Unlike
+ * getCredentials this never refreshes and never writes a status change.
+ */
+export async function getStoredCredentials(userId: string, connectorId: string): Promise<{ creds: Credentials; info: ConnectionInfo } | null> {
+  const row = await loadRow(userId, connectorId);
+  if (!row || !row.encrypted_credentials || row.status !== "connected") return null;
+  let creds: Credentials;
+  try { creds = JSON.parse(decryptWithAny(row.encrypted_credentials, decryptionKeys())) as Credentials; }
+  catch { return null; }
+  return { creds, info: { connector_id: connectorId, status: "connected", scopes: row.scopes ?? [], account_label: row.account_label ?? "", meta: creds.meta ?? {} } };
+}
+
 export async function touchLastUsed(userId: string, connectorId: string) {
   try { await createAdminClient().from("connections").update({ last_used_at: new Date().toISOString() }).eq("user_id", userId).eq("connector_id", connectorId); }
   catch { /* bookkeeping only */ }

@@ -4,6 +4,7 @@ import { auditFailure, auditFirst, readConfirmed } from "@/lib/server/adminWrite
 import { isSocialTarget, type SocialTarget } from "@/lib/socialConfig";
 import { metaConfig, postInputProblem, publishSocialPost, type SocialPostInput } from "@/lib/server/socialPost";
 import { resolveBloggerSetup } from "@/lib/server/socialBlogger";
+import { resolveMetaSetup } from "@/lib/server/socialMeta";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -39,7 +40,10 @@ export async function POST(req: Request) {
   if (blocked) return blocked;
 
   const blogger = targets.includes("blogger") ? await resolveBloggerSetup(a.db, a.user.id) : undefined;
-  const results = await publishSocialPost(metaConfig(), input, targets, fetch, blogger);
+  // The admin's own connected Page wins when they picked one; otherwise the env owner config (v1).
+  const metaSetup = targets.some((t) => t !== "blogger") ? await resolveMetaSetup(a.user.id) : null;
+  const cfg = metaSetup?.ready ? metaSetup.cfg : metaConfig();
+  const results = await publishSocialPost(cfg, input, targets, fetch, blogger);
   const okCount = results.filter((r) => r.ok).length;
   if (okCount === 0) {
     await auditFailure(a.db, a, entry, results.map((r) => (r.ok ? "" : `${r.target}: ${r.error}`)).filter(Boolean).join(" · ").slice(0, 200) || "all targets failed");

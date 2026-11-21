@@ -13,6 +13,7 @@ import { canva } from "@/lib/connectors/canva";
 import { slackConnector } from "@/lib/connectors/slack";
 import { notion } from "@/lib/connectors/notion";
 import { blogger } from "@/lib/connectors/blogger";
+import { facebook, instagram } from "@/lib/connectors/meta";
 
 export const CONNECTORS: ConnectorDef[] = [
   supabase,
@@ -24,6 +25,8 @@ export const CONNECTORS: ConnectorDef[] = [
   slackConnector,
   notion,
   blogger,
+  facebook,
+  instagram,
 ];
 
 const BY_ID = new Map(CONNECTORS.map((c) => [c.id, c]));
@@ -63,7 +66,9 @@ export type ConnectorView = {
 /** What GET /api/connectors and the Connectors page show. Never includes credentials. */
 export function connectorViews(env: Env, connections: ConnectionInfo[]): ConnectorView[] {
   return CONNECTORS.map((c) => {
-    const conn = connections.find((x) => x.connector_id === c.id);
+    // The Facebook / Instagram cards are fed by the user's single "meta" connection row.
+    const conn = connections.find((x) => x.connector_id === c.id)
+      ?? ((c.id === "facebook" || c.id === "instagram") ? connections.find((x) => x.connector_id === "meta") : undefined);
     const missing = missingEnv(c, env);
     const status: UiStatus = conn ? conn.status : missing.length ? "setup_required" : "not_connected";
     const lacking = conn && conn.status === "connected" && conn.scopes.length ? (c.addedScopes ?? []).filter((s) => !conn.scopes.includes(s)) : [];

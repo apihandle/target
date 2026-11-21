@@ -5,10 +5,11 @@ import {
 } from "@/lib/socialConfig";
 
 /**
- * Server side of social posting: publishing to TARGET's own Facebook Page and its linked Instagram account
- * through the Meta Graph API, and to the admin's chosen Blogger blog through the Blogger API v3. Meta
- * config comes from server env vars (see DESIGN.md for why Meta stays env-based in v1 while the Gemini key
- * is a per-user stored key); the Blogger access token is per-user OAuth, resolved by the caller through
+ * Server side of social posting: publishing to a Facebook Page and its linked Instagram account
+ * through the Meta Graph API, and to the poster's chosen Blogger blog through the Blogger API v3. The
+ * Meta config is resolved by the caller per posting user (lib/server/socialMeta.ts: their own sealed
+ * connection first, the env-configured owner Page as the owner's fallback) and passed in as a
+ * MetaConfig; the Blogger access token is per-user OAuth, resolved by the caller through
  * lib/server/socialBlogger.ts and passed in as a BloggerPublishSetup. Neither token is ever returned,
  * logged or copied into an error string, and provider error bodies are mapped to short explanations
  * instead of being forwarded.

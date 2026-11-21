@@ -3,6 +3,7 @@ import { META_ENV_VARS } from "@/lib/socialConfig";
 import { metaConfig, targetReadiness } from "@/lib/server/socialPost";
 import { geminiKeyStatus } from "@/lib/server/socialKeys";
 import { bloggerReadiness, bloggerStatus } from "@/lib/server/socialBlogger";
+import { resolveMetaSetup } from "@/lib/server/socialMeta";
 import { Panel, SectionHeading } from "@/components/admin/ui";
 import SocialComposer, { type SocialStatus } from "@/components/admin/SocialComposer";
 
@@ -18,6 +19,10 @@ export const maxDuration = 30;
 export default async function AdminSocial() {
   const { db, user } = await requireAdminPage();
   const cfg = metaConfig();
+  // Composer readiness follows what publishing would use (own picked Page first, env config as the
+  // fallback); the setup panel below keeps reporting the env configuration itself.
+  const metaSetup = await resolveMetaSetup(user.id);
+  const effectiveCfg = metaSetup.ready ? metaSetup.cfg : cfg;
   const blogger = await bloggerStatus(db, user.id);
   const status: SocialStatus = {
     meta: {
@@ -26,7 +31,7 @@ export default async function AdminSocial() {
       igUserId: cfg.igUserId || null,
       graphVersion: cfg.graphVersion,
     },
-    targets: { ...targetReadiness(cfg), blogger: await bloggerReadiness(db, user.id) },
+    targets: { ...targetReadiness(effectiveCfg), blogger: await bloggerReadiness(db, user.id) },
     gemini: await geminiKeyStatus(db, user.id),
     blogger,
   };

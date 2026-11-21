@@ -4,8 +4,11 @@
  * No server imports here. Design: ~/workspace/target-social-posting/DESIGN.md.
  *
  * Two kinds of secret, on purpose:
- *  - the Meta values below are site configuration (server env vars): v1 publishes as TARGET itself, from the
- *    admin panel only, to one fixed Page + its linked Instagram account;
+ *  - Meta: since phase 2 every user connects their OWN Facebook account (Facebook Login) and picks
+ *    their Page; the tokens are sealed per user in `connections` under the provider id "meta"
+ *    (see lib/server/socialMeta.ts). The env vars below remain as the site owner's configuration:
+ *    META_APP_ID / META_APP_SECRET are the app the login flow runs under, and the Page id/token/IG
+ *    id are the owner's fallback for the owner's own posts (v1 behaviour, admin only);
  *  - the Gemini API key is NOT an env var: it is the signed-in user's own key, pasted into the app and stored
  *    sealed per user, exactly like a custom provider key (see lib/server/socialKeys.ts).
  */
@@ -26,6 +29,24 @@ export const META_REQUIRED_VARS: MetaEnvVar[] = ["META_FACEBOOK_PAGE_ID", "META_
 
 /** Fallback Graph API version when META_GRAPH_API_VERSION is unset; set the env var to the app's version. */
 export const DEFAULT_GRAPH_VERSION = "v21.0";
+
+/**
+ * Scopes the per-user Facebook Login flow asks for (phase 2: every user connects their own Page +
+ * Instagram, lib/connectors/meta.ts). pages_show_list + pages_read_engagement list the user's Pages
+ * and the Instagram account linked to a Page; pages_manage_posts and instagram_content_publish are
+ * what the publisher needs; instagram_basic reads the IG account's username.
+ */
+export const META_SCOPES = [
+  "pages_show_list",
+  "pages_read_engagement",
+  "pages_manage_posts",
+  "instagram_basic",
+  "instagram_content_publish",
+] as const;
+
+/** The Graph API version in effect (env override, else the conservative default). */
+export const metaGraphVersion = (env: Record<string, string | undefined>): string =>
+  (env.META_GRAPH_API_VERSION ?? "").trim() || DEFAULT_GRAPH_VERSION;
 
 /** One caption limit for every target: Instagram's maximum. Facebook allows far more. */
 export const SOCIAL_MESSAGE_MAX = 2200;
@@ -48,7 +69,7 @@ export function apiKeyProblem(raw: unknown): string | null {
   return null;
 }
 
-/** The two Meta targets are configured by env vars; Blogger is connected per user (Google OAuth). */
+/** The two Meta targets publish via the posting user's own Meta connection (env = owner fallback); Blogger is connected per user (Google OAuth). */
 export type MetaTarget = "facebook" | "instagram";
 export type SocialTarget = MetaTarget | "blogger";
 export const SOCIAL_TARGETS: { id: SocialTarget; label: string; hint: string }[] = [

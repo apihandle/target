@@ -1,11 +1,14 @@
 import AppShell, { getSessionOrRedirect } from "@/components/AppShell";
 import BloggerBlogPicker from "@/components/BloggerBlogPicker";
 import ConnectorsGrid from "@/components/ConnectorsGrid";
+import GeminiKeyCard from "@/components/GeminiKeyCard";
+import MetaPagePicker from "@/components/MetaPagePicker";
 import { Page, PageHeader } from "@/components/ui/Card";
 import { connectorViews, CONNECTOR_ID } from "@/lib/connectors/registry";
 import { listConnections } from "@/lib/connectors/store";
 import { safeReturnTo } from "@/lib/connectors/state";
 import { SHOWN_CONNECTORS } from "@/lib/connectors/shown";
+import { metaPublicInfo, patchMetaViews } from "@/lib/server/socialMeta";
 import type { Db } from "@/lib/server/auth";
 
 
@@ -33,7 +36,13 @@ export default async function ConnectorsPage(
   );
   // Only the connectors that work end to end today, in this order.
   const all = connectorViews(process.env, conns);
-  const views = SHOWN_CONNECTORS.map((id) => all.find((v) => v.id === id)).filter((v): v is NonNullable<typeof v> => !!v);
+  // The Facebook card names the picked Page and the Instagram card the linked @username; both live
+  // in the sealed "meta" connection, so the views are patched from it (names only, never a token).
+  const metaInfo = await metaPublicInfo(user.id).catch(() => null);
+  const views = patchMetaViews(
+    SHOWN_CONNECTORS.map((id) => all.find((v) => v.id === id)).filter((v): v is NonNullable<typeof v> => !!v),
+    metaInfo,
+  );
   const notice = searchParams.error ? NOTICES[searchParams.error] ?? "Something went wrong." : null;
   const connected = searchParams.connected && CONNECTOR_ID.test(searchParams.connected) ? views.find((v) => v.id === searchParams.connected) : undefined;
   const focus = searchParams.connect && CONNECTOR_ID.test(searchParams.connect) ? searchParams.connect : undefined;
@@ -45,7 +54,9 @@ export default async function ConnectorsPage(
         {connected && !notice && <p role="status" className="mt-6 rounded-xl border border-ok/30 bg-ok-subtle px-4 py-3 text-sm text-ok">{connected.name} connected.</p>}
         {loadError && <p role="alert" className="mt-6 rounded-xl border border-warn/30 bg-warn-subtle px-4 py-3 text-sm text-warn">Connection status couldn&apos;t load (apply migration 0007). Connectors are shown as not connected.</p>}
         <ConnectorsGrid initial={views} focus={focus} returnTo={safeReturnTo(searchParams.return)} />
+        {views.find((v) => v.id === "facebook")?.status === "connected" && <MetaPagePicker />}
         {views.find((v) => v.id === "blogger")?.status === "connected" && <BloggerBlogPicker />}
+        <GeminiKeyCard />
       </Page>
     </AppShell>
   );

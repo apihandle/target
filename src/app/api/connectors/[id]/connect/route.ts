@@ -23,6 +23,11 @@ export async function GET(req: Request, props: { params: Promise<{ id: string }>
   if (!a) return NextResponse.redirect(`${origin}/login?next=/app/connectors`, { status: 303 });
   const c = CONNECTOR_ID.test(params.id) ? getConnector(params.id) : undefined;
   if (!c) return page(origin, "error=unknown");
+  // The Facebook / Instagram cards run the dedicated Meta flow (long-lived token exchange).
+  if (c.id === "facebook" || c.id === "instagram") {
+    const ret = url.searchParams.get("return");
+    return NextResponse.redirect(`${origin}/api/connectors/meta/start${ret ? `?return=${encodeURIComponent(ret)}` : ""}`, { status: 303 });
+  }
   if (!isConfigured(c, process.env) || !connectMethods(c, process.env).oauth) return page(origin, `error=setup&connector=${c.id}`);
   if (!(await checkLimit(LIMITS.connect(a.user.id)))) return page(origin, `error=rate&connector=${c.id}`);
   try {

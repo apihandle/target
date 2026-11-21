@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import FeedbackButton from "@/components/FeedbackButton";
 
 export type ConvItem = { id: string; title: string; pinned?: boolean };
-export type Section = "home" | "chat" | "projects" | "panels" | "scheduled" | "activity" | "connectors" | "settings" | "memory";
+export type Section = "home" | "chat" | "projects" | "panels" | "scheduled" | "activity" | "connectors" | "social" | "settings" | "memory";
 type Hit = { id: string; title: string; pinned: boolean; snippet: string | null };
 
 const NAV: { id: Section; href: string; label: string; icon: string }[] = [
@@ -15,6 +15,7 @@ const NAV: { id: Section; href: string; label: string; icon: string }[] = [
   { id: "panels", href: "/app/panels", label: "Panels", icon: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" },
   { id: "scheduled", href: "/app/scheduled", label: "Scheduled", icon: "M12 7v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z" },
   { id: "connectors", href: "/app/connectors", label: "Connectors", icon: "M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5" },
+  { id: "social", href: "/app/social", label: "Social", icon: "M22 2 11 13M22 2l-7 20-4-9-9-4z" },
   { id: "activity", href: "/app/activity", label: "Activity", icon: "M3 12h4l3-7 4 14 3-7h4" },
   { id: "settings", href: "/app/settings", label: "Settings", icon: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19 12l2-1-2-4-2 .5-1.5-1L15 4h-6l-.5 2.5-1.5 1L5 7l-2 4 2 1v0l-2 1 2 4 2-.5 1.5 1L9 20h6l.5-2.5 1.5-1 2 .5 2-4z" },
 ];

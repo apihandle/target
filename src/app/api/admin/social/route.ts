@@ -4,6 +4,7 @@ import { META_ENV_VARS } from "@/lib/socialConfig";
 import { metaConfig, targetReadiness } from "@/lib/server/socialPost";
 import { geminiKeyStatus } from "@/lib/server/socialKeys";
 import { bloggerReadiness, bloggerStatus } from "@/lib/server/socialBlogger";
+import { resolveMetaSetup } from "@/lib/server/socialMeta";
 
 export const dynamic = "force-dynamic";
 
@@ -16,16 +17,20 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const a = await requireAdmin();
   if (!a) return adminNotFound();
-  const cfg = metaConfig();
+  const envCfg = metaConfig();
+  // Readiness follows what publishing would actually use: the admin's own picked Page when their
+  // Meta setup is ready, else the env owner config (the setup panel below still reports the env).
+  const metaSetup = await resolveMetaSetup(a.user.id);
+  const cfg = metaSetup.ready ? metaSetup.cfg : envCfg;
   const gemini = await geminiKeyStatus(a.db, a.user.id);
   const blogger = await bloggerStatus(a.db, a.user.id);
   const bloggerReady = await bloggerReadiness(a.db, a.user.id);
   return json({
     meta: {
       vars: META_ENV_VARS.map((name) => ({ name, set: !!process.env[name]?.trim() })),
-      pageId: cfg.pageId || null,
-      igUserId: cfg.igUserId || null,
-      graphVersion: cfg.graphVersion,
+      pageId: envCfg.pageId || null,
+      igUserId: envCfg.igUserId || null,
+      graphVersion: envCfg.graphVersion,
     },
     targets: { ...targetReadiness(cfg), blogger: bloggerReady },
     gemini,
