@@ -93,7 +93,7 @@ describe("crypto", () => {
 // ------------------------------------------------------------------ registry
 describe("registry", () => {
   it("has the requested connectors in order with complete, unique definitions", () => {
-    expect(CONNECTORS.map((c) => c.id)).toEqual(["supabase", "vercel", "github", "google", "figma", "canva", "slack", "notion"]);
+    expect(CONNECTORS.map((c) => c.id)).toEqual(["supabase", "vercel", "github", "google", "figma", "canva", "slack", "notion", "blogger"]);
     for (const c of CONNECTORS) {
       expect(c.name && c.icon && c.description && c.capabilities.length && c.permissions.length).toBeTruthy();
       expect(["oauth", "api_key"]).toContain(c.auth);
@@ -135,6 +135,65 @@ describe("registry", () => {
 });
 
 // ------------------------------------------------------------------ SQL safety, redaction, untrusted data
+// ------------------------------------------------------------------ blogger connector
+describe("blogger connector", () => {
+  const def = () => getConnector("blogger")!;
+  const tool = (name: string) => def().getTools({ connector_id: "blogger", status: "connected", scopes: def().scopes, account_label: "" }).find((t) => t.name === name)!;
+
+  it("is OAuth-only with the Blogger scope on a dedicated client (posting needs OAuth; an API key cannot post)", () => {
+    const d = def();
+    expect(d.auth).toBe("oauth");
+    expect(d.scopes).toEqual(["https://www.googleapis.com/auth/blogger"]);
+    expect(d.requiredEnv).toEqual(["BLOGGER_OAUTH_CLIENT_ID", "BLOGGER_OAUTH_CLIENT_SECRET"]);
+    expect(d.oauth).toMatchObject({
+      authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+      tokenUrl: "https://oauth2.googleapis.com/token",
+      tokenAuth: "body", pkce: true, refreshable: true,
+    });
+    expect(d.oauth!.extraAuthorizeParams).toMatchObject({ access_type: "offline", prompt: "consent" });
+    // The social composer's connect card uses the standard connect route for this id.
+    expect(d.oauth!.clientIdEnv).toBe("BLOGGER_OAUTH_CLIENT_ID");
+  });
+
+  it("list_blogs returns the account's blogs and sends the token only as a Bearer header", async () => {
+    const seen: { url: string; auth: string | null }[] = [];
+    const f = vi.fn(async (url: string, init?: RequestInit) => {
+      seen.push({ url: String(url), auth: new Headers(init?.headers).get("authorization") });
+      return jsonRes({ items: [{ id: "111", name: "Blog One", url: "https://one.example.com/" }, { id: "222", name: "Blog Two" }] });
+    }) as unknown as typeof fetch;
+    const out = await tool("list_blogs").execute({}, { token: "ya29.fake", fetch: f, meta: {} }) as { blogs: { id: string; name: string; url: string }[] };
+    expect(out.blogs).toMatchObject([
+      { id: "111", name: "Blog One", url: "https://one.example.com/" },
+      { id: "222", name: "Blog Two", url: "" },
+    ]);
+    expect(seen[0].url).toBe("https://www.googleapis.com/blogger/v3/users/self/blogs");
+    expect(seen[0].auth).toBe("Bearer ya29.fake");
+    expect(seen[0].url).not.toContain("ya29");
+  });
+
+  it("create_post requires approval and publishes with the shared title/HTML mapping", async () => {
+    const t = tool("create_post");
+    expect(t.requiresApproval).toBe(true);
+    const calls: { url: string; body: Record<string, unknown> }[] = [];
+    const f = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") { calls.push({ url: String(url), body: JSON.parse(String(init.body)) }); return jsonRes({ id: "post-9", url: "https://one.example.com/post-9", title: "Hello <world>" }, 200); }
+      return jsonRes({ items: [{ id: "111", name: "Blog One", url: "https://one.example.com/" }] });
+    }) as unknown as typeof fetch;
+    const preview = await t.prepare!({ blog_id: "111", title: "Hello <world>", body: "Hello <world>\n\nSecond para" }, { token: "ya29.fake", fetch: f, meta: {} });
+    expect(preview.details).toMatchObject({ Blog: "Blog One", Title: "Hello <world>" });
+    const out = await t.execute({ blog_id: "111", title: "Hello <world>", body: "Hello <world>\n\nSecond para" }, { token: "ya29.fake", fetch: f, meta: {} }) as { published: boolean; id: string; url: string; title: string };
+    expect(out).toMatchObject({ published: true, id: "post-9", url: "https://one.example.com/post-9", title: "Hello <world>" });
+    expect(calls[0].url).toBe("https://www.googleapis.com/blogger/v3/blogs/111/posts");
+    expect(calls[0].body).toMatchObject({ kind: "blogger#post", blog: { id: "111" }, title: "Hello <world>" });
+    expect(calls[0].body.content).toBe("<p>Hello &lt;world&gt;</p>\n<p>Second para</p>");
+  });
+
+  it("create_post prepare refuses a blog that is not on the connected account", async () => {
+    const f = vi.fn(async () => jsonRes({ items: [{ id: "111", name: "Blog One" }] })) as unknown as typeof fetch;
+    await expect(tool("create_post").prepare!({ blog_id: "999", title: "Hi", body: "Body" }, { token: "ya29.fake", fetch: f, meta: {} })).rejects.toThrow(/wasn't found on this Blogger account/);
+  });
+});
+
 describe("safety helpers", () => {
   it("detects destructive SQL, including hidden variants, and ignores keywords inside literals/comments", () => {
     for (const q of ["DROP TABLE x", "delete from users where id=1", "TRUNCATE logs", "update t set a=1", "alter table t drop column c",

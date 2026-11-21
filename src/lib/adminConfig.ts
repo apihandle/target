@@ -3,7 +3,7 @@
  */
 
 /** Feature kill-switches. A missing value means ON: switching a feature off is always an explicit admin action. */
-export const FEATURES = ["browser", "email_send", "checkout", "booking", "scheduled", "custom_providers"] as const;
+export const FEATURES = ["browser", "email_send", "checkout", "booking", "scheduled", "custom_providers", "social_posting"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type FeatureFlags = Record<Feature, boolean>;
 
@@ -14,9 +14,10 @@ export const FEATURE_LABELS: Record<Feature, { title: string; description: strin
   booking: { title: "Booking", description: "Reservations and appointments through the browser" },
   scheduled: { title: "Scheduled tasks", description: "New scheduled prompts and the scheduled cron runs" },
   custom_providers: { title: "Custom AI providers", description: "Users' own OpenAI-compatible models (chat falls back to Auto)" },
+  social_posting: { title: "Social posting", description: "Scheduled posts to TARGET's Facebook Page and Instagram (the social cron does nothing while off)" },
 };
 
-export const ALL_ON: FeatureFlags = { browser: true, email_send: true, checkout: true, booking: true, scheduled: true, custom_providers: true };
+export const ALL_ON: FeatureFlags = { browser: true, email_send: true, checkout: true, booking: true, scheduled: true, custom_providers: true, social_posting: true };
 
 export function normalizeFlags(v: unknown): FeatureFlags {
   const o = v && typeof v === "object" ? (v as Record<string, unknown>) : {};
@@ -47,6 +48,7 @@ export const DISABLED_MESSAGE: Record<Feature, string> = {
   booking: "Booking is turned off on TARGET right now. Please try again later.",
   scheduled: "Scheduled prompts are turned off on TARGET right now. Please try again later.",
   custom_providers: "Custom AI providers are turned off on TARGET right now. Chat uses the built-in models.",
+  social_posting: "Social posting is turned off on TARGET right now. Scheduled posts stay queued; please try again later.",
 };
 
 const EMAIL_SEND_TOOLS = new Set(["gmail_send", "gmail_send_draft", "gmail_reply", "gmail_reply_all", "gmail_forward"]);

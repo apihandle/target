@@ -67,7 +67,7 @@ export async function readAdminSetting(db: Db, key: string): Promise<{ value: un
 }
 
 /** Heartbeat for the health page: when a cron route last ran. Never throws. */
-export async function recordCronRun(db: Db, which: "scheduled" | "proactive", info: Record<string, unknown>): Promise<void> {
+export async function recordCronRun(db: Db, which: "scheduled" | "proactive" | "social", info: Record<string, unknown>): Promise<void> {
   try {
     await db.from("admin_settings").upsert({ key: `cron:${which}`, value: { at: new Date().toISOString(), ...info }, updated_at: new Date().toISOString() }, { onConflict: "key" });
   } catch { /* table may not exist yet (migration 0019) */ }

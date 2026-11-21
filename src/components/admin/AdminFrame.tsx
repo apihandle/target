@@ -20,6 +20,7 @@ const ICONS: Record<string, ReactNode> = {
   approvals: <><path d="M5 12.5 9.5 17 19 7.5" /></>,
   providers: <><rect x="3.5" y="5" width="17" height="5" rx="1.5" /><rect x="3.5" y="14" width="17" height="5" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01" /></>,
   audit: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13h6M9 17h4" /></>,
+  social: <><path d="M21 3 10.5 13.5" /><path d="M21 3l-6.8 18-3.7-7.5L3 9.8z" /></>,
 };
 
 type Tone = "neutral" | "danger" | "ok" | "warn";
@@ -64,6 +65,7 @@ export default function AdminFrame({ badges, version, email, avatar, statusSlot,
     { href: "/admin/providers", label: "Browser providers", icon: "providers" },
     { href: "/admin/scheduled", label: "Scheduled", icon: "scheduled", badge: <Badge n={badges.scheduledActive} tone="neutral" /> },
     { href: "/admin/shares", label: "Share links", icon: "shares", badge: <Badge n={badges.sharesActive} tone="neutral" /> },
+    { href: "/admin/social", label: "Social posts", icon: "social" },
     { href: "/admin/activity", label: "Activity", icon: "activity" },
     { href: "/admin/ai-usage", label: "AI usage", icon: "ai" },
     { href: "/admin/feedback", label: "Feedback", icon: "feedback", badge: <Badge n={badges.feedbackNew ?? null} tone="warn" /> },

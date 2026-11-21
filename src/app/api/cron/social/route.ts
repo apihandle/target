@@ -1,0 +1,46 @@
+import { json, type Db } from "@/lib/server/auth";
+import { cronAuth } from "@/lib/server/cron";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { featureOn, recordCronRun } from "@/lib/server/adminSettings";
+import { runDueScheduledPosts } from "@/lib/server/socialSchedule";
+import { reportError } from "@/lib/server/errors";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+/** Posts published per invocation (each publish polls Instagram briefly, so keep the batch small). */
+const BATCH = 3;
+
+/**
+ * Cron entry point for scheduled social posts (migration 0024): publishes due rows from
+ * social_scheduled_posts to TARGET's Facebook Page / Instagram. Same protection as the other cron
+ * routes: CRON_SECRET bearer (closed when unconfigured), the admin kill-switch, and an atomic
+ * per-post claim inside the runner, so overlapping invocations can never post the same item twice.
+ * Production wiring (a vercel.json crons entry) is a deploy-time step — see DESIGN.md.
+ */
+async function handle(req: Request) {
+  const auth = cronAuth(req);
+  if (auth === "unconfigured") return json({ error: "Cron is not configured" }, 503);
+  if (auth !== "ok") return json({ error: "Unauthorized" }, 401);
+  // The admin "Run cron now" button calls this handler on the server with the same bearer header and this marker
+  // (only read after the secret check, so it can't be spoofed from outside).
+  const by = req.headers.get("x-target-run-by") === "admin" ? "admin" : "cron";
+
+  let db: Db;
+  try { db = createAdminClient() as unknown as Db; } catch { return json({ error: "Server is missing SUPABASE_SERVICE_ROLE_KEY" }, 503); }
+  // Admin kill-switch: social posting paused site-wide. The heartbeat still records that cron is alive.
+  if (!(await featureOn("social_posting", db))) { await recordCronRun(db, "social", { ran: 0, by, disabled: true }); return json({ ran: 0, disabled: true }); }
+
+  try {
+    const { ran, results } = await runDueScheduledPosts(db, { batch: BATCH });
+    await recordCronRun(db, "social", { ran, by });
+    return json({ ran, results });
+  } catch (e) {
+    await reportError({ source: "cron", message: `Social cron failed: ${e instanceof Error ? e.message.slice(0, 200) : "unknown"}` }, db);
+    return json({ error: "Social cron failed" }, 500);
+  }
+}
+
+export const GET = handle;
+export const POST = handle;

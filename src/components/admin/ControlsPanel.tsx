@@ -76,6 +76,8 @@ export default function ControlsPanel({ announcement, maintenance, features, cro
             body={{ job: "scheduled" }} successText={(r) => { const s = r.summary as Record<string, unknown> | undefined; return s?.disabled ? "Scheduled tasks are switched off: nothing ran." : `Done: ${Number(s?.ran ?? 0)} ran.`; }} />
           <ConfirmAction label="Run For-you scan" title="Run the For-you scan now?" message="Scans up to 6 users with Google connected who weren't scanned in 20 h." confirmLabel="Run now" url="/api/admin/cron" disabled={!cronReady} testId="cron-proactive"
             body={{ job: "proactive" }} successText={(r) => `Done: ${Number((r.summary as Record<string, unknown> | undefined)?.scanned ?? 0)} scanned.`} />
+          <ConfirmAction label="Run social posts" title="Publish due social posts now?" message="Only scheduled posts that are already due run (up to 3). Takes up to a minute." confirmLabel="Run now" url="/api/admin/cron" disabled={!cronReady} testId="cron-social"
+            body={{ job: "social" }} successText={(r) => { const s = r.summary as Record<string, unknown> | undefined; return s?.disabled ? "Social posting is switched off: nothing ran." : `Done: ${Number(s?.ran ?? 0)} ran.`; }} />
         </div>
       </section>
     </div>

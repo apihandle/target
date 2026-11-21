@@ -12,6 +12,7 @@ import { figma } from "@/lib/connectors/figma";
 import { canva } from "@/lib/connectors/canva";
 import { slackConnector } from "@/lib/connectors/slack";
 import { notion } from "@/lib/connectors/notion";
+import { blogger } from "@/lib/connectors/blogger";
 
 export const CONNECTORS: ConnectorDef[] = [
   supabase,
@@ -22,6 +23,7 @@ export const CONNECTORS: ConnectorDef[] = [
   canva,
   slackConnector,
   notion,
+  blogger,
 ];
 
 const BY_ID = new Map(CONNECTORS.map((c) => [c.id, c]));
