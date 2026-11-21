@@ -1,6 +1,6 @@
 import { scrub } from "@/lib/customProvider";
 import {
-  GEMINI_DEFAULT_MODEL, NVIDIA_API_BASE, NVIDIA_DEFAULT_MODEL, SOCIAL_AI_PROVIDER_LABEL,
+  GEMINI_DEFAULT_MODEL, NVIDIA_API_BASE, NVIDIA_DEFAULT_MODEL, NVIDIA_MODELS, SOCIAL_AI_PROVIDER_LABEL,
   SOCIAL_MESSAGE_MAX, SOCIAL_TITLE_MAX, type DraftTone, type SocialAiProvider,
 } from "@/lib/socialConfig";
 
@@ -90,22 +90,21 @@ type NvidiaReply = {
 };
 
 /**
- * The NVIDIA twin of callGemini: one chat-completions call to integrate.api.nvidia.com (the
- * OpenAI-compatible endpoint TARGET's chat providers already use), the key only in the
- * Authorization: Bearer header, provider error text scrubbed of the key, every failure mapped to a
- * short safe sentence. Returns the model's raw text (callers shape it).
+ * One chat-completions call to ONE NVIDIA model. Same contract as callGemini — the key only in
+ * the Authorization: Bearer header, provider error text scrubbed of the key, every failure mapped
+ * to a short safe sentence — plus `modelGone`: true when the endpoint says this model itself is
+ * gone (HTTP 410 retired / 404 unknown), the one failure a different model can fix.
  */
-async function callNvidia(
-  args: { apiKey: string; model?: string | null; prompt: string; maxOutputTokens: number },
+async function callNvidiaOnce(
+  args: { apiKey: string; model: string; prompt: string; maxOutputTokens: number },
   f: Fetch,
-): Promise<DraftResult> {
-  const model = args.model?.trim() || NVIDIA_DEFAULT_MODEL;
+): Promise<{ result: DraftResult; modelGone: boolean }> {
   try {
     const r = await f(`${NVIDIA_API_BASE}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${args.apiKey}` },
       body: JSON.stringify({
-        model,
+        model: args.model,
         messages: [{ role: "user", content: args.prompt }],
         temperature: 0.8,
         max_tokens: args.maxOutputTokens,
@@ -114,20 +113,42 @@ async function callNvidia(
       cache: "no-store",
     });
     const j = (await r.json().catch(() => ({}))) as NvidiaReply;
-    if (r.status === 401 || r.status === 403) return { ok: false, error: "NVIDIA rejected the saved API key. Check the key at build.nvidia.com, save it again, then retry." };
+    if (r.status === 401 || r.status === 403) return { modelGone: false, result: { ok: false, error: "NVIDIA rejected the saved API key. Check the key at build.nvidia.com, save it again, then retry." } };
     if (!r.ok) {
       const raw = j.error?.message ?? j.detail ?? "";
       const detail = raw ? `: ${scrub(raw, args.apiKey).slice(0, 140)}` : "";
-      return { ok: false, error: `NVIDIA returned an error (HTTP ${r.status})${detail}` };
+      return { modelGone: r.status === 410 || r.status === 404, result: { ok: false, error: `NVIDIA returned an error (HTTP ${r.status})${detail}` } };
     }
     const content = j.choices?.[0]?.message?.content;
     const text = (typeof content === "string" ? content : (content ?? []).map((p) => p.text ?? "").join("")).trim();
-    if (!text) return { ok: false, error: "NVIDIA answered without any text. Try a clearer topic." };
-    return { ok: true, text };
+    if (!text) return { modelGone: false, result: { ok: false, error: "NVIDIA answered without any text. Try a clearer topic." } };
+    return { modelGone: false, result: { ok: true, text } };
   } catch (e) {
-    if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) return { ok: false, error: "NVIDIA didn't answer in time. Try again." };
-    return { ok: false, error: "Couldn't reach NVIDIA. Try again in a moment." };
+    if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) return { modelGone: false, result: { ok: false, error: "NVIDIA didn't answer in time. Try again." } };
+    return { modelGone: false, result: { ok: false, error: "Couldn't reach NVIDIA. Try again in a moment." } };
   }
+}
+
+/**
+ * The NVIDIA twin of callGemini: chat completions on integrate.api.nvidia.com (the OpenAI-compatible
+ * endpoint TARGET's chat providers already use). NVIDIA retires catalog models — the saved model
+ * (or the default) can be end-of-life while the key is perfectly good — so on a model-gone answer
+ * (410/404) the call walks the NVIDIA_MODELS ladder before giving up; every other outcome
+ * (success, key rejection, timeout, other errors) returns exactly as a single call would.
+ */
+async function callNvidia(
+  args: { apiKey: string; model?: string | null; prompt: string; maxOutputTokens: number },
+  f: Fetch,
+): Promise<DraftResult> {
+  const requested = args.model?.trim() || NVIDIA_DEFAULT_MODEL;
+  const ladder = [...new Set([requested, ...NVIDIA_MODELS])];
+  let last: DraftResult = { ok: false, error: "Couldn't reach NVIDIA. Try again in a moment." };
+  for (const model of ladder) {
+    const { result, modelGone } = await callNvidiaOnce({ ...args, model }, f);
+    if (result.ok || !modelGone) return result;
+    last = result;
+  }
+  return last;
 }
 
 /** Run one prompt on the chosen provider's transport (NVIDIA when the writer key is NVIDIA's, else Gemini). */

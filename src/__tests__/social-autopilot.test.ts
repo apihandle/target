@@ -279,8 +279,35 @@ describe("runBloggerAutopilot (the cron generation step)", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe("https://integrate.api.nvidia.com/v1/chat/completions");
     expect(calls[0].headers.Authorization).toBe(`Bearer ${NVIDIA_KEY}`);
-    expect(JSON.parse(calls[0].body).model).toBe("meta/llama-3.3-70b-instruct");
+    expect(JSON.parse(calls[0].body).model).toBe("nvidia/nemotron-3-ultra-550b-a55b");
     expect(JSON.stringify(queueRows()[0])).not.toContain(NVIDIA_KEY);
+  });
+
+  it("a saved model NVIDIA has retired (410) falls back down the ladder and the post still generates", async () => {
+    // Vikash's live state when this was fixed: the key row carried the end-of-lifed
+    // meta/llama-3.3-70b-instruct. The run must retry with a current model, not surface a failure.
+    await connectBlogger(ME);
+    await saveBloggerBlog(admin(), ME, { id: "987654321", name: "Test Blog", url: "https://testblog.example.com/" });
+    await saveNvidiaKey(admin(), ME, NVIDIA_KEY, "meta/llama-3.3-70b-instruct");
+    await saveAutopilotSettings(admin(), ME, { enabled: true, topic: "Free AI tools" });
+    const calls: { body: string }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: { body?: string }) => {
+      const u = String(url);
+      if (u.includes("integrate.api.nvidia.com")) {
+        calls.push({ body: String(init?.body ?? "") });
+        if (JSON.parse(calls[calls.length - 1].body).model === "meta/llama-3.3-70b-instruct") {
+          return jsonRes({ detail: "The model 'meta/llama-3.3-70b-instruct' has reached its end of life and is no longer available." }, 410);
+        }
+        return jsonRes({ choices: [{ message: { content: BLOG_TEXT } }] });
+      }
+      throw new Error(`unexpected fetch ${u}`);
+    }));
+    const out = await runBloggerAutopilot(admin(), { env: ENV });
+    expect(out.generated).toBe(1);
+    expect(out.failures).toEqual([]);
+    expect(queueRows()).toHaveLength(1);
+    expect(calls).toHaveLength(2);
+    expect(JSON.parse(calls[1].body).model).toBe("nvidia/nemotron-3-ultra-550b-a55b");
   });
 
   it("when both keys are saved, autopilot writes with NVIDIA and never calls Gemini", async () => {

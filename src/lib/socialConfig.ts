@@ -71,9 +71,22 @@ export const SOCIAL_AI_PROVIDER_LABEL: Record<SocialAiProvider, string> = { gemi
 
 /** NVIDIA's OpenAI-compatible chat endpoint (build.nvidia.com keys; also TARGET's chat provider base). */
 export const NVIDIA_API_BASE = "https://integrate.api.nvidia.com/v1";
-/** NVIDIA model used when the saved key has no model chosen. */
-export const NVIDIA_DEFAULT_MODEL = "meta/llama-3.3-70b-instruct";
-/** NVIDIA model ids look like "meta/llama-3.3-70b-instruct" (org/name: letters, numbers, dots, dashes, slashes). */
+/** NVIDIA model used when the saved key has no model chosen (the frontier Nemotron 3 Ultra — Vikash's pick). */
+export const NVIDIA_DEFAULT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b";
+/**
+ * The NVIDIA writer's model ladder, in order. NVIDIA retires catalog models (the previous default,
+ * meta/llama-3.3-70b-instruct, reached end of life and the endpoint answers HTTP 410 for it), so
+ * when a call reports the model gone (410/404) the writer walks this list before giving up — a
+ * saved per-user model is tried first, then these. All three verified current and served on
+ * integrate.api.nvidia.com (Nov 2026): Ultra (550B frontier, NVIDIA's own blueprints call it on
+ * this endpoint for writing roles), Super 120B next, Lightning the fast fallback.
+ */
+export const NVIDIA_MODELS: string[] = [
+  NVIDIA_DEFAULT_MODEL,
+  "nvidia/nemotron-3-super-120b-a12b",
+  "nvidia/nemotron-3.5-lightning-30b-a3b",
+];
+/** NVIDIA model ids look like "nvidia/nemotron-3-super-120b-a12b" (org/name: letters, numbers, dots, dashes, slashes). */
 export const NVIDIA_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9.\-_/]{0,99}$/;
 
 /** A pasted API key, validated exactly like a custom provider key (lib/customProvider.ts providerInput). */

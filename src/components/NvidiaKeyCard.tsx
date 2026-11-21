@@ -103,7 +103,7 @@ export default function NvidiaKeyCard() {
         <label className="sr-only" htmlFor="nvidia-key-model">NVIDIA model (optional)</label>
         <input id="nvidia-key-model" data-testid="nvidia-key-model"
           value={modelInput} onChange={(e) => setModelInput(e.target.value)}
-          placeholder="Model (optional, e.g. meta/llama-3.3-70b-instruct)"
+          placeholder="Model (optional, e.g. nvidia/nemotron-3-ultra-550b-a55b)"
           className="h-9 min-w-0 rounded-lg border border-line-strong bg-surface px-3 text-sm text-ink outline-none focus:border-accent" />
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">

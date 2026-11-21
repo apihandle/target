@@ -205,7 +205,7 @@ describe("/api/social/key + /generate — the NVIDIA writer key (migration 0027)
     expect(r.status).toBe(200);
     expect((await r.json()).text).toBe("A draft from NVIDIA");
     expect(calls[0].headers["authorization"]).toBe(`Bearer ${NV_KEY_ME}`);
-    expect(JSON.parse(calls[0].body).model).toBe("meta/llama-3.3-70b-instruct");
+    expect(JSON.parse(calls[0].body).model).toBe("nvidia/nemotron-3-ultra-550b-a55b");
   });
 
   it("generate prefers NVIDIA over Gemini when both are saved", async () => {
@@ -229,6 +229,36 @@ describe("/api/social/key + /generate — the NVIDIA writer key (migration 0027)
     const r = await generatePOST(req("http://t/api/social/generate", { topic: "Launch day" }));
     expect(r.status).toBe(502);
     expect((await r.json()).error).toMatch(/NVIDIA rejected the saved API key/);
+  });
+
+  it("generate retries with the next ladder model when the saved model has been retired (410)", async () => {
+    // The live failure this guards: a saved model string pointing at a model NVIDIA end-of-lifed —
+    // the key is fine, so the writer must walk NVIDIA_MODELS instead of failing the draft.
+    await keyPOST(req("http://t/api/social/key", { provider: "nvidia", apiKey: NV_KEY_ME, model: "meta/llama-3.3-70b-instruct" }));
+    const calls = stubNet((c) => {
+      if (c.url === "https://integrate.api.nvidia.com/v1/chat/completions") {
+        if (JSON.parse(c.body).model === "meta/llama-3.3-70b-instruct") {
+          return jsonRes({ detail: "The model 'meta/llama-3.3-70b-instruct' has reached its end of life and is no longer available." }, 410);
+        }
+        return jsonRes({ choices: [{ message: { content: "A draft from the fallback model" } }] });
+      }
+      throw new Error(`unexpected fetch ${c.url}`);
+    });
+    const r = await generatePOST(req("http://t/api/social/generate", { topic: "Launch day", tone: "announcement" }));
+    expect(r.status).toBe(200);
+    expect((await r.json()).text).toBe("A draft from the fallback model");
+    expect(calls).toHaveLength(2);
+    expect(JSON.parse(calls[0].body).model).toBe("meta/llama-3.3-70b-instruct");
+    expect(JSON.parse(calls[1].body).model).toBe("nvidia/nemotron-3-ultra-550b-a55b");
+  });
+
+  it("generate gives up after the ladder when every NVIDIA model is gone (404)", async () => {
+    await keyPOST(req("http://t/api/social/key", { provider: "nvidia", apiKey: NV_KEY_ME }));
+    const calls = stubNet(() => jsonRes({ detail: "model not found" }, 404));
+    const r = await generatePOST(req("http://t/api/social/generate", { topic: "Launch day" }));
+    expect(r.status).toBe(502);
+    expect((await r.json()).error).toMatch(/NVIDIA returned an error \(HTTP 404\)/);
+    expect(calls).toHaveLength(3); // the whole ladder, then the last error surfaces
   });
 });
 
