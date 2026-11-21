@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/social",
-      "schedule": "45 2 * * *"
+      "schedule": "0 */4 * * *"
     }
   ]
 }

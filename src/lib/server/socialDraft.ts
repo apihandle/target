@@ -1,13 +1,20 @@
 import { scrub } from "@/lib/customProvider";
-import { GEMINI_DEFAULT_MODEL, SOCIAL_MESSAGE_MAX, type DraftTone } from "@/lib/socialConfig";
+import { GEMINI_DEFAULT_MODEL, SOCIAL_MESSAGE_MAX, SOCIAL_TITLE_MAX, type DraftTone } from "@/lib/socialConfig";
 
 /**
- * "Draft with AI" for the social composer: the user's own Gemini key writes a ready-to-post draft from a
- * short topic/brief. The key arrives as a parameter (the route loads it from the caller's sealed row via
- * lib/server/socialKeys.ts) and is sent only in the x-goog-api-key header to Google — never in a URL, a
- * body, a log or a returned string; provider error text passes through scrub() with the key, like every
- * other provider call in this codebase. The result is only a draft: the composer drops it into the
- * textarea and the human edits/confirms before anything is published.
+ * The Gemini text generators behind social posting, all over one transport (callGemini): the key
+ * arrives as a parameter (the caller loads it from the user's sealed row via lib/server/socialKeys.ts)
+ * and is sent only in the x-goog-api-key header to Google — never in a URL, a body, a log or a
+ * returned string; provider error text passes through scrub() with the key, like every other provider
+ * call in this codebase.
+ *
+ * "Draft with AI" for the social composer: the user's own Gemini key writes a ready-to-post draft from
+ * a short topic/brief. The result is only a draft: the composer drops it into the textarea and the
+ * human edits/confirms before anything is published.
+ *
+ * generateBlogPost is the autopilot sibling (lib/server/socialAutopilot.ts): same key, same
+ * transport, but it writes a full blog post (title + body) that goes out with no human review —
+ * that is the feature the user explicitly turned on.
  */
 type Fetch = typeof fetch;
 
@@ -36,9 +43,14 @@ type GeminiReply = {
 
 export type DraftResult = { ok: true; text: string } | { ok: false; error: string };
 
-export async function generateSocialDraft(
-  args: { apiKey: string; model?: string | null; topic: string; tone: DraftTone },
-  f: Fetch = fetch,
+/**
+ * The one Gemini generateContent call behind every social text generator in this module: the key goes
+ * only in the x-goog-api-key header, provider error text is scrubbed of the key, and every failure is
+ * mapped to a short safe sentence. Returns the model's raw text (callers shape it).
+ */
+async function callGemini(
+  args: { apiKey: string; model?: string | null; prompt: string; maxOutputTokens: number },
+  f: Fetch,
 ): Promise<DraftResult> {
   const model = args.model?.trim() || GEMINI_DEFAULT_MODEL;
   try {
@@ -46,8 +58,8 @@ export async function generateSocialDraft(
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": args.apiKey },
       body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: draftPrompt(args.topic.trim(), args.tone) }] }],
-        generationConfig: { temperature: 0.8, maxOutputTokens: 512 },
+        contents: [{ role: "user", parts: [{ text: args.prompt }] }],
+        generationConfig: { temperature: 0.8, maxOutputTokens: args.maxOutputTokens },
       }),
       signal: AbortSignal.timeout(TIMEOUT),
       cache: "no-store",
@@ -58,11 +70,77 @@ export async function generateSocialDraft(
       const detail = j.error?.message ? `: ${scrub(j.error.message, args.apiKey).slice(0, 140)}` : "";
       return { ok: false, error: `Gemini returned an error (HTTP ${r.status})${detail}` };
     }
-    const text = (j.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("").trim().replace(/^["“]|["”]$/g, "").trim();
+    const text = (j.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("").trim();
     if (!text) return { ok: false, error: "Gemini answered without any text. Try a clearer topic." };
-    return { ok: true, text: text.slice(0, SOCIAL_MESSAGE_MAX) };
+    return { ok: true, text };
   } catch (e) {
     if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) return { ok: false, error: "Gemini didn't answer in time. Try again." };
     return { ok: false, error: "Couldn't reach Gemini. Try again in a moment." };
   }
+}
+
+export async function generateSocialDraft(
+  args: { apiKey: string; model?: string | null; topic: string; tone: DraftTone },
+  f: Fetch = fetch,
+): Promise<DraftResult> {
+  const r = await callGemini(
+    { apiKey: args.apiKey, model: args.model, prompt: draftPrompt(args.topic.trim(), args.tone), maxOutputTokens: 512 },
+    f,
+  );
+  if (!r.ok) return r;
+  const text = r.text.replace(/^["“]|["”]$/g, "").trim();
+  if (!text) return { ok: false, error: "Gemini answered without any text. Try a clearer topic." };
+  return { ok: true, text: text.slice(0, SOCIAL_MESSAGE_MAX) };
+}
+
+export function blogPostPrompt(topic: string): string {
+  return [
+    "Write one blog post for a Blogger blog.",
+    "Format the reply exactly like this: the first line starts with 'TITLE: ' followed by the post title, then a blank line, then the article body as 3 to 5 short paragraphs separated by blank lines.",
+    "Rules: plain text only, no HTML, no markdown, no emojis, no hashtags, clear simple English, keep the whole body under 1800 characters, and stay honest — do not invent prices, dates, statistics or product claims.",
+    `Topic/niche the blog is about: ${topic}`,
+    "Pick one fresh angle on that topic (do not just restate the topic as the title). Return only the title line and the body, nothing else.",
+  ].join("\n");
+}
+
+export type BlogPostResult = { ok: true; title: string; body: string } | { ok: false; error: string };
+
+/** A body shorter than this is a stub, not a post — the autopilot skips the run and tries again later. */
+const BLOG_BODY_MIN = 50;
+
+/**
+ * Shape a Gemini reply into { title, body }: a leading "TITLE:" line when present, else the first
+ * non-empty line is the title. Any HTML the model emits anyway is stripped — the body is stored as
+ * plain text and the publisher (lib/server/socialPost.ts) turns its paragraphs into HTML, so raw
+ * tags here would only be escaped and shown to readers.
+ */
+export function parseBlogPost(text: string): { title: string; body: string } | null {
+  const clean = text.replace(/<[^>]*>/g, "").trim();
+  if (!clean) return null;
+  const lines = clean.split("\n");
+  const m = lines[0].match(/^TITLE:\s*(.+)$/i);
+  const rawTitle = m ? m[1] : lines[0];
+  const title = rawTitle.replace(/^["“]|["”]$/g, "").trim().slice(0, SOCIAL_TITLE_MAX);
+  const body = lines.slice(1).join("\n").trim().slice(0, SOCIAL_MESSAGE_MAX);
+  if (!title || body.length < BLOG_BODY_MIN) return null;
+  return { title, body };
+}
+
+/**
+ * One autopilot blog post (title + body) on the user's topic, written by their own Gemini key — the
+ * blog sibling of generateSocialDraft, over the same transport. The body is plain text with blank-line
+ * paragraph breaks; the scheduled-post publisher renders it as HTML paragraphs on the blog.
+ */
+export async function generateBlogPost(
+  args: { apiKey: string; model?: string | null; topic: string },
+  f: Fetch = fetch,
+): Promise<BlogPostResult> {
+  const r = await callGemini(
+    { apiKey: args.apiKey, model: args.model, prompt: blogPostPrompt(args.topic.trim()), maxOutputTokens: 1024 },
+    f,
+  );
+  if (!r.ok) return r;
+  const parsed = parseBlogPost(r.text);
+  if (!parsed) return { ok: false, error: "Gemini's answer didn't look like a blog post, so nothing was queued. Autopilot will try again on the next run." };
+  return { ok: true, ...parsed };
 }

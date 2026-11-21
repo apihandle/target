@@ -3,6 +3,7 @@ import { cronAuth } from "@/lib/server/cron";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { featureOn, recordCronRun } from "@/lib/server/adminSettings";
 import { runDueScheduledPosts } from "@/lib/server/socialSchedule";
+import { runBloggerAutopilot } from "@/lib/server/socialAutopilot";
 import { reportError } from "@/lib/server/errors";
 
 export const runtime = "nodejs";
@@ -17,7 +18,9 @@ const BATCH = 3;
  * social_scheduled_posts to TARGET's Facebook Page / Instagram. Same protection as the other cron
  * routes: CRON_SECRET bearer (closed when unconfigured), the admin kill-switch, and an atomic
  * per-post claim inside the runner, so overlapping invocations can never post the same item twice.
- * Production wiring (a vercel.json crons entry) is a deploy-time step — see DESIGN.md.
+ * Before the drain, the Blogger autopilot step (migration 0026) queues one fresh post per opted-in
+ * user, due immediately — the drain below then publishes it in this same run. Wired in vercel.json
+ * to fire every 4 hours, which is the autopilot cadence.
  */
 async function handle(req: Request) {
   const auth = cronAuth(req);
@@ -33,9 +36,11 @@ async function handle(req: Request) {
   if (!(await featureOn("social_posting", db))) { await recordCronRun(db, "social", { ran: 0, by, disabled: true }); return json({ ran: 0, disabled: true }); }
 
   try {
+    // Autopilot first, drain second — and the generation step can never take the drain down with it.
+    const autopilot = await runBloggerAutopilot(db).catch(() => ({ generated: 0 }));
     const { ran, results } = await runDueScheduledPosts(db, { batch: BATCH });
-    await recordCronRun(db, "social", { ran, by });
-    return json({ ran, results });
+    await recordCronRun(db, "social", { ran, by, autopilot: autopilot.generated });
+    return json({ ran, results, autopilot });
   } catch (e) {
     await reportError({ source: "cron", message: `Social cron failed: ${e instanceof Error ? e.message.slice(0, 200) : "unknown"}` }, db);
     return json({ error: "Social cron failed" }, 500);

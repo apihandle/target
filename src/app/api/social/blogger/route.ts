@@ -1,4 +1,5 @@
 import { json, readJson, requireUser, unauthorized } from "@/lib/server/auth";
+import { serviceDb } from "@/lib/server/serviceDb";
 import {
   bloggerAccessToken, bloggerStatus, clearBloggerBlog, listBloggerBlogs, saveBloggerBlog,
 } from "@/lib/server/socialBlogger";
@@ -44,7 +45,9 @@ export async function POST(req: Request) {
   if (!blog) return json({ error: "That blog isn't on your connected Blogger account. Pick one from the list." }, 400);
 
   try {
-    await saveBloggerBlog(a.db, a.user.id, blog);
+    // social_blogger_settings grants `authenticated` SELECT/DELETE only (migration 0025) — the
+    // upsert must go through the service role, like the Gemini key save in /api/social/key.
+    await saveBloggerBlog(serviceDb(a.db), a.user.id, blog);
   } catch {
     return json({ error: "Could not save the blog choice. If this keeps happening, migration 0025 may not have run yet." }, 500);
   }

@@ -1,11 +1,13 @@
 import AppShell, { getSessionOrRedirect } from "@/components/AppShell";
 import SocialComposer, { type SocialStatus } from "@/components/admin/SocialComposer";
+import BloggerAutopilotCard from "@/components/admin/BloggerAutopilotCard";
 import { Page, PageHeader } from "@/components/ui/Card";
 import { metaGraphVersion, type SocialTarget } from "@/lib/socialConfig";
 import { isAdminUser } from "@/lib/server/adminCheck";
 import type { Db } from "@/lib/server/auth";
 import { serviceDb } from "@/lib/server/serviceDb";
 import { geminiKeyStatus } from "@/lib/server/socialKeys";
+import { autopilotSettings } from "@/lib/server/socialAutopilot";
 import { bloggerReadiness, bloggerStatus } from "@/lib/server/socialBlogger";
 import { metaPublicInfo, metaTargetReadiness } from "@/lib/server/socialMeta";
 
@@ -41,6 +43,7 @@ export default async function SocialPage() {
     ...(info?.instagram ? { instagram: `@${info.instagram.username || info.instagram.id} · needs a public image URL` } : {}),
   };
   const firstReady = (["facebook", "instagram", "blogger"] as SocialTarget[]).filter((t) => status.targets[t].ready);
+  const autopilot = await autopilotSettings(serviceDb(db), user.id);
   return (
     <AppShell user={user} section="social">
       <Page wide>
@@ -55,6 +58,14 @@ export default async function SocialPage() {
             confirmNote="It posts only to the accounts you connected."
             targetHints={hints}
             defaultTargets={firstReady.length ? [firstReady[0]] : []}
+          />
+        </div>
+        <div className="mt-4">
+          <BloggerAutopilotCard
+            initial={autopilot}
+            bloggerConnected={blogger.connected}
+            blogName={blogger.blog?.blogName || null}
+            geminiSaved={status.gemini.saved}
           />
         </div>
       </Page>
