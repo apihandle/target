@@ -1,8 +1,9 @@
 // @vitest-environment node
 // Scheduled social posts (migration 0024): validation, the queue operations, and the cron runner —
-// due selection, the atomic claim (a double fire never double-posts), status transitions, Gemini
-// auto-generation at publish time, stale-run recovery and cancel. All network is a fake fetch and all
-// tokens/keys below are obvious test fixtures — no real Graph API or Gemini call is ever made.
+// due selection, the atomic claim (a double fire never double-posts), status transitions, AI
+// auto-generation at publish time (the owner's writer key: NVIDIA preferred, Gemini fallback),
+// stale-run recovery and cancel. All network is a fake fetch and all tokens/keys below are obvious
+// test fixtures — no real Graph API or AI provider call is ever made.
 import { describe, it, expect, beforeAll } from "vitest";
 import { FakeDb } from "./helpers/fakeSupabase";
 
@@ -12,7 +13,7 @@ import {
   cancelScheduledPost, claimScheduledPost, createScheduledPost, listScheduledPosts,
   runDueScheduledPosts, scheduledPostProblem, type ScheduledPostInput,
 } from "@/lib/server/socialSchedule";
-import { saveGeminiKey } from "@/lib/server/socialKeys";
+import { saveGeminiKey, saveNvidiaKey } from "@/lib/server/socialKeys";
 
 const PAGE_TOKEN = "TEST_PAGE_TOKEN_fixture";
 const GEMINI_KEY = "AIzaTESTKEY_fixture_1234567890";
@@ -263,7 +264,7 @@ describe("cron runner with a Blogger target", () => {
   });
 });
 
-describe("cron runner with Gemini auto-generation", () => {
+describe("cron runner with AI auto-generation", () => {
   let db: FakeDb;
   beforeAll(() => { db = new FakeDb(); });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -300,7 +301,30 @@ describe("cron runner with Gemini auto-generation", () => {
     const { f, calls } = fakeFetch(graphOk);
     const out = await runDueScheduledPosts(admin(), { env: ENV, fetch: f });
     expect(out.results).toContainEqual({ id: p.id, status: "failed" });
-    expect(String(row(p.id).error)).toMatch(/No Gemini key is saved/);
+    expect(String(row(p.id).error)).toMatch(/No AI API key is saved/);
     expect(calls).toHaveLength(0);
+  });
+
+  it("with only an NVIDIA key saved, the text is written by NVIDIA at publish time", async () => {
+    const nvUser = "99999999-9999-4999-8999-999999999999";
+    const NV_KEY = "nvapi-TESTKEY_fixture_abcdef";
+    await saveNvidiaKey(admin(), nvUser, NV_KEY, null);
+    const p = await createScheduledPost(admin(), nvUser, baseInput({
+      autoGenerate: true, message: "", topic: "Announce the new welcome page", scheduledAt: inMs(-1_000),
+    }));
+    const { f, calls } = fakeFetch((c) => {
+      if (c.url.includes("integrate.api.nvidia.com")) {
+        return { json: { choices: [{ message: { content: "TARGET has a fresh new welcome page. Come say hello." } }] } };
+      }
+      return graphOk(c);
+    });
+    const out = await runDueScheduledPosts(admin(), { env: ENV, fetch: f });
+    expect(out.results).toContainEqual({ id: p.id, status: "published" });
+    expect(row(p.id).message).toBe("TARGET has a fresh new welcome page. Come say hello.");
+    const nvCall = calls.find((c) => c.url.includes("integrate.api.nvidia.com"))!;
+    expect(nvCall.headers.Authorization).toBe(`Bearer ${NV_KEY}`);
+    expect(nvCall.url).not.toContain(NV_KEY);
+    expect(calls.some((c) => c.url.includes("generativelanguage.googleapis.com"))).toBe(false);
+    expect(JSON.stringify(row(p.id))).not.toContain(NV_KEY);
   });
 });

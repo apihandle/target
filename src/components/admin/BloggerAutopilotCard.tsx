@@ -14,23 +14,23 @@ export type BloggerAutopilotCardProps = {
   /** From the same status the composer already loads — this card adds no status logic of its own. */
   bloggerConnected: boolean;
   blogName: string | null;
-  geminiSaved: boolean;
+  aiKeySaved: boolean;
   apiBase?: string;
 };
 
 /**
  * Blogger autopilot (/app/social): the user flips one switch and names the topic; TARGET then writes
  * and posts to their connected blog on its own every 4 hours (the social cron generates one post per
- * opted-in user with their own Gemini key, queues it, and the same run publishes it). This card only
- * saves the switch + topic via /api/social/autopilot — the prerequisites it reports (Blogger
- * connected, a blog chosen, a Gemini key saved) come from the page's existing status, and each one is
- * set up in the composer's own cards above.
+ * opted-in user with their own AI key — NVIDIA when saved, else Gemini — queues it, and the same run
+ * publishes it). This card only saves the switch + topic via /api/social/autopilot — the
+ * prerequisites it reports (Blogger connected, a blog chosen, an AI key saved) come from the page's
+ * existing status, and each one is set up in the composer's own cards above.
  */
 export default function BloggerAutopilotCard({
   initial,
   bloggerConnected,
   blogName,
-  geminiSaved,
+  aiKeySaved,
   apiBase = "/api/social",
 }: BloggerAutopilotCardProps) {
   const [enabled, setEnabled] = useState(initial.enabled);
@@ -41,7 +41,7 @@ export default function BloggerAutopilotCard({
   const missing: string[] = [];
   if (!bloggerConnected) missing.push("connect Blogger above");
   else if (!blogName) missing.push("choose a blog above");
-  if (!geminiSaved) missing.push("save your Gemini key above");
+  if (!aiKeySaved) missing.push("save your AI key (NVIDIA or Gemini)");
 
   const statusLine = enabled
     ? missing.length
@@ -79,8 +79,8 @@ export default function BloggerAutopilotCard({
       </div>
       <p className="mt-1 text-xs text-muted">
         Turn it on and TARGET does the blogging for you: every 4 hours it writes one post about your
-        topic with your Gemini key and publishes it to your chosen Blogger blog — no drafts to approve,
-        nothing to press. Turn it off any time and it stops.
+        topic with your AI key (NVIDIA when saved, else Gemini) and publishes it to your chosen
+        Blogger blog — no drafts to approve, nothing to press. Turn it off any time and it stops.
       </p>
       <p role="status" className="mt-2 text-xs text-muted" data-testid="autopilot-status">{statusLine}</p>
       <div className="mt-3 flex flex-wrap items-center gap-2">

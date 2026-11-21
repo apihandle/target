@@ -23,6 +23,7 @@ export type SocialStatus = {
   meta: { vars: { name: string; set: boolean }[]; pageId: string | null; igUserId: string | null; graphVersion: string };
   targets: Record<SocialTarget, { ready: boolean; reason?: string }>;
   gemini: { saved: boolean; preview: string; model: string | null };
+  nvidia: { saved: boolean; preview: string; model: string | null };
   blogger: BloggerStatusView;
 };
 
@@ -68,9 +69,10 @@ const errText = (j: Record<string, unknown>, status: number) => (typeof j.error 
 
 /**
  * The social composer, shared by /admin/social and /app/social: save your own Gemini key (stored sealed,
- * like any provider key), draft a post with it, edit, then publish the confirmed text to the selected
+ * like any provider key; an NVIDIA key saved on the Connectors page takes over as the writer when
+ * present), draft a post with it, edit, then publish the confirmed text to the selected
  * Facebook Page / Instagram / Blogger destinations — now, or at a scheduled time (the social cron
- * publishes the queue on its own; a scheduled post can also ask Gemini to write the text at post time).
+ * publishes the queue on its own; a scheduled post can also ask AI to write the text at post time).
  * Publishing/scheduling is a two-step confirm here. `apiBase` picks the API family: the admin routes
  * (which additionally require confirm: true + write an audit entry first) or the user twins under
  * /api/social, where every destination resolves to the signed-in user's own connected accounts.
@@ -93,6 +95,9 @@ export default function SocialComposer({
   defaultTargets,
 }: SocialComposerProps) {
   const [gemini, setGemini] = useState(initial.gemini);
+  // Drafts and at-post-time writing use the writer key: NVIDIA when one is saved (managed on the
+  // Connectors page, so it only arrives via the initial status), else the Gemini key managed below.
+  const aiSaved = gemini.saved || initial.nvidia.saved;
   const [keyInput, setKeyInput] = useState("");
   const [modelInput, setModelInput] = useState(initial.gemini.model ?? "");
   const [keyBusy, setKeyBusy] = useState(false);
@@ -298,7 +303,8 @@ export default function SocialComposer({
         <p className="mt-1 text-xs text-muted">
           Paste your own Gemini key from Google AI Studio. It is stored encrypted, tied to your account —
           the same way TARGET stores every provider key — and only this masked preview is ever shown again.
-          It is used only to draft posts when you ask.
+          It is used only to draft posts when you ask. When an NVIDIA key is saved (on the Connectors
+          page), drafts are written with NVIDIA instead and this key is the fallback.
         </p>
         <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_220px]">
           <label className="sr-only" htmlFor="sc-key-input">Gemini API key</label>
@@ -390,7 +396,7 @@ export default function SocialComposer({
 
       <section className={card} aria-labelledby="sc-draft" data-testid="social-draft">
         <h3 id="sc-draft" className="text-sm font-semibold text-ink">Draft with AI</h3>
-        <p className="mt-1 text-xs text-muted">Give a topic or brief; Gemini writes a ready post with your saved key. You review and edit it below before anything is published.</p>
+        <p className="mt-1 text-xs text-muted">Give a topic or brief; AI writes a ready post with your saved key (NVIDIA when saved, else Gemini). You review and edit it below before anything is published.</p>
         <label className="sr-only" htmlFor="sc-topic">Topic or brief</label>
         <textarea id="sc-topic" rows={2} maxLength={SOCIAL_TOPIC_MAX} value={topic} onChange={(e) => setTopic(e.target.value)}
           className={`${box} mt-3`} placeholder="e.g. Announce that TARGET can now plan a whole week of meals" data-testid="social-topic" />
@@ -399,10 +405,10 @@ export default function SocialComposer({
           <select id="sc-tone" value={tone} onChange={(e) => setTone(e.target.value as DraftTone)} className="h-9 rounded-full border border-line-strong bg-surface-2 px-3 text-sm text-ink" data-testid="social-tone">
             {DRAFT_TONES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
-          <button type="button" className={btnPrimary} disabled={draftBusy || !gemini.saved || !topic.trim()} onClick={generate} data-testid="social-generate">
+          <button type="button" className={btnPrimary} disabled={draftBusy || !aiSaved || !topic.trim()} onClick={generate} data-testid="social-generate">
             {draftBusy ? "Writing…" : "Write draft"}
           </button>
-          {!gemini.saved && <span className="text-xs text-muted">Save your Gemini key above first.</span>}
+          {!aiSaved && <span className="text-xs text-muted">Save an AI key first — NVIDIA on the Connectors page, or Gemini above.</span>}
           {draftNote && <span role="status" className={`text-xs ${draftNote.ok ? "text-ok" : "text-danger"}`}>{draftNote.text}</span>}
         </div>
       </section>
@@ -492,20 +498,20 @@ export default function SocialComposer({
               className="h-9 rounded-full border border-line-strong bg-surface-2 px-3 text-sm text-ink" data-testid="social-schedule-at" />
             <label className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-sm ${schedAuto ? "border-accent/40 bg-accent/10 text-ink" : "border-line-strong bg-surface-2 text-muted"}`}>
               <input type="checkbox" checked={schedAuto} onChange={() => setSchedAuto((v) => !v)} data-testid="social-schedule-auto" />
-              <span>Write it with Gemini at post time</span>
+              <span>Write it with AI at post time</span>
             </label>
           </div>
           {schedAuto && (
             <div className="mt-2">
               <label className="sr-only" htmlFor="sc-sched-topic">Topic for the AI post</label>
               <textarea id="sc-sched-topic" rows={2} maxLength={SOCIAL_TOPIC_MAX} value={schedTopic} onChange={(e) => setSchedTopic(e.target.value)}
-                className={box} placeholder="Topic/brief Gemini writes from when the time comes" data-testid="social-schedule-topic" />
+                className={box} placeholder="Topic/brief the AI writes from when the time comes" data-testid="social-schedule-topic" />
               <div className="mt-2">
                 <label className="sr-only" htmlFor="sc-sched-tone">Style for the AI post</label>
                 <select id="sc-sched-tone" value={schedTone} onChange={(e) => setSchedTone(e.target.value as DraftTone)} className="h-9 rounded-full border border-line-strong bg-surface-2 px-3 text-sm text-ink" data-testid="social-schedule-tone">
                   {DRAFT_TONES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                 </select>
-                {!gemini.saved && <span className="ml-2 text-xs text-danger">No Gemini key saved — the post will fail at post time until the key above is added.</span>}
+                {!aiSaved && <span className="ml-2 text-xs text-danger">No AI key saved — the post will fail at post time until a key is added (NVIDIA on the Connectors page, or Gemini above).</span>}
               </div>
             </div>
           )}

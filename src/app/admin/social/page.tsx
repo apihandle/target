@@ -1,7 +1,7 @@
 import { requireAdminPage } from "@/lib/server/adminAuth";
 import { META_ENV_VARS } from "@/lib/socialConfig";
 import { metaConfig, targetReadiness } from "@/lib/server/socialPost";
-import { geminiKeyStatus } from "@/lib/server/socialKeys";
+import { geminiKeyStatus, nvidiaKeyStatus } from "@/lib/server/socialKeys";
 import { bloggerReadiness, bloggerStatus } from "@/lib/server/socialBlogger";
 import { resolveMetaSetup } from "@/lib/server/socialMeta";
 import { Panel, SectionHeading } from "@/components/admin/ui";
@@ -33,12 +33,13 @@ export default async function AdminSocial() {
     },
     targets: { ...targetReadiness(effectiveCfg), blogger: await bloggerReadiness(db, user.id) },
     gemini: await geminiKeyStatus(db, user.id),
+    nvidia: await nvidiaKeyStatus(db, user.id),
     blogger,
   };
   const missing = [...status.meta.vars.filter((v) => !v.set), ...blogger.vars.filter((v) => !v.set)];
   return (
     <>
-      <SectionHeading title="Social posts" description="Write once, post to TARGET's Facebook Page, Instagram and your Blogger blog together. Drafts can be written by Gemini with your own saved key." />
+      <SectionHeading title="Social posts" description="Write once, post to TARGET's Facebook Page, Instagram and your Blogger blog together. Drafts can be written by AI with your own saved key (NVIDIA when saved, else Gemini)." />
       <div className="mt-4" data-testid="social-status">
         <Panel>
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-soft">Setup</p>

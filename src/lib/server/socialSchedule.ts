@@ -3,7 +3,7 @@ import {
   type DraftTone, type ScheduledPostStatus, type SocialTarget,
 } from "@/lib/socialConfig";
 import { metaConfig, postInputProblem, publishSocialPost, type BloggerPublishSetup, type SocialPostInput, type TargetResult } from "@/lib/server/socialPost";
-import { loadGeminiKey } from "@/lib/server/socialKeys";
+import { loadSocialWriterKey } from "@/lib/server/socialKeys";
 import { generateSocialDraft } from "@/lib/server/socialDraft";
 import { resolveBloggerSetup } from "@/lib/server/socialBlogger";
 import { resolveMetaSetup, type MetaPublishSetup } from "@/lib/server/socialMeta";
@@ -214,8 +214,8 @@ async function finishPost(db: Db, id: string, patch: Record<string, unknown>): P
 const failWith = (error: string) => ({ status: "failed" as const, error: error.slice(0, 500), results: null });
 
 /**
- * Publish one already-claimed post. When auto_generate is set, the text is written first by Gemini with
- * the owner's stored key and the generated text is saved back onto the row (so the queue shows what went
+ * Publish one already-claimed post. When auto_generate is set, the text is written first by the owner's
+ * stored writer key (NVIDIA preferred, Gemini fallback) and the generated text is saved back onto the row (so the queue shows what went
  * out). At least one target published => "published" (per-target detail lives in results, same rule as
  * the manual publish route); every target failed => "failed" with the mapped, safe error text.
  */
@@ -228,13 +228,13 @@ export async function runScheduledPost(
   try {
     let message = post.message;
     if (post.auto_generate) {
-      const key = await loadGeminiKey(db, post.user_id);
+      const key = await loadSocialWriterKey(db, post.user_id);
       if (!key) {
-        await finishPost(db, post.id, failWith("No Gemini key is saved for this post's owner, so the text couldn't be written. Add the key on the Social posts page, then schedule again."));
+        await finishPost(db, post.id, failWith("No AI API key is saved for this post's owner, so the text couldn't be written. Add an NVIDIA (or Gemini) key on the Connectors page, then schedule again."));
         return { id: post.id, status: "failed" };
       }
       const draft = await generateSocialDraft(
-        { apiKey: key.apiKey, model: key.model, topic: post.topic ?? "", tone: post.tone === "tip" || post.tone === "question" ? post.tone : "announcement" },
+        { provider: key.provider, apiKey: key.apiKey, model: key.model, topic: post.topic ?? "", tone: post.tone === "tip" || post.tone === "question" ? post.tone : "announcement" },
         f,
       );
       if (!draft.ok) {

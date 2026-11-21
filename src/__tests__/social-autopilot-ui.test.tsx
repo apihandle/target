@@ -1,5 +1,5 @@
 // The Blogger autopilot card on /app/social: it reports the prerequisites from the page's existing
-// status (Blogger connected / a blog chosen / a Gemini key saved), shows the on/off state plainly,
+// status (Blogger connected / a blog chosen / an AI key saved), shows the on/off state plainly,
 // and saves the switch + topic to /api/social/autopilot — never an admin route.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -26,7 +26,7 @@ afterEach(() => { vi.unstubAllGlobals(); });
 describe("Blogger autopilot card", () => {
   it("all prerequisites ready and off → invites the user to turn it on", () => {
     stubFetch();
-    render(<BloggerAutopilotCard initial={{ enabled: false, topic: "" }} bloggerConnected blogName="My Blog" geminiSaved />);
+    render(<BloggerAutopilotCard initial={{ enabled: false, topic: "" }} bloggerConnected blogName="My Blog" aiKeySaved />);
     expect(screen.getByTestId("autopilot-status")).toHaveTextContent("Everything autopilot needs is set up");
     expect(screen.getByTestId("autopilot-status")).toHaveTextContent("My Blog");
     expect(screen.getByTestId("autopilot-toggle")).not.toBeChecked();
@@ -34,22 +34,22 @@ describe("Blogger autopilot card", () => {
 
   it("missing prerequisites are named in the status line", () => {
     stubFetch();
-    render(<BloggerAutopilotCard initial={{ enabled: false, topic: "" }} bloggerConnected={false} blogName={null} geminiSaved={false} />);
+    render(<BloggerAutopilotCard initial={{ enabled: false, topic: "" }} bloggerConnected={false} blogName={null} aiKeySaved={false} />);
     const status = screen.getByTestId("autopilot-status");
     expect(status).toHaveTextContent("connect Blogger above");
-    expect(status).toHaveTextContent("save your Gemini key above");
+    expect(status).toHaveTextContent("save your AI key (NVIDIA or Gemini)");
   });
 
   it("connected but no blog chosen → the missing piece is the blog choice", () => {
     stubFetch();
-    render(<BloggerAutopilotCard initial={{ enabled: true, topic: "Free AI tools" }} bloggerConnected blogName={null} geminiSaved />);
+    render(<BloggerAutopilotCard initial={{ enabled: true, topic: "Free AI tools" }} bloggerConnected blogName={null} aiKeySaved />);
     expect(screen.getByTestId("autopilot-status")).toHaveTextContent("choose a blog above");
     expect(screen.getByTestId("autopilot-status")).toHaveTextContent("can't post yet");
   });
 
   it("on and ready → the status line says posts go out every 4 hours", () => {
     stubFetch();
-    render(<BloggerAutopilotCard initial={{ enabled: true, topic: "Free AI tools" }} bloggerConnected blogName="My Blog" geminiSaved />);
+    render(<BloggerAutopilotCard initial={{ enabled: true, topic: "Free AI tools" }} bloggerConnected blogName="My Blog" aiKeySaved />);
     expect(screen.getByTestId("autopilot-status")).toHaveTextContent("Autopilot is on");
     expect(screen.getByTestId("autopilot-status")).toHaveTextContent("every 4 hours");
     expect(screen.getByTestId("autopilot-toggle")).toBeChecked();
@@ -58,7 +58,7 @@ describe("Blogger autopilot card", () => {
 
   it("saving posts the switch + topic to the user route and confirms", async () => {
     const calls = stubFetch();
-    render(<BloggerAutopilotCard initial={{ enabled: false, topic: "" }} bloggerConnected blogName="My Blog" geminiSaved />);
+    render(<BloggerAutopilotCard initial={{ enabled: false, topic: "" }} bloggerConnected blogName="My Blog" aiKeySaved />);
     await userEvent.click(screen.getByTestId("autopilot-toggle"));
     await userEvent.type(screen.getByTestId("autopilot-topic"), "Free AI tools");
     await userEvent.click(screen.getByTestId("autopilot-save"));

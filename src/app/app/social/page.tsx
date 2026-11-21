@@ -1,12 +1,13 @@
 import AppShell, { getSessionOrRedirect } from "@/components/AppShell";
 import SocialComposer, { type SocialStatus } from "@/components/admin/SocialComposer";
 import BloggerAutopilotCard from "@/components/admin/BloggerAutopilotCard";
+import VideoMakerCard from "@/components/admin/VideoMakerCard";
 import { Page, PageHeader } from "@/components/ui/Card";
 import { metaGraphVersion, type SocialTarget } from "@/lib/socialConfig";
 import { isAdminUser } from "@/lib/server/adminCheck";
 import type { Db } from "@/lib/server/auth";
 import { serviceDb } from "@/lib/server/serviceDb";
-import { geminiKeyStatus } from "@/lib/server/socialKeys";
+import { geminiKeyStatus, nvidiaKeyStatus } from "@/lib/server/socialKeys";
 import { autopilotSettings } from "@/lib/server/socialAutopilot";
 import { bloggerReadiness, bloggerStatus } from "@/lib/server/socialBlogger";
 import { metaPublicInfo, metaTargetReadiness } from "@/lib/server/socialMeta";
@@ -18,7 +19,7 @@ export const metadata = { title: "Social posts · TARGET" };
  * /app/social: the social composer for every signed-in user (the user-level twin of /admin/social).
  * Same composer component, but every destination is the caller's OWN account: their picked Facebook
  * Page + its Instagram (connected on /app/connectors), their Blogger blog, and drafts written with
- * their own Gemini key. The env-configured owner Page is never offered here — metaTargetReadiness
+ * their own AI key (NVIDIA when saved, else Gemini). The env-configured owner Page is never offered here — metaTargetReadiness
  * only falls back to it for the site owner (admin), mirroring the publish route's guard.
  */
 export default async function SocialPage() {
@@ -36,6 +37,7 @@ export default async function SocialPage() {
     },
     targets: { ...metaTargets, blogger: await bloggerReadiness(db, user.id) },
     gemini: await geminiKeyStatus(serviceDb(db), user.id),
+    nvidia: await nvidiaKeyStatus(serviceDb(db), user.id),
     blogger,
   };
   const hints: Partial<Record<SocialTarget, string>> = {
@@ -65,8 +67,11 @@ export default async function SocialPage() {
             initial={autopilot}
             bloggerConnected={blogger.connected}
             blogName={blogger.blog?.blogName || null}
-            geminiSaved={status.gemini.saved}
+            aiKeySaved={status.gemini.saved || status.nvidia.saved}
           />
+        </div>
+        <div className="mt-4">
+          <VideoMakerCard />
         </div>
       </Page>
     </AppShell>

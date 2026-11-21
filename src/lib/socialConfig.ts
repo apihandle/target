@@ -59,6 +59,23 @@ export const GEMINI_DEFAULT_MODEL = "gemini-2.5-flash";
 /** Gemini model ids look like "gemini-2.5-flash" (letters, numbers, dots, dashes). */
 export const GEMINI_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9.\-]{0,99}$/;
 
+/**
+ * The AI services a user can save a key for in social_ai_keys (migration 0023, 'nvidia' added by
+ * 0027). The social WRITER (drafts + the Blogger autopilot) prefers NVIDIA when an NVIDIA key is
+ * saved and falls back to Gemini — see loadSocialWriterKey in lib/server/socialKeys.ts.
+ */
+export type SocialAiProvider = "gemini" | "nvidia";
+export const SOCIAL_AI_PROVIDERS: SocialAiProvider[] = ["gemini", "nvidia"];
+export const isSocialAiProvider = (v: unknown): v is SocialAiProvider => v === "gemini" || v === "nvidia";
+export const SOCIAL_AI_PROVIDER_LABEL: Record<SocialAiProvider, string> = { gemini: "Gemini", nvidia: "NVIDIA" };
+
+/** NVIDIA's OpenAI-compatible chat endpoint (build.nvidia.com keys; also TARGET's chat provider base). */
+export const NVIDIA_API_BASE = "https://integrate.api.nvidia.com/v1";
+/** NVIDIA model used when the saved key has no model chosen. */
+export const NVIDIA_DEFAULT_MODEL = "meta/llama-3.3-70b-instruct";
+/** NVIDIA model ids look like "meta/llama-3.3-70b-instruct" (org/name: letters, numbers, dots, dashes, slashes). */
+export const NVIDIA_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9.\-_/]{0,99}$/;
+
 /** A pasted API key, validated exactly like a custom provider key (lib/customProvider.ts providerInput). */
 export const API_KEY_MAX = 500;
 export function apiKeyProblem(raw: unknown): string | null {

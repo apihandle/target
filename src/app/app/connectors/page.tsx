@@ -2,6 +2,7 @@ import AppShell, { getSessionOrRedirect } from "@/components/AppShell";
 import BloggerBlogPicker from "@/components/BloggerBlogPicker";
 import ConnectorsGrid from "@/components/ConnectorsGrid";
 import GeminiKeyCard from "@/components/GeminiKeyCard";
+import NvidiaKeyCard from "@/components/NvidiaKeyCard";
 import MetaPagePicker from "@/components/MetaPagePicker";
 import { Page, PageHeader } from "@/components/ui/Card";
 import { connectorViews, CONNECTOR_ID } from "@/lib/connectors/registry";
@@ -56,6 +57,7 @@ export default async function ConnectorsPage(
         <ConnectorsGrid initial={views} focus={focus} returnTo={safeReturnTo(searchParams.return)} />
         {views.find((v) => v.id === "facebook")?.status === "connected" && <MetaPagePicker />}
         {views.find((v) => v.id === "blogger")?.status === "connected" && <BloggerBlogPicker />}
+        <NvidiaKeyCard />
         <GeminiKeyCard />
       </Page>
     </AppShell>

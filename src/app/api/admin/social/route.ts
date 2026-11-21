@@ -2,7 +2,7 @@ import { json } from "@/lib/server/auth";
 import { adminNotFound, requireAdmin } from "@/lib/server/adminAuth";
 import { META_ENV_VARS } from "@/lib/socialConfig";
 import { metaConfig, targetReadiness } from "@/lib/server/socialPost";
-import { geminiKeyStatus } from "@/lib/server/socialKeys";
+import { geminiKeyStatus, nvidiaKeyStatus } from "@/lib/server/socialKeys";
 import { bloggerReadiness, bloggerStatus } from "@/lib/server/socialBlogger";
 import { resolveMetaSetup } from "@/lib/server/socialMeta";
 
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  * Social posting setup status: which Meta env vars are set (names only, never values — same rule as
  * /admin/health), the configured Page / Instagram ids (configuration, not secrets), per-target readiness
  * (Blogger's is per-user: OAuth client env + the caller's connection + chosen blog), the caller's Blogger
- * block, and the caller's stored Gemini key state (masked preview only).
+ * block, and the caller's stored AI key states (Gemini + NVIDIA, masked preview only).
  */
 export async function GET() {
   const a = await requireAdmin();
@@ -23,6 +23,7 @@ export async function GET() {
   const metaSetup = await resolveMetaSetup(a.user.id);
   const cfg = metaSetup.ready ? metaSetup.cfg : envCfg;
   const gemini = await geminiKeyStatus(a.db, a.user.id);
+  const nvidia = await nvidiaKeyStatus(a.db, a.user.id);
   const blogger = await bloggerStatus(a.db, a.user.id);
   const bloggerReady = await bloggerReadiness(a.db, a.user.id);
   return json({
@@ -34,6 +35,7 @@ export async function GET() {
     },
     targets: { ...targetReadiness(cfg), blogger: bloggerReady },
     gemini,
+    nvidia,
     blogger,
   });
 }

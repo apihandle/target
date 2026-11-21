@@ -1,20 +1,24 @@
 import { scrub } from "@/lib/customProvider";
-import { GEMINI_DEFAULT_MODEL, SOCIAL_MESSAGE_MAX, SOCIAL_TITLE_MAX, type DraftTone } from "@/lib/socialConfig";
+import {
+  GEMINI_DEFAULT_MODEL, NVIDIA_API_BASE, NVIDIA_DEFAULT_MODEL, SOCIAL_AI_PROVIDER_LABEL,
+  SOCIAL_MESSAGE_MAX, SOCIAL_TITLE_MAX, type DraftTone, type SocialAiProvider,
+} from "@/lib/socialConfig";
 
 /**
- * The Gemini text generators behind social posting, all over one transport (callGemini): the key
- * arrives as a parameter (the caller loads it from the user's sealed row via lib/server/socialKeys.ts)
- * and is sent only in the x-goog-api-key header to Google — never in a URL, a body, a log or a
- * returned string; provider error text passes through scrub() with the key, like every other provider
- * call in this codebase.
+ * The AI text generators behind social posting, over two transports with the same contract
+ * (callGemini / callNvidia): the key arrives as a parameter (the caller loads it from the user's
+ * sealed row via lib/server/socialKeys.ts — loadSocialWriterKey prefers NVIDIA, Gemini is the
+ * fallback) and is sent only in a header (x-goog-api-key to Google, Authorization: Bearer to
+ * NVIDIA) — never in a URL, a log or a returned string; provider error text passes through scrub()
+ * with the key, like every other provider call in this codebase.
  *
- * "Draft with AI" for the social composer: the user's own Gemini key writes a ready-to-post draft from
+ * "Draft with AI" for the social composer: the user's own key writes a ready-to-post draft from
  * a short topic/brief. The result is only a draft: the composer drops it into the textarea and the
  * human edits/confirms before anything is published.
  *
- * generateBlogPost is the autopilot sibling (lib/server/socialAutopilot.ts): same key, same
- * transport, but it writes a full blog post (title + body) that goes out with no human review —
- * that is the feature the user explicitly turned on.
+ * generateBlogPost is the autopilot sibling (lib/server/socialAutopilot.ts): same key resolution,
+ * but it writes a full blog post (title + body) that goes out with no human review — that is the
+ * feature the user explicitly turned on.
  */
 type Fetch = typeof fetch;
 
@@ -79,17 +83,75 @@ async function callGemini(
   }
 }
 
+type NvidiaReply = {
+  choices?: { message?: { content?: string | { text?: string }[] } }[];
+  error?: { message?: string };
+  detail?: string;
+};
+
+/**
+ * The NVIDIA twin of callGemini: one chat-completions call to integrate.api.nvidia.com (the
+ * OpenAI-compatible endpoint TARGET's chat providers already use), the key only in the
+ * Authorization: Bearer header, provider error text scrubbed of the key, every failure mapped to a
+ * short safe sentence. Returns the model's raw text (callers shape it).
+ */
+async function callNvidia(
+  args: { apiKey: string; model?: string | null; prompt: string; maxOutputTokens: number },
+  f: Fetch,
+): Promise<DraftResult> {
+  const model = args.model?.trim() || NVIDIA_DEFAULT_MODEL;
+  try {
+    const r = await f(`${NVIDIA_API_BASE}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${args.apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: args.prompt }],
+        temperature: 0.8,
+        max_tokens: args.maxOutputTokens,
+      }),
+      signal: AbortSignal.timeout(TIMEOUT),
+      cache: "no-store",
+    });
+    const j = (await r.json().catch(() => ({}))) as NvidiaReply;
+    if (r.status === 401 || r.status === 403) return { ok: false, error: "NVIDIA rejected the saved API key. Check the key at build.nvidia.com, save it again, then retry." };
+    if (!r.ok) {
+      const raw = j.error?.message ?? j.detail ?? "";
+      const detail = raw ? `: ${scrub(raw, args.apiKey).slice(0, 140)}` : "";
+      return { ok: false, error: `NVIDIA returned an error (HTTP ${r.status})${detail}` };
+    }
+    const content = j.choices?.[0]?.message?.content;
+    const text = (typeof content === "string" ? content : (content ?? []).map((p) => p.text ?? "").join("")).trim();
+    if (!text) return { ok: false, error: "NVIDIA answered without any text. Try a clearer topic." };
+    return { ok: true, text };
+  } catch (e) {
+    if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) return { ok: false, error: "NVIDIA didn't answer in time. Try again." };
+    return { ok: false, error: "Couldn't reach NVIDIA. Try again in a moment." };
+  }
+}
+
+/** Run one prompt on the chosen provider's transport (NVIDIA when the writer key is NVIDIA's, else Gemini). */
+function callProvider(
+  provider: SocialAiProvider,
+  args: { apiKey: string; model?: string | null; prompt: string; maxOutputTokens: number },
+  f: Fetch,
+): Promise<DraftResult> {
+  return provider === "nvidia" ? callNvidia(args, f) : callGemini(args, f);
+}
+
 export async function generateSocialDraft(
-  args: { apiKey: string; model?: string | null; topic: string; tone: DraftTone },
+  args: { provider?: SocialAiProvider; apiKey: string; model?: string | null; topic: string; tone: DraftTone },
   f: Fetch = fetch,
 ): Promise<DraftResult> {
-  const r = await callGemini(
+  const provider = args.provider ?? "gemini";
+  const r = await callProvider(
+    provider,
     { apiKey: args.apiKey, model: args.model, prompt: draftPrompt(args.topic.trim(), args.tone), maxOutputTokens: 512 },
     f,
   );
   if (!r.ok) return r;
   const text = r.text.replace(/^["“]|["”]$/g, "").trim();
-  if (!text) return { ok: false, error: "Gemini answered without any text. Try a clearer topic." };
+  if (!text) return { ok: false, error: `${SOCIAL_AI_PROVIDER_LABEL[provider]} answered without any text. Try a clearer topic.` };
   return { ok: true, text: text.slice(0, SOCIAL_MESSAGE_MAX) };
 }
 
@@ -109,7 +171,7 @@ export type BlogPostResult = { ok: true; title: string; body: string } | { ok: f
 const BLOG_BODY_MIN = 50;
 
 /**
- * Shape a Gemini reply into { title, body }: a leading "TITLE:" line when present, else the first
+ * Shape a model reply into { title, body }: a leading "TITLE:" line when present, else the first
  * non-empty line is the title. Any HTML the model emits anyway is stripped — the body is stored as
  * plain text and the publisher (lib/server/socialPost.ts) turns its paragraphs into HTML, so raw
  * tags here would only be escaped and shown to readers.
@@ -127,20 +189,23 @@ export function parseBlogPost(text: string): { title: string; body: string } | n
 }
 
 /**
- * One autopilot blog post (title + body) on the user's topic, written by their own Gemini key — the
- * blog sibling of generateSocialDraft, over the same transport. The body is plain text with blank-line
+ * One autopilot blog post (title + body) on the user's topic, written by their own writer key
+ * (NVIDIA preferred, Gemini fallback — loadSocialWriterKey) — the blog sibling of
+ * generateSocialDraft, over the same transports. The body is plain text with blank-line
  * paragraph breaks; the scheduled-post publisher renders it as HTML paragraphs on the blog.
  */
 export async function generateBlogPost(
-  args: { apiKey: string; model?: string | null; topic: string },
+  args: { provider?: SocialAiProvider; apiKey: string; model?: string | null; topic: string },
   f: Fetch = fetch,
 ): Promise<BlogPostResult> {
-  const r = await callGemini(
+  const provider = args.provider ?? "gemini";
+  const r = await callProvider(
+    provider,
     { apiKey: args.apiKey, model: args.model, prompt: blogPostPrompt(args.topic.trim()), maxOutputTokens: 1024 },
     f,
   );
   if (!r.ok) return r;
   const parsed = parseBlogPost(r.text);
-  if (!parsed) return { ok: false, error: "Gemini's answer didn't look like a blog post, so nothing was queued. Autopilot will try again on the next run." };
+  if (!parsed) return { ok: false, error: `${SOCIAL_AI_PROVIDER_LABEL[provider]}'s answer didn't look like a blog post, so nothing was queued. Autopilot will try again on the next run.` };
   return { ok: true, ...parsed };
 }

@@ -2,8 +2,10 @@
 // Blogger autopilot (migration 0026): the /api/social/autopilot settings route (signed-in only,
 // scoped to the caller's own row, save round-trip, validation) and the cron generation step
 // (runBloggerAutopilot) — it queues exactly one Blogger post per opted-in user per run, only when
-// every prerequisite is in place (Blogger connected, a blog chosen, a Gemini key saved), never stacks
-// on a still-queued post, and one user's failure never stops the others. The generated post then
+// every prerequisite is in place (Blogger connected, a blog chosen, an AI writer key saved — NVIDIA
+// preferred, Gemini fallback), never stacks on a still-queued post, and one user's failure never
+// stops the others; a set-up user whose provider call fails (or who has no key) is named in the
+// run's failures with the reason, never silently skipped. The generated post then
 // publishes through the ordinary queue drain in the same run. All network is a fake fetch and all
 // tokens/keys below are obvious test fixtures.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -18,7 +20,7 @@ process.env.CONNECTOR_ENCRYPTION_KEY = Buffer.alloc(32, 3).toString("base64"); /
 import { GET, POST } from "@/app/api/social/autopilot/route";
 import { autopilotSettings, runBloggerAutopilot, saveAutopilotSettings } from "@/lib/server/socialAutopilot";
 import { createScheduledPost, runDueScheduledPosts } from "@/lib/server/socialSchedule";
-import { saveGeminiKey } from "@/lib/server/socialKeys";
+import { saveGeminiKey, saveNvidiaKey } from "@/lib/server/socialKeys";
 import { saveBloggerBlog } from "@/lib/server/socialBlogger";
 import { saveConnection } from "@/lib/connectors/store";
 import { BLOGGER_SCOPE } from "@/lib/socialConfig";
@@ -29,6 +31,8 @@ const THIRD = "88888888-8888-4888-8888-888888888888";
 const TOK = "ya29.TEST_AUTOPILOT_TOKEN_fixture";
 const GEMINI_KEY = "AIzaTESTKEY_fixture_1234567890";
 const BAD_KEY = "AIzaTESTKEY_BAD_fixture_0000000";
+const NVIDIA_KEY = "nvapi-TESTKEY_fixture_1234567890";
+const NVIDIA_BAD_KEY = "nvapi-TESTKEY_BAD_fixture_0000";
 const ENV = { BLOGGER_OAUTH_CLIENT_ID: "blogger-client-fixture", BLOGGER_OAUTH_CLIENT_SECRET: "blogger-secret-fixture" };
 
 const BLOG_TEXT = [
@@ -61,6 +65,47 @@ async function readyUser(userId: string, key: string = GEMINI_KEY, topic = "Free
   await saveBloggerBlog(admin(), userId, { id: "987654321", name: "Test Blog", url: "https://testblog.example.com/" });
   await saveGeminiKey(admin(), userId, key, null);
   await saveAutopilotSettings(admin(), userId, { enabled: true, topic });
+}
+
+/** Everything autopilot needs, with an NVIDIA writer key instead of a Gemini one. */
+async function readyUserNvidia(userId: string, key: string = NVIDIA_KEY, topic = "Free AI tools") {
+  await connectBlogger(userId);
+  await saveBloggerBlog(admin(), userId, { id: "987654321", name: "Test Blog", url: "https://testblog.example.com/" });
+  await saveNvidiaKey(admin(), userId, key, null);
+  await saveAutopilotSettings(admin(), userId, { enabled: true, topic });
+}
+
+/** NVIDIA answers with a well-formed blog post (OpenAI shape), unless the call carries the "bad" fixture key. */
+function stubFetchNvidia() {
+  const calls: { url: string; headers: Record<string, string>; body: string }[] = [];
+  const f = vi.fn(async (url: string, init?: { headers?: Record<string, string>; body?: string }) => {
+    const u = String(url);
+    calls.push({ url: u, headers: init?.headers ?? {}, body: String(init?.body ?? "") });
+    if (u.includes("integrate.api.nvidia.com")) {
+      if ((init?.headers?.Authorization ?? "").includes("BAD")) return jsonRes({ detail: "invalid api key" }, 401);
+      return jsonRes({ choices: [{ message: { content: BLOG_TEXT } }] });
+    }
+    throw new Error(`unexpected fetch ${u}`);
+  });
+  vi.stubGlobal("fetch", f);
+  return calls;
+}
+
+/** Both providers stubbed (for mixed-key runs): NVIDIA rejects its "bad" fixture key, Gemini answers. */
+function stubFetchNvidiaOrGemini() {
+  const f = vi.fn(async (url: string, init?: { headers?: Record<string, string> }) => {
+    const u = String(url);
+    if (u.includes("integrate.api.nvidia.com")) {
+      if ((init?.headers?.Authorization ?? "").includes("BAD")) return jsonRes({ detail: "invalid api key" }, 401);
+      return jsonRes({ choices: [{ message: { content: BLOG_TEXT } }] });
+    }
+    if (u.includes("generativelanguage.googleapis.com")) {
+      return jsonRes({ candidates: [{ content: { parts: [{ text: BLOG_TEXT }] } }] });
+    }
+    throw new Error(`unexpected fetch ${u}`);
+  });
+  vi.stubGlobal("fetch", f);
+  return f;
 }
 
 /** Gemini answers with a well-formed blog post, unless the call carries the "bad" fixture key. */
@@ -221,6 +266,62 @@ describe("runBloggerAutopilot (the cron generation step)", () => {
     expect(out.generated).toBe(3);
     expect(queueRows()).toHaveLength(3);
     expect(new Set(queueRows().map((r) => r.user_id)).size).toBe(3);
+  });
+
+  it("a user with only an NVIDIA key gets a post written by NVIDIA (Bearer header, default model)", async () => {
+    await readyUserNvidia(ME);
+    const calls = stubFetchNvidia();
+    const out = await runBloggerAutopilot(admin(), { env: ENV });
+    expect(out.generated).toBe(1);
+    expect(out.failures).toEqual([]);
+    expect(queueRows()).toHaveLength(1);
+    expect(queueRows()[0].title).toBe("Five Free AI Tools Worth Trying");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe("https://integrate.api.nvidia.com/v1/chat/completions");
+    expect(calls[0].headers.Authorization).toBe(`Bearer ${NVIDIA_KEY}`);
+    expect(JSON.parse(calls[0].body).model).toBe("meta/llama-3.3-70b-instruct");
+    expect(JSON.stringify(queueRows()[0])).not.toContain(NVIDIA_KEY);
+  });
+
+  it("when both keys are saved, autopilot writes with NVIDIA and never calls Gemini", async () => {
+    await readyUser(ME); // Gemini key
+    await saveNvidiaKey(admin(), ME, NVIDIA_KEY, null);
+    const calls = stubFetchNvidia(); // throws on any non-NVIDIA fetch, Gemini included
+    const out = await runBloggerAutopilot(admin(), { env: ENV });
+    expect(out.generated).toBe(1);
+    expect(calls.every((c) => c.url.includes("integrate.api.nvidia.com"))).toBe(true);
+  });
+
+  it("an NVIDIA rejection is SURFACED in the run's failures, not silently skipped", async () => {
+    await readyUserNvidia(ME, NVIDIA_BAD_KEY);
+    await readyUser(OTHER);
+    stubFetchNvidiaOrGemini();
+    const out = await runBloggerAutopilot(admin(), { env: ENV });
+    expect(out.generated).toBe(1); // OTHER's post still generated — one failure never stops the rest
+    expect(queueRows()[0].user_id).toBe(OTHER);
+    expect(out.failures).toHaveLength(1);
+    expect(out.failures[0].userId).toBe(ME);
+    expect(out.failures[0].error).toMatch(/NVIDIA rejected the saved API key/);
+  });
+
+  it("a set-up user with NO AI key at all is surfaced in failures too (not a quiet skip)", async () => {
+    await connectBlogger(ME);
+    await saveBloggerBlog(admin(), ME, { id: "987654321", name: "Test Blog", url: "https://testblog.example.com/" });
+    await saveAutopilotSettings(admin(), ME, { enabled: true, topic: "Free AI tools" });
+    stubFetch();
+    const out = await runBloggerAutopilot(admin(), { env: ENV });
+    expect(out.generated).toBe(0);
+    expect(out.failures).toHaveLength(1);
+    expect(out.failures[0].error).toMatch(/No AI API key is saved/);
+  });
+
+  it("a Gemini rejection is surfaced the same way (fallback provider, same reporting)", async () => {
+    await readyUser(ME, BAD_KEY);
+    stubFetch();
+    const out = await runBloggerAutopilot(admin(), { env: ENV });
+    expect(out.generated).toBe(0);
+    expect(out.failures).toHaveLength(1);
+    expect(out.failures[0].error).toMatch(/Gemini/);
   });
 
   it("end to end: the generated post is published by the same run's queue drain", async () => {

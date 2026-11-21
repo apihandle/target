@@ -14,6 +14,7 @@ const STATUS: SocialStatus = {
     blogger: { ready: false, reason: "Blogger is not connected" },
   },
   gemini: { saved: true, preview: "AIza…fixture", model: null },
+  nvidia: { saved: false, preview: "", model: null },
   blogger: {
     vars: [{ name: "BLOGGER_OAUTH_CLIENT_ID", set: true }, { name: "BLOGGER_OAUTH_CLIENT_SECRET", set: true }],
     oauthConfigured: true,

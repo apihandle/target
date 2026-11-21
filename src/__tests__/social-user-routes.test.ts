@@ -1,7 +1,8 @@
 // @vitest-environment node
-// The user-level social twins behind /app/social and the Gemini card on /app/connectors:
+// The user-level social twins behind /app/social and the AI key cards on /app/connectors:
 // /api/social/key (+ /test), /api/social/generate, /api/social/publish, /api/social/schedule.
-// Everything is scoped to the caller: their own Gemini key drafts, their own Page publishes, and a
+// Everything is scoped to the caller: their own writer key drafts (NVIDIA preferred, Gemini
+// fallback), their own Page publishes, and a
 // user without a Meta connection of their own can never reach the env-configured owner Page.
 // Providers are stubbed; all keys/tokens are obvious fixtures.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -31,6 +32,7 @@ const ME = "66666666-6666-4666-8666-666666666666";
 const OTHER = "77777777-7777-4777-8777-777777777777";
 const KEY_ME = "gemini-key-me-fixture";
 const KEY_OTHER = "gemini-key-other-fixture";
+const NV_KEY_ME = "nvapi-key-me-fixture";
 const PAGE_TOK_ME = "page-token-me-fixture";
 
 const jsonRes = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -131,6 +133,102 @@ describe("/api/social/generate — drafts with the caller's own key", () => {
     h.db.as(OTHER); // OTHER does not
     const r = await generatePOST(req("http://t/api/social/generate", { topic: "Launch day" }));
     expect(r.status).toBe(503);
+  });
+});
+
+describe("/api/social/key + /generate — the NVIDIA writer key (migration 0027)", () => {
+  it("save with provider nvidia → status shows it under nvidia only; another user sees nothing", async () => {
+    const r = await keyPOST(req("http://t/api/social/key", { provider: "nvidia", apiKey: NV_KEY_ME }));
+    expect(r.status).toBe(200);
+    const j = await (await keyGET()).json();
+    expect(j.nvidia.saved).toBe(true);
+    expect(j.nvidia.preview).toBeTruthy();
+    expect(j.gemini.saved).toBe(false);
+    expect(JSON.stringify(j)).not.toContain(NV_KEY_ME);
+    h.db.as(OTHER);
+    const j2 = await (await keyGET()).json();
+    expect(j2.nvidia.saved).toBe(false);
+  });
+
+  it("a Gemini save and an NVIDIA save coexist as separate rows", async () => {
+    await keyPOST(req("http://t/api/social/key", { apiKey: KEY_ME }));
+    await keyPOST(req("http://t/api/social/key", { provider: "nvidia", apiKey: NV_KEY_ME }));
+    const j = await (await keyGET()).json();
+    expect(j.gemini.saved).toBe(true);
+    expect(j.nvidia.saved).toBe(true);
+    expect(j.gemini.preview).not.toBe(j.nvidia.preview);
+  });
+
+  it("DELETE ?provider=nvidia removes only the NVIDIA key", async () => {
+    await keyPOST(req("http://t/api/social/key", { apiKey: KEY_ME }));
+    await keyPOST(req("http://t/api/social/key", { provider: "nvidia", apiKey: NV_KEY_ME }));
+    const r = await keyDELETE(new Request("http://t/api/social/key?provider=nvidia", { method: "DELETE" }));
+    expect(r.status).toBe(200);
+    const j = await (await keyGET()).json();
+    expect(j.nvidia.saved).toBe(false);
+    expect(j.gemini.saved).toBe(true);
+  });
+
+  it("an NVIDIA model id with an org/name shape is accepted; a Gemini-shaped save still validates as before", async () => {
+    const r = await keyPOST(req("http://t/api/social/key", { provider: "nvidia", apiKey: NV_KEY_ME, model: "meta/llama-3.3-70b-instruct" }));
+    expect(r.status).toBe(200);
+    expect((await (await keyGET()).json()).nvidia.model).toBe("meta/llama-3.3-70b-instruct");
+    const bad = await keyPOST(req("http://t/api/social/key", { apiKey: KEY_ME, model: "meta/llama-3.3-70b-instruct" }));
+    expect(bad.status).toBe(400);
+  });
+
+  it("test with provider nvidia checks the key at NVIDIA's models endpoint and saves nothing", async () => {
+    const calls = stubNet((c) => {
+      if (c.url === "https://integrate.api.nvidia.com/v1/models") return jsonRes({ data: [] });
+      throw new Error(`unexpected fetch ${c.url}`);
+    });
+    const r = await keyTestPOST(req("http://t/api/social/key/test", { provider: "nvidia", apiKey: NV_KEY_ME }));
+    expect(r.status).toBe(200);
+    expect(calls[0].headers["authorization"]).toBe(`Bearer ${NV_KEY_ME}`);
+    expect((await (await keyGET()).json()).nvidia.saved).toBe(false);
+  });
+
+  it("test with provider nvidia maps a rejection to a plain NVIDIA error", async () => {
+    stubNet(() => jsonRes({ detail: "unauthorized" }, 401));
+    const r = await keyTestPOST(req("http://t/api/social/key/test", { provider: "nvidia", apiKey: NV_KEY_ME }));
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toMatch(/NVIDIA rejected/);
+  });
+
+  it("generate uses the NVIDIA key (Bearer header, default model) when one is saved", async () => {
+    await keyPOST(req("http://t/api/social/key", { provider: "nvidia", apiKey: NV_KEY_ME }));
+    const calls = stubNet((c) => {
+      if (c.url === "https://integrate.api.nvidia.com/v1/chat/completions") return jsonRes({ choices: [{ message: { content: "A draft from NVIDIA" } }] });
+      throw new Error(`unexpected fetch ${c.url}`);
+    });
+    const r = await generatePOST(req("http://t/api/social/generate", { topic: "Launch day", tone: "announcement" }));
+    expect(r.status).toBe(200);
+    expect((await r.json()).text).toBe("A draft from NVIDIA");
+    expect(calls[0].headers["authorization"]).toBe(`Bearer ${NV_KEY_ME}`);
+    expect(JSON.parse(calls[0].body).model).toBe("meta/llama-3.3-70b-instruct");
+  });
+
+  it("generate prefers NVIDIA over Gemini when both are saved", async () => {
+    await keyPOST(req("http://t/api/social/key", { apiKey: KEY_ME }));
+    await keyPOST(req("http://t/api/social/key", { provider: "nvidia", apiKey: NV_KEY_ME }));
+    const calls = stubNet((c) => {
+      if (c.url.includes("integrate.api.nvidia.com")) return jsonRes({ choices: [{ message: { content: "NVIDIA draft" } }] });
+      if (c.url.includes("generativelanguage.googleapis.com")) return jsonRes({ candidates: [{ content: { parts: [{ text: "Gemini draft" }] } }] });
+      throw new Error(`unexpected fetch ${c.url}`);
+    });
+    const r = await generatePOST(req("http://t/api/social/generate", { topic: "Launch day" }));
+    expect(r.status).toBe(200);
+    expect((await r.json()).text).toBe("NVIDIA draft");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toContain("integrate.api.nvidia.com");
+  });
+
+  it("generate surfaces an NVIDIA rejection as a 502 with the plain reason", async () => {
+    await keyPOST(req("http://t/api/social/key", { provider: "nvidia", apiKey: NV_KEY_ME }));
+    stubNet(() => jsonRes({ detail: "invalid api key" }, 401));
+    const r = await generatePOST(req("http://t/api/social/generate", { topic: "Launch day" }));
+    expect(r.status).toBe(502);
+    expect((await r.json()).error).toMatch(/NVIDIA rejected the saved API key/);
   });
 });
 
